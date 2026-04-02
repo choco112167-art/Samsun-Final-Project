@@ -1,5 +1,5 @@
 """
-Qwen3-4B-Instruct QLoRA 파인튜닝 — Kaggle P100 (16GB)
+Qwen3.5-4B QLoRA 파인튜닝 — Kaggle P100 (16GB)
 ======================================================
 실행 순서:
   1. before 추론 → before_results.csv
@@ -27,8 +27,8 @@ BASE_DIR     = "/kaggle/working"
 DATA_DIR     = "/kaggle/input/samseon-dataset"   # Kaggle Dataset 이름에 맞게 수정
 TRAIN_JSONL  = os.path.join(DATA_DIR, "trainset_chat.jsonl")
 TEST_JSONL   = os.path.join(DATA_DIR, "testset_chat.jsonl")
-MODEL_ID     = "Qwen/Qwen3-4B-Instruct"
-OUTPUT_DIR   = os.path.join(BASE_DIR, "qwen3-finetuned")
+MODEL_ID     = "Qwen/Qwen3.5-4B"
+OUTPUT_DIR   = os.path.join(BASE_DIR, "qwen3_5-finetuned")
 
 # CSV 기록 파일
 BEFORE_CSV      = os.path.join(BASE_DIR, "before_results.csv")

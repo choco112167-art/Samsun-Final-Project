@@ -1,9 +1,9 @@
 """
-Qwen3 4B - 격식체·일상체 번역 + 요약 단일 호출 파이프라인
+Qwen3.5 4B - 격식체·일상체 번역 + 요약 단일 호출 파이프라인
 한 번의 LLM 호출로 격식체 번역, 일상체 번역, 요약을 동시에 처리.
 
 Setup:
-  1. ollama pull qwen3:4b
+  1. ollama pull qwen3.5:4b
   2. pip install ollama python-dotenv
 
 Usage:
@@ -22,7 +22,7 @@ if sys.stdout.encoding != "utf-8":
 
 load_dotenv()
 
-MODEL = os.getenv("MODEL_NAME", "qwen3:4b")
+MODEL = os.getenv("MODEL_NAME", "qwen3.5:4b")
 
 SYSTEM_PROMPT = """You are a professional AI news translator and summarizer.
 Given a news article, produce ALL three outputs at once:
