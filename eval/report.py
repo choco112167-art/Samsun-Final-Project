@@ -88,9 +88,9 @@ def generate_report(
         ws2.cell(ri, 2, row["category"]).font = D_FONT
         ws2.cell(ri, 3, row["en_text"][:300]).alignment = WRAP
         ws2.cell(ri, 4, row["summary_formal"][:300]).alignment = WRAP
-        ws2.cell(ri, 5, int(row["geval_faithfulness"] or 0)).font = D_FONT
-        ws2.cell(ri, 6, int(row["geval_fluency"] or 0)).font = D_FONT
-        ws2.cell(ri, 7, int(row["geval_conciseness"] or 0)).font = D_FONT
+        ws2.cell(ri, 5, int(float(row["geval_faithfulness"] or 0))).font = D_FONT
+        ws2.cell(ri, 6, int(float(row["geval_fluency"] or 0))).font = D_FONT
+        ws2.cell(ri, 7, int(float(row["geval_conciseness"] or 0))).font = D_FONT
         ws2.cell(ri, 8, float(row["geval_avg"] or 0)).font = D_FONT
 
     col_widths2 = [6, 14, 50, 50, 10, 10, 10, 10]
