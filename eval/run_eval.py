@@ -24,7 +24,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "RSS"))
 
 from pipeline.translate_summarize import translate_and_summarize, estimate_sentences
-from eval.metrics.bleu_comet import calc_bleu_sentence
+from eval.metrics.bleu_comet import calc_bleu_sentence, load_comet_model, calc_comet
 from eval.metrics.term_preservation import check_term_preservation
 from eval.metrics.geval import geval_single
 
@@ -38,7 +38,7 @@ RESULT_HEADERS = [
     "id", "url", "category",
     "en_text", "ko_gt",
     "translation", "summary_formal",
-    "bleu", "tpr", "tpr_missing",
+    "bleu", "comet", "tpr", "tpr_missing",
     "geval_faithfulness", "geval_fluency", "geval_conciseness", "geval_avg",
     "n_sentences",
 ]
@@ -92,7 +92,7 @@ def upload_to_sheets(results_path: str):
         print(f"⚠ Google Sheets 업로드 실패: {e}")
 
 
-def run_eval(limit: int = None, skip_geval: bool = False, skip_sheets: bool = False):
+def run_eval(limit: int = None, skip_geval: bool = False, skip_comet: bool = False, skip_sheets: bool = False):
     print("=" * 60)
     print("삼선뉴스 번역·요약 평가 시작")
     print("=" * 60)
@@ -101,6 +101,13 @@ def run_eval(limit: int = None, skip_geval: bool = False, skip_sheets: bool = Fa
     if limit:
         rows = rows[:limit]
     print(f"평가 대상: {len(rows)}건\n")
+
+    # COMET 모델 사전 로드 (행마다 로드하면 느림)
+    comet_model = None
+    if not skip_comet:
+        print("COMET 모델 로딩 중...")
+        comet_model = load_comet_model()
+        print("COMET 모델 로드 완료\n")
 
     # 이미 처리된 ID 확인 (중단 후 재시작 대비)
     done_ids = set()
@@ -136,12 +143,18 @@ def run_eval(limit: int = None, skip_geval: bool = False, skip_sheets: bool = Fa
             # ── 2. BLEU ──
             bleu = calc_bleu_sentence(translation, ko_gt) if translation else 0.0
 
-            # ── 3. TPR ──
+            # ── 3. COMET ──
+            comet_score = 0.0
+            if comet_model and translation:
+                c = calc_comet([en_text], [translation], [ko_gt], model=comet_model)
+                comet_score = c["comet_mean"]
+
+            # ── 4. TPR ──
             tpr_result  = check_term_preservation(translation)
             tpr         = tpr_result["tpr"]
             tpr_missing = "|".join(tpr_result["missing"])
 
-            # ── 4. G-Eval (옵션) ──
+            # ── 5. G-Eval (옵션) ──
             geval_f = geval_fl = geval_c = geval_avg = 0.0
             if not skip_geval and summary_formal:
                 g = geval_single(en_text, summary_formal)
@@ -160,6 +173,7 @@ def run_eval(limit: int = None, skip_geval: bool = False, skip_sheets: bool = Fa
                 "translation":          translation,
                 "summary_formal":       summary_formal,
                 "bleu":                 bleu,
+                "comet":                comet_score,
                 "tpr":                  tpr,
                 "tpr_missing":          tpr_missing,
                 "geval_faithfulness":   geval_f,
@@ -170,7 +184,7 @@ def run_eval(limit: int = None, skip_geval: bool = False, skip_sheets: bool = Fa
             })
             f.flush()
 
-            print(f"  BLEU={bleu:.1f}  TPR={tpr:.2f}  G-Eval={geval_avg:.1f}")
+            print(f"  BLEU={bleu:.1f}  COMET={comet_score:.4f}  TPR={tpr:.2f}  G-Eval={geval_avg:.1f}")
 
     print(f"\n결과 저장 완료: {RESULTS_PATH}")
 
@@ -184,7 +198,8 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--limit",        type=int,            default=None,  help="평가 건수 제한 (테스트용)")
     parser.add_argument("--skip-geval",   action="store_true",               help="G-Eval 건너뛰기")
+    parser.add_argument("--skip-comet",   action="store_true",               help="COMET 건너뛰기")
     parser.add_argument("--skip-sheets",  action="store_true",               help="Google Sheets 업로드 건너뛰기")
     args = parser.parse_args()
 
-    run_eval(limit=args.limit, skip_geval=args.skip_geval, skip_sheets=args.skip_sheets)
+    run_eval(limit=args.limit, skip_geval=args.skip_geval, skip_comet=args.skip_comet, skip_sheets=args.skip_sheets)

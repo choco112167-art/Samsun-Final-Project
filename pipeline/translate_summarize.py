@@ -43,8 +43,6 @@ Rules:
 - Summaries must NOT copy translation word-for-word.
 - Output ONLY valid JSON. No explanation, no preamble."""
 
-PREFILL = '{"translation": "'
-
 
 # ────────────────────────────────────────────────
 # Sentence Estimator
@@ -89,22 +87,25 @@ def translate_and_summarize(
     """
     system = SYSTEM_PROMPT.format(n=summary_sentences)
 
-    response = ollama.chat(
-        model=MODEL,
-        messages=[
-            {"role": "system", "content": system},
-            {"role": "user", "content": text},
-            {"role": "assistant", "content": PREFILL},
-        ],
-        options={
-            "temperature": 0.1,
-            "num_predict": 3000,
-            "num_gpu": 99,
-        },
-    )
+    for attempt in range(3):   # 최대 3회 시도
+        response = ollama.chat(
+            model=MODEL,
+            messages=[
+                {"role": "system", "content": system},
+                {"role": "user", "content": text},
+            ],
+            options={
+                "temperature": 0.1,
+                "num_predict": 3000,
+                "num_gpu": 99,
+            },
+            think=False,  # thinking 모드 비활성화 (qwen3.5:4b 전용)
+        )
+        result = _extract_json(response.message.content)
+        if "(파싱 실패)" not in result.get("summary_formal", ""):
+            return result
 
-    raw = PREFILL + response.message.content
-    return _extract_json(raw)
+    return result  # 3회 실패 시 마지막 결과 반환
 
 
 def _extract_json(text: str) -> dict:
@@ -114,7 +115,7 @@ def _extract_json(text: str) -> dict:
     if "</think>" in text:
         text = text.split("</think>")[-1].strip()
 
-    # { 위치를 모두 찾아 순서대로 파싱 시도 (prefill 충돌로 중복 JSON 생성 대응)
+    # 1차: { 위치 순차 탐색으로 완전한 JSON 파싱 시도
     pos = 0
     while True:
         start = text.find("{", pos)
@@ -122,15 +123,31 @@ def _extract_json(text: str) -> dict:
             break
         try:
             obj, _ = json.JSONDecoder().raw_decode(text, start)
-            # 필요한 키가 있는 객체만 반환
             if "translation" in obj:
                 return obj
         except json.JSONDecodeError:
             pass
         pos = start + 1
 
+    # 2차: regex로 각 필드 개별 추출 (JSON 구조 손상 시 최후 수단)
+    def extract_field(key: str) -> str:
+        pattern = rf'"{key}"\s*:\s*"((?:[^"\\]|\\.)*)"'
+        m = re.search(pattern, text, re.DOTALL)
+        return m.group(1).replace("\\n", "\n").replace('\\"', '"') if m else ""
+
+    translation    = extract_field("translation")
+    summary_formal = extract_field("summary_formal")
+    summary_casual = extract_field("summary_casual")
+
+    if translation:
+        return {
+            "translation":    translation,
+            "summary_formal": summary_formal or "(파싱 실패)",
+            "summary_casual": summary_casual or "(파싱 실패)",
+        }
+
     return {
-        "translation": text,
+        "translation":    text,
         "summary_formal": "(파싱 실패)",
         "summary_casual": "(파싱 실패)",
     }

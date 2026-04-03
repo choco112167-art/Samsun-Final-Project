@@ -6,3 +6,5 @@ __pycache__/
 .txt
 CLAUDE.md
 eval/data/
+*.json
+token.json

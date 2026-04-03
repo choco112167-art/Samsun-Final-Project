@@ -1,6 +1,6 @@
 """
 평가 결과 → Excel 리포트 생성
-results.csv → eval_report_YYYYMMDD.xlsx (3시트)
+results_300.csv → eval_report_YYYYMMDD.xlsx (3시트)
 
 실행:
     python eval/report.py
@@ -53,17 +53,10 @@ def generate_report(
             cell.alignment = CENTER
         ws.row_dimensions[1].height = 20
 
-    def write_rows(ws, rows, cols):
-        for ri, row in enumerate(rows, 2):
-            for ci, col in enumerate(cols, 1):
-                cell = ws.cell(row=ri, column=ci, value=row.get(col, ""))
-                cell.font = D_FONT
-                cell.alignment = WRAP
-
     # ── Sheet 1: 번역 평가 ──
     ws1 = wb.active
     ws1.title = "번역 평가"
-    headers1 = ["NO", "카테고리", "URL", "원문(EN)", "GT(KO)", "번역 출력", "BLEU", "TPR", "누락 용어"]
+    headers1 = ["NO", "카테고리", "URL", "원문(EN)", "GT(KO)", "번역 출력", "BLEU", "COMET", "TPR", "누락 용어"]
     style_header(ws1, headers1)
     for ri, row in enumerate(before, 2):
         ws1.cell(ri, 1, row["id"]).font = D_FONT
@@ -73,28 +66,33 @@ def generate_report(
         ws1.cell(ri, 5, row["ko_gt"]).alignment = WRAP
         ws1.cell(ri, 6, row["translation"]).alignment = WRAP
         ws1.cell(ri, 7, float(row["bleu"] or 0)).font = D_FONT
-        ws1.cell(ri, 8, float(row["tpr"] or 0)).font = D_FONT
-        ws1.cell(ri, 9, row["tpr_missing"]).font = D_FONT
+        ws1.cell(ri, 8, float(row.get("comet") or 0)).font = D_FONT
+        ws1.cell(ri, 9, float(row["tpr"] or 0)).font = D_FONT
+        ws1.cell(ri, 10, row["tpr_missing"]).font = D_FONT
 
-    col_widths1 = [6, 14, 40, 50, 50, 50, 8, 8, 30]
+    col_widths1 = [6, 14, 40, 50, 50, 50, 8, 10, 8, 30]
     for i, w in enumerate(col_widths1, 1):
         ws1.column_dimensions[get_column_letter(i)].width = w
 
     # ── Sheet 2: 요약 평가 (격식체) ──
     ws2 = wb.create_sheet("요약 평가 (격식체)")
-    headers2 = ["NO", "카테고리", "원문(EN)", "격식체 요약", "충실성", "유창성", "간결성", "평균"]
+    headers2 = ["NO", "카테고리", "원문(EN)", "격식체 요약",
+                "충실성", "유창성", "간결성", "관련성",
+                "G-Eval 단순평균", "G-Eval 가중평균"]
     style_header(ws2, headers2)
     for ri, row in enumerate(before, 2):
         ws2.cell(ri, 1, row["id"]).font = D_FONT
         ws2.cell(ri, 2, row["category"]).font = D_FONT
         ws2.cell(ri, 3, row["en_text"]).alignment = WRAP
         ws2.cell(ri, 4, row["summary_formal"]).alignment = WRAP
-        ws2.cell(ri, 5, int(float(row["geval_faithfulness"] or 0))).font = D_FONT
-        ws2.cell(ri, 6, int(float(row["geval_fluency"] or 0))).font = D_FONT
-        ws2.cell(ri, 7, int(float(row["geval_conciseness"] or 0))).font = D_FONT
-        ws2.cell(ri, 8, float(row["geval_avg"] or 0)).font = D_FONT
+        ws2.cell(ri, 5, int(float(row.get("geval_faithfulness") or 0))).font = D_FONT
+        ws2.cell(ri, 6, int(float(row.get("geval_fluency") or 0))).font = D_FONT
+        ws2.cell(ri, 7, int(float(row.get("geval_conciseness") or 0))).font = D_FONT
+        ws2.cell(ri, 8, int(float(row.get("geval_relevance") or 0))).font = D_FONT
+        ws2.cell(ri, 9,  float(row.get("g_eval_score") or 0)).font = D_FONT
+        ws2.cell(ri, 10, float(row.get("g_eval_weighted") or 0)).font = D_FONT
 
-    col_widths2 = [6, 14, 50, 50, 10, 10, 10, 10]
+    col_widths2 = [6, 14, 50, 50, 10, 10, 10, 10, 14, 14]
     for i, w in enumerate(col_widths2, 1):
         ws2.column_dimensions[get_column_letter(i)].width = w
 
@@ -106,13 +104,15 @@ def generate_report(
         return round(sum(vals) / len(vals), 2) if vals else 0.0
 
     metrics = [
-        ("BLEU",          "bleu",               "≥ 17.0"),
-        ("COMET",         "comet",               "기준값 측정 후"),
-        ("TPR",           "tpr",                 "≥ 0.95"),
-        ("G-Eval 충실성",  "geval_faithfulness",  "≥ 4.0"),
-        ("G-Eval 유창성",  "geval_fluency",       "≥ 4.0"),
-        ("G-Eval 간결성",  "geval_conciseness",   "≥ 4.0"),
-        ("G-Eval 평균",    "geval_avg",           "≥ 4.0"),
+        ("BLEU",              "bleu",                "≥ 17.0"),
+        ("COMET",             "comet",               "기준값 측정 후"),
+        ("TPR",               "tpr",                 "≥ 0.95"),
+        ("G-Eval 충실성",      "geval_faithfulness",  "≥ 4.0"),
+        ("G-Eval 유창성",      "geval_fluency",       "≥ 4.0"),
+        ("G-Eval 간결성",      "geval_conciseness",   "≥ 4.0"),
+        ("G-Eval 관련성",      "geval_relevance",     "≥ 4.0"),
+        ("G-Eval 단순평균",    "g_eval_score",        "≥ 4.0"),
+        ("G-Eval 가중평균",    "g_eval_weighted",     "≥ 4.0"),
     ]
 
     headers3 = ["지표", "파인튜닝 전", "파인튜닝 후", "목표값", "달성 여부"]
@@ -150,7 +150,7 @@ def generate_report(
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("--before", default=os.path.join(os.path.dirname(__file__), "data", "results.csv"))
+    parser.add_argument("--before", default=os.path.join(os.path.dirname(__file__), "data", "results_300.csv"))
     parser.add_argument("--after",  default=None, help="파인튜닝 후 results.csv 경로")
     args = parser.parse_args()
 

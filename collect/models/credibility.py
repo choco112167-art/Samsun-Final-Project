@@ -18,7 +18,7 @@ SOURCE_CREDIBILITY: dict[str, float] = {
     "The Guardian Tech":     0.88,
     "TechCrunch":            0.82,
     "The Verge":             0.80,
-    "Nikkei Asia Tech":      0.78,
+
     "VentureBeat AI":        0.75,
 }
 
@@ -54,7 +54,7 @@ def get_credibility_score(source: str) -> float:
 def is_ai_related(article: Article, title_only: bool = False) -> bool:
     """
     AI 관련 기사 여부 판별.
-    title_only=True → 제목만 엄격하게 검사 (Nikkei처럼 본문이 없는 피드용)
+    title_only=True → 제목만 엄격하게 검사 (본문이 없는 피드용)
     title_only=False → 제목 + 본문 모두 검사
     """
     if title_only:

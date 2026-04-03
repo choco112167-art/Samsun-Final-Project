@@ -3,7 +3,7 @@ import os
 sys.stdout.reconfigure(encoding='utf-8')
 
 # 이상준 RSS 모듈 경로 추가
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'RSS'))
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'collect'))
 
 from crawler.rss_crawler import fetch_all
 from pipeline.translate_summarize import translate_and_summarize, estimate_sentences
@@ -66,5 +66,7 @@ def run_pipeline(max_articles: int = 10, summary_sentences: int = 3):
 
 
 if __name__ == "__main__":
+    from backend.save_articles import save_articles
     results = run_pipeline(max_articles=10, summary_sentences=3)
     print(f"\n파이프라인 완료: {len(results)}건 처리")
+    save_articles(results)

@@ -44,13 +44,23 @@ def calc_bleu_sentence(hypothesis: str, reference: str) -> float:
     return round(result.score, 2)
 
 
+def load_comet_model(model_name: str = "Unbabel/wmt22-comet-da"):
+    """COMET 모델을 한 번만 로드해서 반환 (run_eval에서 재사용용)"""
+    try:
+        from comet import download_model, load_from_checkpoint
+    except ImportError:
+        raise ImportError("pip install unbabel-comet")
+    return load_from_checkpoint(download_model(model_name))
+
+
 def calc_comet(
     sources: list[str],
     hypotheses: list[str],
     references: list[str],
     model_name: str = "Unbabel/wmt22-comet-da",
     batch_size: int = 8,
-    gpus: int = 0,
+    gpus: int = 1,
+    model=None,
 ) -> dict:
     """
     COMET 점수 계산.
@@ -71,8 +81,9 @@ def calc_comet(
     except ImportError:
         raise ImportError("pip install unbabel-comet")
 
-    model_path = download_model(model_name)
-    model = load_from_checkpoint(model_path)
+    if model is None:
+        from comet import download_model, load_from_checkpoint
+        model = load_from_checkpoint(download_model(model_name))
 
     data = [
         {"src": s, "mt": h, "ref": r}
