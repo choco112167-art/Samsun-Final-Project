@@ -159,6 +159,7 @@ def load_base_model(model_id: str):
         quantization_config=bnb_config,
         device_map="auto",
         trust_remote_code=True,
+        torch_dtype=torch.float16,
     )
     model.config.use_cache = False
     return model, tokenizer
@@ -287,12 +288,13 @@ def finetune(model, tokenizer, train_data: list[dict], num_epochs: int, resume: 
     if not resume:
         init_csv(TRAINING_LOG, ["step", "loss", "learning_rate", "epoch", "timestamp"])
 
+    tokenizer.model_max_length = MAX_SEQ_LEN
     config = {**TRAIN_CONFIG, "num_train_epochs": num_epochs}
-    sft_config = SFTConfig(max_seq_length=MAX_SEQ_LEN, **config)
+    sft_config = SFTConfig(**config)
 
     trainer = SFTTrainer(
         model=model,
-        tokenizer=tokenizer,
+        processing_class=tokenizer,
         train_dataset=dataset,
         args=sft_config,
         callbacks=[CsvLogCallback()],
