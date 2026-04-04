@@ -33,7 +33,7 @@ SESSION = 1   # 1, 2, 3 중 선택
 
 # ── 경로 설정 (Kaggle 환경) ───────────────────────────────
 BASE_DIR    = "/kaggle/working"
-DATA_DIR    = "/kaggle/input/samseon-dataset"   # Kaggle Dataset 이름과 일치시킬 것
+DATA_DIR    = "/kaggle/input/datasets/huemayi/samseon-dataset"
 TRAIN_JSONL = os.path.join(DATA_DIR, "trainset_chat.jsonl")
 TEST_JSONL  = os.path.join(DATA_DIR, "testset_chat.jsonl")
 MODEL_ID    = "Qwen/Qwen3.5-4B"
