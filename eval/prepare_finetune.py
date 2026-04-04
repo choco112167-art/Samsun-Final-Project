@@ -24,7 +24,7 @@ sys.stdout.reconfigure(encoding="utf-8")
 
 DATA_DIR      = os.path.join(os.path.dirname(__file__), "data")
 TRAINSET_PATH = os.path.join(DATA_DIR, "trainset.csv")
-TESTSET_PATH  = os.path.join(DATA_DIR, "testset_1000.csv")
+TESTSET_PATH  = os.path.join(DATA_DIR, "testset_300.csv")
 TRAIN_OUT     = os.path.join(DATA_DIR, "trainset_chat.jsonl")
 TEST_OUT      = os.path.join(DATA_DIR, "testset_chat.jsonl")
 

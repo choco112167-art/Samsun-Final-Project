@@ -1,10 +1,9 @@
 import os
-import hashlib
-import requests
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 from dotenv import load_dotenv
 from supabase import create_client
+from backend.save_articles import save_articles as db_save_articles, make_embedding, make_url_hash
 
 load_dotenv()
 
@@ -14,18 +13,6 @@ sb = create_client(
     os.getenv("SUPABASE_URL"),
     os.getenv("SUPABASE_KEY")
 )
-
-OLLAMA_URL    = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434/v1").replace("/v1", "")
-EMBED_MODEL   = "mxbai-embed-large"
-
-
-def make_embedding(text: str) -> list[float]:
-    resp = requests.post(
-        f"{OLLAMA_URL}/api/embeddings",
-        json={"model": EMBED_MODEL, "prompt": text},
-    )
-    resp.raise_for_status()
-    return resp.json()["embedding"]
 
 
 # ── 요청 데이터 형식 ──────────────────────────────
@@ -61,7 +48,7 @@ def get_feed(user_id: str, top_k: int = 10):
                .execute()
 
     if not result.data:
-        return {"error": "유저 없음"}
+        raise HTTPException(status_code=404, detail="유저 없음")
 
     user_vector = result.data[0]["user_vector"]
 
@@ -76,22 +63,8 @@ def get_feed(user_id: str, top_k: int = 10):
 # ── 기사 저장 ──────────────────────────────
 @app.post("/articles")
 def save_articles(req: ArticleRequest):
-    batch = []
-
-    for article in req.articles:
-        url_hash = hashlib.md5(
-            article["original_url"].encode()
-        ).hexdigest()
-
-        embedding = make_embedding(article["translation"])
-
-        batch.append({**article, "url_hash": url_hash, "embedding": embedding})
-
-    sb.table("articles").upsert(
-        batch, on_conflict="url_hash"
-    ).execute()
-
-    return {"message": f"{len(batch)}개 기사 저장 완료!"}
+    count = db_save_articles(req.articles)
+    return {"message": f"{count}개 기사 저장 완료!"}
 
 
 # ── 기사 상세 ──────────────────────────────
@@ -103,7 +76,7 @@ def get_article(url_hash: str):
                .execute()
 
     if not result.data:
-        return {"error": "기사 없음"}
+        raise HTTPException(status_code=404, detail="기사 없음")
 
     return {"article": result.data[0]}
 
