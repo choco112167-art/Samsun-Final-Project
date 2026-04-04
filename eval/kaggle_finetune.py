@@ -64,12 +64,12 @@ SESSION_EPOCHS = {
 }
 
 TRAIN_CONFIG = dict(
-    per_device_train_batch_size=4,
-    gradient_accumulation_steps=4,   # 유효 배치 = 16
+    per_device_train_batch_size=1,
+    gradient_accumulation_steps=16,   # 유효 배치 = 16
     learning_rate=2e-4,
     lr_scheduler_type="cosine",
     warmup_ratio=0.05,
-    fp16=True,
+    fp16=False,
     logging_steps=50,
     save_steps=300,          # 자주 저장 (세션 끊김 대비)
     save_total_limit=3,
@@ -264,6 +264,10 @@ def finetune(model, tokenizer, train_data: list[dict], num_epochs: int, resume: 
     print(f"\n[파인튜닝] epochs={num_epochs}, resume={resume}")
 
     model = prepare_model_for_kbit_training(model)
+    # BFloat16 파라미터 강제 fp16 변환 (AMP 충돌 방지)
+    for param in model.parameters():
+        if param.dtype == torch.bfloat16:
+            param.data = param.data.to(torch.float16)
     lora_config = LoraConfig(**LORA_CONFIG)
     model = get_peft_model(model, lora_config)
     model.print_trainable_parameters()
