@@ -3,7 +3,7 @@ from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 from dotenv import load_dotenv
 from supabase import create_client
-from backend.save_articles import save_articles as db_save_articles, make_embedding, make_url_hash
+from backend.save_articles import save_articles as db_save_articles, make_embedding
 
 load_dotenv()
 

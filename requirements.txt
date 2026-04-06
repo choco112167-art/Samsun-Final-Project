@@ -1,9 +1,11 @@
-fastapi==0.115.6
-uvicorn==0.34.0
-supabase==2.10.0
-pydantic==2.11.1
+# 루트에서: pip install -r requirements.txt
+# FastAPI + RSS 파이프라인(main.py) + backend API 공통
+
+fastapi>=0.115.0
+uvicorn[standard]>=0.32.0
+supabase>=2.10.0
+pydantic>=2.0
 python-dotenv
-requests==2.32.3
-feedparser==6.0.11
-psycopg2-binary==2.9.10
-openai
+requests>=2.32.0
+feedparser>=6.0.11
+ollama>=0.3.0
