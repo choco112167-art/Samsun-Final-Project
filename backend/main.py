@@ -1,9 +1,9 @@
 import os
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 from dotenv import load_dotenv
 from supabase import create_client
-from sentence_transformers import SentenceTransformer
+from backend.save_articles import save_articles as db_save_articles, make_embedding, make_url_hash
 
 load_dotenv()
 
@@ -13,8 +13,6 @@ sb = create_client(
     os.getenv("SUPABASE_URL"),
     os.getenv("SUPABASE_KEY")
 )
-
-model = SentenceTransformer("Qwen/Qwen3-Embedding-4B")
 
 
 # ── 요청 데이터 형식 ──────────────────────────────
@@ -30,11 +28,7 @@ class ArticleRequest(BaseModel):
 @app.post("/onboarding")
 def onboarding(req: OnboardingRequest):
     combined = " ".join(req.interest_tags)
-    user_vector = model.encode(
-        combined,
-        prompt_name="query",
-        normalize_embeddings=True
-    ).tolist()[:1024]
+    user_vector = make_embedding(combined)
 
     sb.table("users").upsert({
         "user_id":       req.user_id,
@@ -54,7 +48,7 @@ def get_feed(user_id: str, top_k: int = 10):
                .execute()
 
     if not result.data:
-        return {"error": "유저 없음"}
+        raise HTTPException(status_code=404, detail="유저 없음")
 
     user_vector = result.data[0]["user_vector"]
 
@@ -69,27 +63,8 @@ def get_feed(user_id: str, top_k: int = 10):
 # ── 기사 저장 ──────────────────────────────
 @app.post("/articles")
 def save_articles(req: ArticleRequest):
-    import hashlib
-    batch = []
-
-    for article in req.articles:
-        url_hash = hashlib.md5(
-            article["original_url"].encode()
-        ).hexdigest()
-
-        embedding = model.encode(
-            article["translation"],
-            prompt_name="document",
-            normalize_embeddings=True
-        ).tolist()[:1024]
-
-        batch.append({**article, "url_hash": url_hash, "embedding": embedding})
-
-    sb.table("articles").upsert(
-        batch, on_conflict="url_hash"
-    ).execute()
-
-    return {"message": f"{len(batch)}개 기사 저장 완료!"}
+    count = db_save_articles(req.articles)
+    return {"message": f"{count}개 기사 저장 완료!"}
 
 
 # ── 기사 상세 ──────────────────────────────
@@ -101,7 +76,7 @@ def get_article(url_hash: str):
                .execute()
 
     if not result.data:
-        return {"error": "기사 없음"}
+        raise HTTPException(status_code=404, detail="기사 없음")
 
     return {"article": result.data[0]}
 
@@ -109,11 +84,7 @@ def get_article(url_hash: str):
 # ── 검색 ──────────────────────────────
 @app.get("/search")
 def search(q: str, top_k: int = 10):
-    query_vector = model.encode(
-        q,
-        prompt_name="query",
-        normalize_embeddings=True
-    ).tolist()[:1024]
+    query_vector = make_embedding(q)
 
     result = sb.rpc("match_articles", {
         "query_vector": query_vector,
