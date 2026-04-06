@@ -64,7 +64,7 @@ export default function SearchPage({ bm }: Props) {
         </form>
         <div style={{ display: 'flex', alignItems: 'center', gap: 5, marginTop: 10 }}>
           <div style={{ width: 6, height: 6, borderRadius: '50%', background: 'var(--color-primary)' }} />
-          <span style={{ fontSize: 11, color: 'var(--color-text-tertiary)' }}>pgvector 유사도 검색 · Qwen3-Embedding-4B</span>
+          <span style={{ fontSize: 11, color: 'var(--color-text-tertiary)' }}>pgvector 유사도 검색 · mxbai-embed-large</span>
         </div>
       </header>
 
