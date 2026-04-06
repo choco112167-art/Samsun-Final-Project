@@ -8,3 +8,8 @@ CLAUDE.md
 eval/data/
 *.json
 token.json
+
+# JS / build
+node_modules/
+dist/
+frontend/dist/
