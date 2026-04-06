@@ -40,6 +40,12 @@ MODEL_ID    = "Qwen/Qwen3.5-4B"
 OUTPUT_DIR  = os.path.join(BASE_DIR, "qwen3_5-finetuned")
 CKPT_DIR    = os.path.join(BASE_DIR, "checkpoints")   # 세션 간 체크포인트
 
+# ── 체크포인트 전달 설정 ──────────────────────────────────
+# Session 1 종료 후 /kaggle/working/checkpoint_transfer.zip 으로 저장됨
+# 다른 사람이 이어받을 때: zip을 Kaggle Dataset으로 업로드한 뒤 아래 경로 지정
+CKPT_ZIP_OUT  = os.path.join(BASE_DIR, "checkpoint_transfer.zip")  # 저장 경로 (수정 불필요)
+CKPT_ZIP_IN   = "/kaggle/input/samseon-checkpoint/checkpoint_transfer.zip"  # 이어받을 때 zip 경로
+
 # 결과 파일
 AFTER_CSV    = os.path.join(BASE_DIR, "after_results.csv")
 TRAINING_LOG = os.path.join(BASE_DIR, "training_log.csv")
@@ -133,6 +139,52 @@ def find_latest_checkpoint(ckpt_dir: str):
         if d.startswith("checkpoint-")
     ]
     return max(ckpts, key=os.path.getmtime) if ckpts else None
+
+
+def export_checkpoint(zip_out: str = CKPT_ZIP_OUT):
+    """체크포인트 디렉터리 → zip 압축 (다른 사람에게 전달용)
+    Kaggle Output 탭에서 checkpoint_transfer.zip 다운로드 가능
+    """
+    import zipfile
+    if not os.path.exists(CKPT_DIR):
+        print("[export] 체크포인트 없음 — 먼저 학습을 실행하세요.")
+        return
+
+    print(f"[export] 체크포인트 압축 중: {CKPT_DIR} → {zip_out}")
+    with zipfile.ZipFile(zip_out, "w", zipfile.ZIP_DEFLATED) as zf:
+        for root, _, files in os.walk(CKPT_DIR):
+            for file in files:
+                abs_path = os.path.join(root, file)
+                arc_name = os.path.relpath(abs_path, os.path.dirname(CKPT_DIR))
+                zf.write(abs_path, arc_name)
+
+    size_mb = os.path.getsize(zip_out) / 1e6
+    print(f"[export] 완료: {zip_out} ({size_mb:.1f} MB)")
+    print("Kaggle Output 탭에서 다운로드 후 상대방에게 전달하세요.")
+
+
+def import_checkpoint(zip_in: str = CKPT_ZIP_IN):
+    """zip → 체크포인트 디렉터리 복원 (전달받은 파일로 이어받기)
+    사용법: zip을 Kaggle Dataset으로 업로드 → CKPT_ZIP_IN 경로 맞추기
+    """
+    import zipfile
+    if not os.path.exists(zip_in):
+        print(f"[import] zip 파일 없음: {zip_in}")
+        print("CKPT_ZIP_IN 경로를 업로드한 Dataset 경로로 수정하세요.")
+        return False
+
+    os.makedirs(os.path.dirname(CKPT_DIR), exist_ok=True)
+    print(f"[import] 체크포인트 복원 중: {zip_in} → {CKPT_DIR}")
+    with zipfile.ZipFile(zip_in, "r") as zf:
+        zf.extractall(os.path.dirname(CKPT_DIR))
+
+    ckpt = find_latest_checkpoint(CKPT_DIR)
+    if ckpt:
+        print(f"[import] 완료 — 이어받을 체크포인트: {ckpt}")
+        return True
+    else:
+        print("[import] 오류: 복원 후 체크포인트를 찾을 수 없습니다.")
+        return False
 
 
 # ══════════════════════════════════════════════════════════
@@ -344,7 +396,9 @@ def session_1():
     finetune(model, tokenizer, train_data, num_epochs=1, resume=False)
 
     print("\nSession 1 완료. 체크포인트 저장됨.")
+    export_checkpoint()
     print(f"다음 세션: SESSION = 2 로 변경 후 실행")
+    print(f"다른 사람이 이어받을 경우: checkpoint_transfer.zip 다운로드 후 Kaggle Dataset 업로드")
 
 
 def session_2():
@@ -353,10 +407,14 @@ def session_2():
     print("SESSION 2: epoch 2~3 이어받기 학습")
     print("=" * 60)
 
+    # 로컬 체크포인트 없으면 zip에서 복원 시도
     ckpt = find_latest_checkpoint(CKPT_DIR)
     if not ckpt:
-        print("오류: 체크포인트 없음. Session 1을 먼저 실행하세요.")
-        return
+        print("로컬 체크포인트 없음 — zip에서 복원 시도...")
+        if not import_checkpoint():
+            print("오류: 체크포인트 없음. Session 1을 먼저 실행하거나 zip을 업로드하세요.")
+            return
+        ckpt = find_latest_checkpoint(CKPT_DIR)
 
     print(f"이어받을 체크포인트: {ckpt}")
     all_data   = load_jsonl(TRAIN_JSONL)
