@@ -143,12 +143,12 @@ MEDIA_FEEDS = [
         "ai_only": True,
         "source_type": "media",
     },
-    {
-        "source": "BBC Technology",
-        "url": "https://feeds.bbci.co.uk/news/technology/rss.xml",
-        "country": "영국",
-        "category": "AI 일반",
-        "ai_only": False,
+       {
+        "source": "The Decoder",
+        "url": "https://the-decoder.com/feed/",
+        "country": "독일/글로벌",
+        "category": "AI 심층/기술",
+        "ai_only": True,
         "source_type": "media",
     },
 ]
