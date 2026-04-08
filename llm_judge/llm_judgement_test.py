@@ -21,6 +21,7 @@ else:
     client = openai.OpenAI(api_key=api_key)
 
 INPUT_FILE = "translated_result.xlsx"
+OUTPUT_FILE = "judgement_result.xlsx"
 
 JUDGE_PROMPT = """
 당신은 AI 뉴스 번역 및 요약 품질을 평가하는 전문가입니다.
@@ -95,30 +96,40 @@ def main():
     print(f"파일을 읽는 중: {INPUT_FILE}")
     df = pd.read_excel(INPUT_FILE, header=None)
 
-    # 첫 번째 데이터 행 (4행, 인덱스 4)
-    row = df.iloc[4]
-    original   = str(row[5])  # 원문 본문
-    translation = str(row[6]) # 번역 본문
-    summary    = str(row[7])  # 요약
+    results = []
 
-    print("\n=== 평가 대상 ===")
-    print(f"원문: {original[:100]}...")
-    print(f"번역: {translation[:100]}...")
-    print(f"요약: {summary[:100]}...")
+    for i in range(4, min(4 + 1000, len(df))):  # 4행부터 1000건
+        row = df.iloc[i]
+        original    = str(row[5])
+        translation = str(row[6])
+        summary     = str(row[7])
 
-    print("\ngpt-4o로 평가 중...")
-    result = evaluate(original, translation, summary)
+        # 빈 행 스킵
+        if not original or original == "nan":
+            continue
 
-    if result:
-        print("\n=== 평가 결과 ===")
-        print(f"정확성:     {result.get('accuracy')}/5")
-        print(f"자연스러움: {result.get('naturalness')}/5")
-        print(f"규칙 준수:  {result.get('rule_compliance')}/5")
-        print(f"요약 품질:  {result.get('summary_quality')}/5")
-        print(f"총점:       {result.get('total')}/20")
-        print(f"피드백:     {result.get('feedback')}")
-    else:
-        print("평가 실패")
+        print(f"[{i-3}/1000] 평가 중...")
+        result = evaluate(original, translation, summary)
+
+        if result:
+            results.append({
+                "no":             i - 3,
+                "accuracy":       result.get("accuracy"),
+                "naturalness":    result.get("naturalness"),
+                "rule_compliance": result.get("rule_compliance"),
+                "summary_quality": result.get("summary_quality"),
+                "total":          result.get("total"),
+                "feedback":       result.get("feedback"),
+                "original":       original[:200],
+                "translation":    translation[:200],
+                "summary":        summary[:200],
+            })
+
+    # 결과 저장
+    result_df = pd.DataFrame(results)
+    result_df.to_excel("judgement_result.xlsx", index=False)
+    print(f"\n완료! judgement_result.xlsx 저장됨")
+    print(f"평균 총점: {result_df['total'].mean():.2f}/20")
 
 
 if __name__ == "__main__":
