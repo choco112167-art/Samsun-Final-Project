@@ -7,10 +7,11 @@ import type { BookmarkHook } from '../hooks/useBookmarks';
 import type { Interest } from './OnboardingPage';
 
 const ALL_INTERESTS: { id: Interest; emoji: string; desc: string }[] = [
-  { id: '신규 출시/제품', emoji: '🚀', desc: '스냅드래곤, 엑시노스 등 신제품 출시 소식' },
-  { id: '기술 이슈',     emoji: '⚡', desc: 'AI·반도체·소프트웨어 핵심 기술 동향' },
-  { id: '블록체인/양자', emoji: '🔬', desc: '블록체인, 양자컴퓨팅 관련 뉴스' },
-  { id: '대기업',        emoji: '🏢', desc: '구글·MS·애플·Meta·삼성 등 빅테크 동향' },
+  { id: 'AI 연구·심층', emoji: '🔬', desc: 'MIT TR · The Decoder — AI 최신 연구 및 심층 분석' },
+  { id: 'AI 스타트업',  emoji: '🚀', desc: 'TechCrunch · VentureBeat — AI 스타트업·투자 동향' },
+  { id: '테크 전반',    emoji: '💻', desc: 'The Verge — AI를 포함한 테크 업계 전반 소식' },
+  { id: 'AI 윤리·정책', emoji: '⚖️', desc: 'The Guardian — AI 윤리·규제·사회적 영향' },
+  { id: 'AI·반도체',   emoji: '🔧', desc: 'IEEE Spectrum — AI 칩·반도체 기술 동향' },
 ];
 
 type MyTab = 'feed' | 'bookmarks' | 'interests';
@@ -63,44 +64,45 @@ export default function MyFeedPage({ bm, interests, onInterestsChange, userId }:
   );
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden' }}>
+    <div style={{ display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden', background: 'var(--color-header-bg)' }}>
       <style>{`
         @keyframes fadeSlide { from{opacity:0;transform:translateY(6px)} to{opacity:1;transform:translateY(0)} }
         @keyframes spin { to{transform:rotate(360deg)} }
       `}</style>
 
-      {/* 헤더 */}
-      <header style={{ background: 'var(--color-surface)', borderBottom: '0.5px solid var(--color-border)', flexShrink: 0 }}>
-        <div style={{ padding: '18px 20px 0', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+      {/* 다크 헤더 */}
+      <header style={{ flexShrink: 0, padding: '22px 20px 0' }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 3 }}>
           <div>
-            <h1 style={{ fontSize: 20, fontWeight: 700, letterSpacing: '-0.03em', marginBottom: 2 }}>내 피드</h1>
-            <p style={{ fontSize: 12, color: 'var(--color-text-tertiary)' }}>
+            <h1 style={{ fontSize: 26, fontWeight: 800, letterSpacing: '-0.04em', color: 'var(--color-header-text)', marginBottom: 3 }}>내 피드</h1>
+            <p style={{ fontSize: 12, color: 'var(--color-header-text-secondary)' }}>
               관심 주제 {interests.length}개 · 북마크 {bookmarkCount}개
             </p>
           </div>
           <div style={{
             width: 40, height: 40, borderRadius: '50%',
-            background: 'linear-gradient(135deg,#4F46E5 0%,#7C3AED 100%)',
+            background: 'linear-gradient(135deg,#3081fb 0%,#1960ca 100%)',
             display: 'flex', alignItems: 'center', justifyContent: 'center',
             fontSize: 14, fontWeight: 700, color: '#fff',
           }}>AI</div>
         </div>
 
-        {/* 탭 */}
-        <div style={{ display: 'flex', marginTop: 12 }}>
+        {/* 탭 (라이트 배경 위 pill 스타일) */}
+        <div style={{ display: 'flex', gap: 7, marginTop: 14, paddingBottom: 16, overflowX: 'auto', scrollbarWidth: 'none' }}>
           {([['feed','추천 피드'], ['bookmarks','북마크'], ['interests','관심 주제']] as [MyTab, string][]).map(([id, label]) => (
             <button key={id} onClick={() => setTab(id)} style={{
-              flex: 1, padding: '10px 0', fontSize: 13,
-              fontWeight: tab === id ? 600 : 400,
-              color: tab === id ? 'var(--color-primary)' : 'var(--color-text-tertiary)',
-              borderBottom: `2px solid ${tab === id ? 'var(--color-primary)' : 'transparent'}`,
-              transition: 'all 0.15s',
+              flexShrink: 0, fontSize: 12,
+              fontWeight: tab === id ? 700 : 400,
+              color: tab === id ? '#FFFFFF' : '#6B7684',
+              background: tab === id ? '#111111' : '#F2F4F6',
+              border: 'none',
+              padding: '6px 16px', borderRadius: 20, transition: 'all 0.15s', whiteSpace: 'nowrap',
             }}>{label}</button>
           ))}
         </div>
       </header>
 
-      <main style={{ flex: 1, overflowY: 'auto', WebkitOverflowScrolling: 'touch' }}>
+      <main style={{ flex: 1, overflowY: 'auto', WebkitOverflowScrolling: 'touch', background: 'var(--color-bg)', borderRadius: '32px 32px 0 0' }}>
 
         {/* ── 추천 피드 탭 */}
         {tab === 'feed' && (

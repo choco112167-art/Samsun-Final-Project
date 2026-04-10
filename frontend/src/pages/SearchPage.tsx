@@ -36,19 +36,19 @@ export default function SearchPage({ bm }: Props) {
   );
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden' }}>
+    <div style={{ display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden', background: 'var(--color-header-bg)' }}>
       <style>{`
         @keyframes resultIn { from{opacity:0;transform:translateY(10px)} to{opacity:1;transform:translateY(0)} }
         @keyframes spin { to{transform:rotate(360deg)} }
       `}</style>
 
-      <header style={{ background: 'var(--color-surface)', borderBottom: '0.5px solid var(--color-border)', padding: '18px 16px 14px', flexShrink: 0 }}>
-        <h1 style={{ fontSize: 20, fontWeight: 700, letterSpacing: '-0.03em', marginBottom: 12 }}>검색</h1>
+      <header style={{ flexShrink: 0, padding: '22px 16px 16px' }}>
+        <h1 style={{ fontSize: 26, fontWeight: 800, letterSpacing: '-0.04em', color: 'var(--color-header-text)', marginBottom: 14 }}>검색</h1>
         <form onSubmit={e => { e.preventDefault(); doSearch(query); inputRef.current?.blur(); }}>
           <div style={{
             display: 'flex', alignItems: 'center', gap: 10,
-            background: 'var(--color-surface-secondary)',
-            border: '1px solid var(--color-border-medium)',
+            background: 'rgba(0,0,0,0.05)',
+            border: '1px solid var(--color-border)',
             borderRadius: 'var(--radius-md)', padding: '10px 14px',
           }}>
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" style={{ flexShrink: 0 }}>
@@ -63,12 +63,12 @@ export default function SearchPage({ bm }: Props) {
           </div>
         </form>
         <div style={{ display: 'flex', alignItems: 'center', gap: 5, marginTop: 10 }}>
-          <div style={{ width: 6, height: 6, borderRadius: '50%', background: 'var(--color-primary)' }} />
-          <span style={{ fontSize: 11, color: 'var(--color-text-tertiary)' }}>pgvector 유사도 검색 · mxbai-embed-large</span>
+          <div style={{ width: 6, height: 6, borderRadius: '50%', background: '#60a5fa' }} />
+          <span style={{ fontSize: 11, color: 'var(--color-header-text-secondary)' }}>pgvector 유사도 검색 · mxbai-embed-large</span>
         </div>
       </header>
 
-      <main style={{ flex: 1, overflowY: 'auto', WebkitOverflowScrolling: 'touch' }}>
+      <main style={{ flex: 1, overflowY: 'auto', WebkitOverflowScrolling: 'touch', background: 'var(--color-bg)', borderRadius: '32px 32px 0 0' }}>
 
         {/* 로딩 */}
         {loading && (

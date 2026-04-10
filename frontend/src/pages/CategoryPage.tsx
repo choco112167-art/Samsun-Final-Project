@@ -4,21 +4,21 @@ import type { ApiArticle } from '../data/api';
 import DetailPage from './DetailPage';
 import type { BookmarkHook } from '../hooks/useBookmarks';
 
-type SubTab = '전체' | 'AI 모델' | '스타트업' | '빅테크' | '윤리/정책' | '반도체';
-const SUBTABS: SubTab[] = ['전체', 'AI 모델', '스타트업', '빅테크', '윤리/정책', '반도체'];
+type SubTab = '전체' | 'AI 연구' | 'AI 스타트업' | '테크 전반' | '윤리·정책' | '반도체';
+const SUBTABS: SubTab[] = ['전체', 'AI 연구', 'AI 스타트업', '테크 전반', '윤리·정책', '반도체'];
 
 const CATEGORY_MAP: Record<string, SubTab> = {
-  'AI/스타트업':  'AI 모델',
-  'AI 심층':     'AI 모델',
-  'AI 비즈니스': '빅테크',
-  '테크 전반':   '빅테크',
-  'AI 윤리':     '윤리/정책',
-  'AI 일반':     'AI 모델',
+  'AI/스타트업':  'AI 스타트업',
+  'AI 심층':     'AI 연구',
+  'AI 비즈니스': 'AI 스타트업',
+  '테크 전반':   '테크 전반',
+  'AI 윤리':     '윤리·정책',
+  'AI 일반':     'AI 연구',
   'AI/반도체':   '반도체',
-  'AI 커뮤니티': 'AI 모델',
-  'AI 연구':     'AI 모델',
-  'LLM 커뮤니티':'AI 모델',
-  'AI 제품':     '스타트업',
+  'AI 커뮤니티': 'AI 연구',
+  'AI 연구':     'AI 연구',
+  'LLM 커뮤니티':'AI 연구',
+  'AI 제품':     'AI 스타트업',
 };
 
 interface Props { bm: BookmarkHook; }
@@ -45,28 +45,27 @@ export default function CategoryPage({ bm }: Props) {
   );
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden' }}>
+    <div style={{ display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden', background: 'var(--color-header-bg)' }}>
       <style>{`@keyframes rankIn { from{opacity:0;transform:translateX(-8px)} to{opacity:1;transform:translateX(0)} }`}</style>
 
-      <header style={{ background: 'var(--color-surface)', borderBottom: '0.5px solid var(--color-border)', flexShrink: 0 }}>
-        <div style={{ padding: '18px 20px 0' }}>
-          <h1 style={{ fontSize: 20, fontWeight: 700, letterSpacing: '-0.03em', marginBottom: 2 }}>카테고리</h1>
-          <p style={{ fontSize: 12, color: 'var(--color-text-tertiary)', paddingBottom: 10 }}>분야별 기사 모아보기</p>
-        </div>
-        <div style={{ display: 'flex', overflowX: 'auto', scrollbarWidth: 'none', paddingLeft: 16 }}>
+      <header style={{ background: 'var(--color-header-bg)', flexShrink: 0, padding: '22px 20px 0' }}>
+        <h1 style={{ fontSize: 26, fontWeight: 800, letterSpacing: '-0.04em', color: 'var(--color-header-text)', marginBottom: 3 }}>카테고리</h1>
+        <p style={{ fontSize: 12, color: 'var(--color-header-text-secondary)', marginBottom: 14 }}>분야별 기사 모아보기</p>
+        <div style={{ display: 'flex', overflowX: 'auto', scrollbarWidth: 'none', gap: 7, paddingBottom: 16 }}>
           {SUBTABS.map(t => (
             <button key={t} onClick={() => setTab(t)} style={{
-              flexShrink: 0, padding: '10px 14px', fontSize: 13,
-              fontWeight: tab === t ? 600 : 400,
-              color: tab === t ? 'var(--color-primary)' : 'var(--color-text-tertiary)',
-              borderBottom: `2px solid ${tab === t ? 'var(--color-primary)' : 'transparent'}`,
-              whiteSpace: 'nowrap', transition: 'all 0.15s',
+              flexShrink: 0, fontSize: 12,
+              fontWeight: tab === t ? 700 : 400,
+              color: tab === t ? '#FFFFFF' : '#6B7684',
+              background: tab === t ? '#111111' : '#F2F4F6',
+              border: 'none',
+              padding: '6px 14px', borderRadius: 20, transition: 'all 0.15s', whiteSpace: 'nowrap',
             }}>{t}</button>
           ))}
         </div>
       </header>
 
-      <main style={{ flex: 1, overflowY: 'auto', WebkitOverflowScrolling: 'touch', padding: '12px 16px 24px', display: 'flex', flexDirection: 'column', gap: 8 }}>
+      <main style={{ flex: 1, overflowY: 'auto', WebkitOverflowScrolling: 'touch', background: 'var(--color-bg)', borderRadius: '32px 32px 0 0', padding: '16px 16px 24px', display: 'flex', flexDirection: 'column', gap: 8 }}>
         {sorted.map((article, i) => {
           const rankColor = i === 0 ? '#B45309' : i === 1 ? '#6B7280' : i === 2 ? '#92400E' : 'var(--color-text-tertiary)';
           const maxScore  = sorted[0]?.credibility_score ?? 1;
