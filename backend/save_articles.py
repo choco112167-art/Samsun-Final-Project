@@ -18,8 +18,8 @@ load_dotenv()
 
 # ── Supabase 클라이언트 ──────────────────────────────────────
 sb = create_client(
-    os.getenv("SUPABASE_URL"),
-    os.getenv("SUPABASE_KEY"),
+    os.getenv("SUPABASE_URL", ""),
+    os.getenv("SUPABASE_KEY", ""),
 )
 
 # ── Ollama 임베딩 설정 ───────────────────────────────────────
@@ -36,12 +36,14 @@ def make_url_hash(url: str) -> str:
 
 def make_embedding(text: str) -> list[float]:
     """텍스트 → 1024차원 벡터 (mxbai-embed-large via Ollama)"""
+    if not text or not text.strip():
+        return [0.0] * 1024  # 빈 텍스트 방어
     resp = requests.post(
-        f"{OLLAMA_URL}/api/embeddings",
-        json={"model": EMBED_MODEL, "prompt": text},
+        f"{OLLAMA_URL}/api/embed",
+        json={"model": EMBED_MODEL, "input": text},
     )
     resp.raise_for_status()
-    return resp.json()["embedding"]
+    return resp.json()["embeddings"][0]
 
 
 def infer_fact_label(credibility_score: float) -> str:
@@ -72,10 +74,18 @@ def save_articles(articles: list[dict]) -> int:
     """
     batch = []
     for a in articles:
-        url       = a.get("url", "")
-        url_hash  = make_url_hash(url)
-        score     = a.get("credibility_score") or 0.5
-        embedding = make_embedding(a.get("translation", ""))
+        url      = a.get("url", "")
+        url_hash = make_url_hash(url)
+        score    = a.get("credibility_score") or 0.5
+
+        # 번역 빈 경우 제목으로 대체
+        translation_text = a.get("translation", "").strip() or a.get("title", "no content")
+
+        try:
+            embedding = make_embedding(translation_text)
+        except Exception as e:
+            print(f"[임베딩 실패] {e} — 제로벡터로 대체")
+            embedding = [0.0] * 1024
 
         batch.append({
             "url_hash":          url_hash,
