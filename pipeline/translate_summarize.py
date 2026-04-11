@@ -45,6 +45,7 @@ All three fields are REQUIRED. Never leave any field empty.
 
 ━━━ TRANSLATION RULES ━━━
 1. Translate the ENTIRE article into Korean.
+   Use journalistic body style (~했다 / ~밝혔다 / ~에 따르면). Prefer active voice: '발표했다' over '발표됐다'.
 2. Keep these abbreviations in English exactly as-is: RAG, LLM, GPU, NPU, API, RLHF, SFT, LoRA, QLoRA, P2P, B2B, SNS.
 3. Standard tech transliterations (use exactly these):
    Fine-tuning→파인튜닝 / Embedding→임베딩 / Prompt→프롬프트 / Transformer→트랜스포머
@@ -53,26 +54,53 @@ All three fields are REQUIRED. Never leave any field empty.
 4. PROPER NOUN FORMAT — applies ONLY to English/Western company names, product names, and brand names.
    • Rule: EnglishName(한국어 음차) on FIRST mention only. EnglishName alone after that.
    • Standard glossary (use exactly these Korean forms):
-     Anthropic(앤트로픽) / OpenAI(오픈에이아이) / Google(구글) / Meta(메타) / Microsoft(마이크로소프트)
-     Nvidia(엔비디아) / Apple(애플) / Amazon(아마존) / Samsung(삼성) / Intel(인텔)
-     ChatGPT(챗GPT) / Gemini(제미나이) / Llama(라마) / Grok(그록) / Copilot(코파일럿)
-     Huawei(화웨이) / Xiaomi(샤오미) / Tencent(텐센트) / Alibaba(알리바바) / ByteDance(바이트댄스)
-     Tesla(테슬라) / SpaceX(스페이스X) / DeepMind(딥마인드) / xAI(xAI)
+     ▸ IT 기업: Anthropic(앤트로픽) / OpenAI(오픈에이아이) / Google(구글) / Meta(메타) / Microsoft(마이크로소프트)
+       Nvidia(엔비디아) / Apple(애플) / Amazon(아마존) / Intel(인텔) / Tesla(테슬라)
+       SpaceX(스페이스X) / DeepMind(딥마인드) / xAI(xAI) / Huawei(화웨이) / Xiaomi(샤오미)
+       Tencent(텐센트) / Alibaba(알리바바) / ByteDance(바이트댄스)
+     ▸ AI 스타트업·연구소: Cohere(코히어) / Perplexity AI(퍼플렉시티 AI) / Runway(런웨이)
+       Stability AI(스태빌리티 AI) / Midjourney(미드저니) / Mistral AI(미스트랄 AI)
+       Scale AI(스케일 AI) / Hugging Face(허깅 페이스) / Inflection AI(인플렉션 AI) / Together AI(투게더 AI)
+     ▸ AI 모델·제품: ChatGPT(챗GPT) / Gemini(제미나이) / Llama(라마) / Grok(그록)
+       Copilot(코파일럿) / Claude(클로드) / Sora(소라) / DALL-E(달리) / Gemma(젬마) / Phi(파이)
+   • Model version numbers always stay in English: e.g., GPT-4o, Claude 3.5 Sonnet, Llama 3.1 70B
    • For names NOT in the glossary: use the most widely recognized Korean transliteration.
 
-5. DO NOT apply the English(한국어) format to:
-   • Korean person names (홍길동, 이재용 etc.) — write in Korean only, no parentheses
-   • Korean company/institution names (삼성전자, 국가정보원, 한국철도공사 etc.) — Korean only
-   • Already-Korean loanwords (디즈니, 마그네틱, 인터넷 etc.) — no duplication
+5. PERSON NAMES (Western only)
+   • First mention: FullName(한국어 음차) — e.g., Sam Altman(샘 올트먼)
+   • After that: last name only or full English name — e.g., 올트먼 or Sam Altman
+   • Standard names: Sam Altman(샘 올트먼) / Elon Musk(일론 머스크) / Jensen Huang(젠슨 황)
+     Sundar Pichai(순다르 피차이) / Mark Zuckerberg(마크 저커버그) / Satya Nadella(사티아 나델라)
+     Dario Amodei(다리오 아모데이) / Demis Hassabis(데미스 하사비스) / Yann LeCun(얀 르쿤)
+     Geoffrey Hinton(제프리 힌튼) / Greg Brockman(그렉 브록만) / Ilya Sutskever(일리야 수츠케버)
+   • Job titles are translated into Korean: professor→교수, researcher→연구원, founder→창업자
 
-6. New English coinages not in the glossary: EnglishTerm(한국어 음차, 한 줄 설명) on first mention.
+6. NUMBERS AND UNITS
+   • Currency symbols: $ → 달러 / € → 유로 / £ → 파운드 / ¥ → 엔 (중국 화폐는 위안)
+     Exact figures may include original: 25억 달러($2.5B)
+   • T / trillion → 조: $1T → 1조 달러
+   • B / billion  → 억: $2.5B → 25억 달러
+   • M / million  → 만: $500M → 5억 달러
+   • K / thousand → 천: 5K → 5천 (context permitting)
+   • Unit context — always specify the unit: parameters→개, people→명, tokens→개
+     e.g., 70B parameters → 700억 개 파라미터
+   • Multipliers: 2x → 2배 / 3x → 3배
+   • Technical units (GB, TB, ms, TFLOPS, %) — keep as-is
+
+7. DO NOT apply the English(한국어) format to:
+   • Korean person names (홍길동, 이재용 etc.) — write in Korean only, no parentheses
+   • Korean company/institution names (삼성전자, 국가정보원 etc.) — Korean only
+   • Already-Korean loanwords (디즈니, 인터넷 etc.) — no duplication
+
+8. New English coinages not in the glossary: EnglishTerm(한국어 음차, 한 줄 설명) on first mention.
    Example: Blackwell Ultra(블랙웰 울트라, Nvidia 차세대 GPU 아키텍처)
 
 ━━━ SUMMARY RULES ━━━
 - summary_formal: exactly {n} Korean sentence(s), 격식체 (~습니다/~됩니다). Must be complete.
 - summary_casual: exactly {n} Korean sentence(s), 일상체 (~해요/~예요/~거예요). Must be complete.
-- Summaries must NOT copy translation sentences verbatim — paraphrase.
-- Apply all language and proper noun rules above."""
+- Summaries must NOT copy translation sentences verbatim — paraphrase with different expressions.
+- Use journalistic style (~했다/~밝혔다). Prefer active voice: '발표했다' over '발표됐다'.
+- Apply all language, proper noun, and number rules above."""
 
 
 # ────────────────────────────────────────────────

@@ -39,7 +39,7 @@ RESULT_HEADERS = [
     "en_text", "ko_gt",
     "translation", "summary_formal",
     "bleu", "comet", "tpr", "tpr_missing",
-    "geval_faithfulness", "geval_fluency", "geval_conciseness", "geval_relevance", "geval_avg", "geval_weighted",
+    "geval_consistency", "geval_fluency", "geval_coherence", "geval_relevance", "geval_avg", "geval_weighted",
     "n_sentences",
 ]
 
@@ -155,12 +155,12 @@ def run_eval(limit: int = None, skip_geval: bool = False, skip_comet: bool = Fal
             tpr_missing = "|".join(tpr_result["missing"])
 
             # ── 5. G-Eval (옵션) ──
-            geval_f = geval_fl = geval_c = geval_r = geval_avg = geval_weighted = 0.0
+            geval_con = geval_fl = geval_coh = geval_r = geval_avg = geval_weighted = 0.0
             if not skip_geval and summary_formal:
                 g = geval_single(en_text, summary_formal, gt_summary=row.get("pseudo_gt", ""))
-                geval_f        = g["faithfulness"]
+                geval_con      = g["consistency"]
                 geval_fl       = g["fluency"]
-                geval_c        = g["conciseness"]
+                geval_coh      = g["coherence"]
                 geval_r        = g["relevance"]
                 geval_avg      = g["g_eval_score"]
                 geval_weighted = g["g_eval_weighted"]
@@ -178,9 +178,9 @@ def run_eval(limit: int = None, skip_geval: bool = False, skip_comet: bool = Fal
                 "comet":                comet_score,
                 "tpr":                  tpr,
                 "tpr_missing":          tpr_missing,
-                "geval_faithfulness":   geval_f,
+                "geval_consistency":    geval_con,
                 "geval_fluency":        geval_fl,
-                "geval_conciseness":    geval_c,
+                "geval_coherence":      geval_coh,
                 "geval_relevance":      geval_r,
                 "geval_avg":            geval_avg,
                 "geval_weighted":       geval_weighted,

@@ -85,9 +85,9 @@ def generate_report(
         ws2.cell(ri, 2, row["category"]).font = D_FONT
         ws2.cell(ri, 3, row["en_text"]).alignment = WRAP
         ws2.cell(ri, 4, row["summary_formal"]).alignment = WRAP
-        ws2.cell(ri, 5, int(float(row.get("geval_faithfulness") or 0))).font = D_FONT
+        ws2.cell(ri, 5, int(float(row.get("geval_consistency") or 0))).font = D_FONT
         ws2.cell(ri, 6, int(float(row.get("geval_fluency") or 0))).font = D_FONT
-        ws2.cell(ri, 7, int(float(row.get("geval_conciseness") or 0))).font = D_FONT
+        ws2.cell(ri, 7, int(float(row.get("geval_coherence") or 0))).font = D_FONT
         ws2.cell(ri, 8, int(float(row.get("geval_relevance") or 0))).font = D_FONT
         ws2.cell(ri, 9,  float(row.get("g_eval_score") or 0)).font = D_FONT
         ws2.cell(ri, 10, float(row.get("g_eval_weighted") or 0)).font = D_FONT
@@ -107,9 +107,9 @@ def generate_report(
         ("BLEU",              "bleu",                "≥ 17.0"),
         ("COMET",             "comet",               "기준값 측정 후"),
         ("TPR",               "tpr",                 "≥ 0.95"),
-        ("G-Eval 충실성",      "geval_faithfulness",  "≥ 4.0"),
+        ("G-Eval 일치성",      "geval_consistency",   "≥ 4.0"),
         ("G-Eval 유창성",      "geval_fluency",       "≥ 4.0"),
-        ("G-Eval 간결성",      "geval_conciseness",   "≥ 4.0"),
+        ("G-Eval 일관성",      "geval_coherence",     "≥ 4.0"),
         ("G-Eval 관련성",      "geval_relevance",     "≥ 4.0"),
         ("G-Eval 단순평균",    "g_eval_score",        "≥ 4.0"),
         ("G-Eval 가중평균",    "g_eval_weighted",     "≥ 4.0"),

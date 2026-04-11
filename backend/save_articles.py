@@ -184,8 +184,8 @@ def save_eval_result(
     평가 결과 1건 저장 (파인튜닝 전/후 비교용, MVP 이후).
 
     eval_type = 'translation'    → metrics: bleu, comet, tpr
-    eval_type = 'summary_formal' → metrics: geval_faithfulness, geval_fluency,
-                                             geval_conciseness, geval_relevance
+    eval_type = 'summary_formal' → metrics: geval_consistency, geval_fluency,
+                                             geval_coherence, geval_relevance
     예시:
         save_eval_result(hash, 'qwen3-4b-base', 'translation', bleu=12.3, comet=0.71, tpr=0.88)
     """

@@ -1,11 +1,13 @@
 """
 G-Eval — 요약 품질 자동 평가 (Claude Haiku via Anthropic API)
-평가 4축: 충실성 / 유창성 / 간결성 / 관련성 (각 5점 척도)
+평가 4축: 일치성(Consistency) / 유창성(Fluency) / 일관성(Coherence) / 관련성(Relevance) (각 5점 척도)
 대상: summary_formal (격식체)
+논문 근거: Liu et al. (2023) "G-Eval: NLG Evaluation using GPT-4 with Better Human Alignment"
+          Fabbri et al. (2021) "SummEval: Re-evaluating Summarization Evaluation"
 
 점수 산출:
-    g_eval_score    = (faithfulness + fluency + conciseness + relevance) / 4
-    g_eval_weighted = faithfulness*0.4 + relevance*0.3 + fluency*0.2 + conciseness*0.1
+    g_eval_score    = (consistency + fluency + coherence + relevance) / 4
+    g_eval_weighted = consistency*0.4 + relevance*0.3 + fluency*0.2 + coherence*0.1
 
 설치:
     pip install anthropic
@@ -55,12 +57,12 @@ For each criterion below:
 
 ---
 
-CRITERION 1 — Faithfulness (충실성)
+CRITERION 1 — Consistency (일치성)
 Compare: [C] vs [A] ONLY. Do NOT use [B].
-Question: Does the generated summary accurately reflect the facts in the source article?
+Question: Are all facts in the generated summary consistent with the source article?
 
 Scoring rubric:
-5 — All facts correct; nothing hallucinated, added, or distorted
+5 — All facts consistent; nothing hallucinated, added, or distorted
 4 — No factual errors; at most one minor fact omitted
 3 — One fact slightly distorted OR one important fact missing
 2 — Two or more factual errors OR significant distortion of the main claim
@@ -75,11 +77,21 @@ CRITERION 2 — Fluency (유창성)
 Compare: [C] ONLY. Do NOT use [A] or [B].
 Question: Is the Korean natural and easy to read for a Korean tech news audience?
 
-Terminology rule — ALL AI/tech proper nouns and neologisms MUST follow this format:
-  영어 원어 (한국어 음차)  e.g., "RAG (래그)", "fine-tuning (파인튜닝)", "LLM (엘엘엠)"
+Terminology rule — the summary must follow Korean tech journalism conventions:
+  ① Abbreviations (RAG, LLM, GPU, NPU, API, etc.) → keep in English as-is; do NOT transliterate
+  ② Standard transliterations: fine-tuning→파인튜닝, embedding→임베딩, prompt→프롬프트
+  ③ Proper nouns on FIRST mention: EnglishName(한국어 음차), e.g., OpenAI(오픈에이아이)
+     Key approved forms: ChatGPT(챗GPT) / Gemini(제미나이) / Llama(라마) / Claude(클로드) /
+     Anthropic(앤트로픽) / Google(구글) / Meta(메타) / Microsoft(마이크로소프트) / Nvidia(엔비디아) /
+     Mistral AI(미스트랄 AI) / Hugging Face(허깅 페이스) / Perplexity AI(퍼플렉시티 AI)
+  ④ Currency: $ → 달러, € → 유로, £ → 파운드, ¥ → 엔/위안
+  ⑤ Numbers: T/trillion→조, B/billion→억, M/million→만, K/thousand→천 (e.g., $2.5B→25억 달러)
+  ⑥ Model version numbers stay in English: e.g., GPT-4o, Claude 3.5 Sonnet
   Violation types:
-  - Missing English term (e.g., "래그" only) → -1 point per occurrence
-  - Semantic translation used instead of transliteration (e.g., "검색 증강 생성") → -1 point per occurrence
+  - Transliterating abbreviations (e.g., "엘엘엠" for LLM) → -1 point
+  - Missing English term on first proper noun mention → -1 point per occurrence
+  - Wrong transliteration form (not matching approved list) → -1 point per occurrence
+  - Wrong currency/number conversion (e.g., $2.5B → "2.5빌리언") → -1 point
 
 Scoring rubric:
 5 — Reads like native Korean tech journalism; all terminology correctly formatted
@@ -93,18 +105,18 @@ Score:
 
 ---
 
-CRITERION 3 — Conciseness (간결성)
-Compare: [C] vs [B] for length and information density ONLY.
-Question: Is the generated summary appropriately concise, relative to the GT benchmark?
+CRITERION 3 — Coherence (일관성)
+Compare: [C] ONLY.
+Question: Is the generated summary logically structured and coherent?
 
 Scoring rubric:
-5 — Similar sentence count and information density to GT; every sentence adds value
-4 — Slightly more verbose or slightly sparser than GT; acceptable range
-3 — Noticeably longer (padding present) OR noticeably shorter (too sparse) than GT
-2 — Significantly over-compressed OR bloated with filler compared to GT
-1 — Extreme mismatch: either one-liner that loses all detail OR paragraph-length rambling
+5 — Well-structured; sentences flow naturally and connect logically; clear progression of ideas
+4 — Mostly coherent; at most one slightly awkward transition between sentences
+3 — Generally readable but with noticeable disorganization or abrupt transitions
+2 — Hard to follow; sentences seem disconnected or appear in illogical order
+1 — No discernible structure; reads like random unconnected sentences
 
-Step-by-step reasoning (compare sentence count and density to GT):
+Step-by-step reasoning (note any structural or transitional issues):
 Score:
 
 ---
@@ -128,9 +140,9 @@ Score:
 OUTPUT FORMAT:
 Respond with valid JSON only. No preamble, no explanation outside the JSON block.
 Compute g_eval_score as the arithmetic mean of the four scores.
-Compute g_eval_weighted = faithfulness*0.4 + relevance*0.3 + fluency*0.2 + conciseness*0.1
+Compute g_eval_weighted = consistency*0.4 + relevance*0.3 + fluency*0.2 + coherence*0.1
 
-{{"faithfulness": {{"reasoning": "...", "score": X}}, "fluency": {{"reasoning": "...", "score": X}}, "conciseness": {{"reasoning": "...", "score": X}}, "relevance": {{"reasoning": "...", "score": X}}, "g_eval_score": X.X, "g_eval_weighted": X.X}}"""
+{{"consistency": {{"reasoning": "...", "score": X}}, "fluency": {{"reasoning": "...", "score": X}}, "coherence": {{"reasoning": "...", "score": X}}, "relevance": {{"reasoning": "...", "score": X}}, "g_eval_score": X.X, "g_eval_weighted": X.X}}"""
 
 
 def geval_single(
@@ -144,10 +156,10 @@ def geval_single(
 
     Returns:
         {
-            "faithfulness": int,
-            "fluency":      int,
-            "conciseness":  int,
-            "relevance":    int,
+            "consistency": int,
+            "fluency":     int,
+            "coherence":   int,
+            "relevance":   int,
             "g_eval_score":    float,  # 단순평균
             "g_eval_weighted": float,  # 가중평균
             "raw": str,
@@ -181,18 +193,18 @@ def geval_single(
             clean = raw.removeprefix("```json").removeprefix("```").removesuffix("```").strip()
             scores = json.loads(clean)
 
-            f  = int(scores["faithfulness"]["score"])
-            fl = int(scores["fluency"]["score"])
-            c  = int(scores["conciseness"]["score"])
-            r  = int(scores["relevance"]["score"])
+            con = int(scores["consistency"]["score"])
+            fl  = int(scores["fluency"]["score"])
+            coh = int(scores["coherence"]["score"])
+            r   = int(scores["relevance"]["score"])
 
-            simple   = round((f + fl + c + r) / 4, 2)
-            weighted = round(f * 0.4 + r * 0.3 + fl * 0.2 + c * 0.1, 2)
+            simple   = round((con + fl + coh + r) / 4, 2)
+            weighted = round(con * 0.4 + r * 0.3 + fl * 0.2 + coh * 0.1, 2)
 
             return {
-                "faithfulness":    f,
+                "consistency":     con,
                 "fluency":         fl,
-                "conciseness":     c,
+                "coherence":       coh,
                 "relevance":       r,
                 "g_eval_score":    simple,
                 "g_eval_weighted": weighted,
@@ -202,8 +214,8 @@ def geval_single(
         except (json.JSONDecodeError, KeyError):
             # 파싱 실패는 재시도해도 동일 결과 — 즉시 반환
             return {
-                "faithfulness": 0, "fluency": 0,
-                "conciseness": 0, "relevance": 0,
+                "consistency": 0, "fluency": 0,
+                "coherence": 0, "relevance": 0,
                 "g_eval_score": 0.0, "g_eval_weighted": 0.0,
                 "raw": raw if "raw" in locals() else "parse error",
             }
@@ -211,8 +223,8 @@ def geval_single(
             # 400/401/402 등 클라이언트 에러는 재시도해도 의미없음 — 즉시 반환
             if hasattr(e, "status_code") and e.status_code < 500:
                 return {
-                    "faithfulness": 0, "fluency": 0,
-                    "conciseness": 0, "relevance": 0,
+                    "consistency": 0, "fluency": 0,
+                    "coherence": 0, "relevance": 0,
                     "g_eval_score": 0.0, "g_eval_weighted": 0.0,
                     "raw": f"error: {e}",
                 }
@@ -220,8 +232,8 @@ def geval_single(
                 time.sleep(3)
             else:
                 return {
-                    "faithfulness": 0, "fluency": 0,
-                    "conciseness": 0, "relevance": 0,
+                    "consistency": 0, "fluency": 0,
+                    "coherence": 0, "relevance": 0,
                     "g_eval_score": 0.0, "g_eval_weighted": 0.0,
                     "raw": f"error: {e}",
                 }
@@ -249,9 +261,9 @@ def batch_geval(
         return round(sum(vals) / len(vals), 2) if vals else 0.0
 
     return {
-        "faithfulness_mean":    mean("faithfulness"),
+        "consistency_mean":     mean("consistency"),
         "fluency_mean":         mean("fluency"),
-        "conciseness_mean":     mean("conciseness"),
+        "coherence_mean":       mean("coherence"),
         "relevance_mean":       mean("relevance"),
         "g_eval_score_mean":    mean("g_eval_score"),
         "g_eval_weighted_mean": mean("g_eval_weighted"),

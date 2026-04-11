@@ -18,15 +18,15 @@ OLLAMA_URL  = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434/v1").replace(
 EMBED_MODEL = "mxbai-embed-large"
 
 SAMPLE_ARTICLE = {
-    "article_id":    str(uuid.uuid4()),
-    "source":        "TechCrunch",
-    "source_type":   "news",
-    "original_url":  "https://techcrunch.com/poc-test-001",
-    "published_at":  "2026-04-03T10:00:00+00:00",
-    "collected_at":  "2026-04-03T10:05:00+00:00",
-    "category":      "AI",
-    "keywords":      ["AI", "LLM", "RAG"],
-    "original_text": (
+    "source":       "TechCrunch",
+    "source_type":  "news",
+    "url":          "https://techcrunch.com/poc-test-001",
+    "title":        "OpenAI Releases GPT-4o with Improved Reasoning",
+    "published_at": "2026-04-03T10:00:00+00:00",
+    "collected_at": "2026-04-03T10:05:00+00:00",
+    "category":     "AI",
+    "keywords":     ["AI", "LLM", "RAG"],
+    "content": (
         "OpenAI has released a new version of GPT-4 that significantly improves "
         "reasoning capabilities. The model, called GPT-4o, is now available through "
         "the OpenAI API and can process text, images, and audio simultaneously. "
@@ -51,15 +51,21 @@ def main():
 
     # Step 1: 번역 + 요약
     print("Step 1: 번역 + 요약 (Qwen3.5-4B via Ollama)...")
-    en_text = SAMPLE_ARTICLE["original_text"]
+    en_text = SAMPLE_ARTICLE["content"]
     n = estimate_sentences(en_text)
     result = translate_and_summarize(en_text, summary_sentences=n)
     translation    = result.get("translation", "")
     summary_formal = result.get("summary_formal", "")
     summary_casual = result.get("summary_casual", "")
-    print(f"  번역: {translation[:80]}...")
-    print(f"  요약(격식체): {summary_formal[:80]}...")
-    print(f"  요약(일상체): {summary_casual[:80]}...\n")
+
+    sep = "-" * 60
+    print(f"\n[원문]\n{en_text}\n")
+    print(sep)
+    print(f"[번역]\n{translation}\n")
+    print(sep)
+    print(f"[요약 — 격식체]\n{summary_formal}\n")
+    print(sep)
+    print(f"[요약 — 일상체]\n{summary_casual}\n")
 
     # Step 2: 임베딩
     print("Step 2: 임베딩 생성 (mxbai-embed-large via Ollama)...")
@@ -68,11 +74,10 @@ def main():
 
     # Step 3: Supabase 저장
     print("Step 3: Supabase articles 테이블에 저장...")
-    url_hash = hashlib.md5(SAMPLE_ARTICLE["original_url"].encode()).hexdigest()
+    url_hash = hashlib.md5(SAMPLE_ARTICLE["url"].encode()).hexdigest()
     record = {
         **SAMPLE_ARTICLE,
         "url_hash":       url_hash,
-        "original_text":  en_text,
         "translation":    translation,
         "summary_formal": summary_formal,
         "summary_casual": summary_casual,
@@ -85,7 +90,11 @@ def main():
     print("Step 4: 저장 확인...")
     r = sb.table("articles").select("url_hash, source, summary_formal").eq("url_hash", url_hash).execute()
     if r.data:
-        print(f"  ✓ 조회 성공: {r.data[0]}\n")
+        row = r.data[0]
+        print(f"  ✓ 조회 성공")
+        print(f"    url_hash     : {row['url_hash']}")
+        print(f"    source       : {row['source']}")
+        print(f"    summary_formal: {row['summary_formal']}\n")
 
     # Step 5: 전체 기사 수
     r2 = sb.table("articles").select("url_hash", count="exact").execute()

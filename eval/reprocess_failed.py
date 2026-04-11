@@ -27,7 +27,7 @@ RESULT_HEADERS = [
     "en_text", "ko_gt",
     "translation", "summary_formal",
     "bleu", "comet", "tpr", "tpr_missing",
-    "geval_faithfulness", "geval_fluency", "geval_conciseness", "geval_relevance",
+    "geval_consistency", "geval_fluency", "geval_coherence", "geval_relevance",
     "g_eval_score", "g_eval_weighted",
     "n_sentences",
 ]
@@ -94,9 +94,9 @@ def main(fill_comet: bool = False, fill_geval: bool = False):
             "comet":                old.get("comet", "0"),
             "tpr":                  tpr_result["tpr"],
             "tpr_missing":          "|".join(tpr_result["missing"]),
-            "geval_faithfulness":   old.get("geval_faithfulness", "0"),
+            "geval_consistency":    old.get("geval_consistency", "0"),
             "geval_fluency":        old.get("geval_fluency", "0"),
-            "geval_conciseness":    old.get("geval_conciseness", "0"),
+            "geval_coherence":      old.get("geval_coherence", "0"),
             "geval_avg":            old.get("geval_avg", "0"),
             "n_sentences":          old.get("n_sentences", n),
         }
@@ -162,9 +162,9 @@ def main(fill_comet: bool = False, fill_geval: bool = False):
             print(f"  G-Eval [{i}/{len(pending)}] id={rid}...")
 
             g = geval_single(row["en_text"], row["summary_formal"], gt_summary=pseudo_gt)
-            results[rid]["geval_faithfulness"] = g["faithfulness"]
+            results[rid]["geval_consistency"]  = g["consistency"]
             results[rid]["geval_fluency"]      = g["fluency"]
-            results[rid]["geval_conciseness"]  = g["conciseness"]
+            results[rid]["geval_coherence"]    = g["coherence"]
             results[rid]["geval_relevance"]    = g["relevance"]
             results[rid]["g_eval_score"]       = g["g_eval_score"]
             results[rid]["g_eval_weighted"]    = g["g_eval_weighted"]
