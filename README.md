@@ -12,7 +12,7 @@
 | 김민규 (팀장) | PM + 프론트엔드 | 전체 일정 관리, 토스 미니앱 UI, 발표 총괄 |
 | 이상준 | 데이터 수집 | RSS 크롤러 구축, 데이터 전처리 파이프라인, Supabase 저장 |
 | 정수민 | 프론트엔드 | 토스 디자인 시스템(TDS) 적용, UI/UX 구현 |
-| 이동우 | LLM 파이프라인 | Qwen3.5-4B 번역/요약 파이프라인, LoRA 파인튜닝 |
+| 이동우 | LLM 파이프라인 | Qwen3.5-4B 번역/요약 파이프라인, LoRA 파인튜닝(자체 합성 데이터) |
 | 강주찬 | RAG + 백엔드 | FastAPI 백엔드, Supabase pgvector 추천, DB 설계 |
 
 ---
@@ -61,7 +61,8 @@ AI 종사자·학습자들은 수십 개의 해외 전문 매체에 흩어진 �
 ### AI/ML
 
 - **`qwen3.5:4b` (Ollama)** — 번역 + 요약 통합 (단일 LLM 호출). 환경 변수 `MODEL_NAME`으로 태그 변경 가능.
-- **LoRA 파인튜닝** — AIHub 영-한 뉴스 코퍼스 등 (실험·평가는 `eval/`, 파이프라인 기본 경로와 별도).
+- **LoRA 파인튜닝** — **데이터셋:** RSS·크롤링으로 수집한 AI 뉴스 기사를 LLM으로 번역·요약해 만든 **자체 합성 데이터**. **학습:** epoch **8**, **Google Colab Pro (A100)**. (실험·평가는 `eval/`·파이프라인 기본 경로와 별도.)
+- **공개 모델 (Hugging Face)** — LoRA Adapter [`mingyu3939/samsun123`](https://huggingface.co/mingyu3939/samsun123), GGUF [`mingyu3939/samsun1234`](https://huggingface.co/mingyu3939/samsun1234)
 - **로컬 접근** — Ollama 로컬 서버; 외부에서 붙을 때는 ngrok 등으로 `11434` 터널링.
 - **`qwen3:0.6b` (Ollama `/api/embeddings`)** — 임베딩 전용 소형 모델, **출력 차원 1024**. 기사 번역문·신조어 텍스트 임베딩을 **동일 모델**로 통일. Supabase `pgvector`와 조합해 기사 추천 RAG 및 신조어 DB 유사도 검색에 사용.
 
@@ -69,8 +70,8 @@ AI 종사자·학습자들은 수십 개의 해외 전문 매체에 흩어진 �
 
 - Ollama + RTX 4070 (12GB VRAM) — 로컬 LLM 서버 (**추후 연결 예정**)
 - ngrok — 로컬 모델 외부 접속 터널링 (**추후 연결 예정**)
-- Google Colab Pro (A100) — LoRA 파인튜닝 환경
-- Hugging Face — 파인튜닝 모델 저장소 ([`mingyu3939/samsun-qwen3.5-4b-gguf`](https://huggingface.co/mingyu3939/samsun-qwen3.5-4b-gguf))
+- Google Colab Pro (A100) — LoRA 파인튜닝 (자체 합성 데이터, epoch 8)
+- Hugging Face — LoRA Adapter [`mingyu3939/samsun123`](https://huggingface.co/mingyu3939/samsun123), GGUF [`mingyu3939/samsun1234`](https://huggingface.co/mingyu3939/samsun1234)
 - Railway — FastAPI 서버 배포
 - Supabase — DB + pgvector 벡터 검색
 
@@ -389,8 +390,8 @@ Samsun-Final-Project-main/
 
 - [x] 토스 미니앱 UI (WebView 방식) ✅
 - [ ] Qwen3.5-4B 번역 + 요약 통합 파이프라인
-- [x] LoRA 파인튜닝 (AIHub 영-한 코퍼스) ✅
-- [x] GGUF 변환 + Hugging Face 업로드 ([`mingyu3939/samsun-qwen3.5-4b-gguf`](https://huggingface.co/mingyu3939/samsun-qwen3.5-4b-gguf)) ✅
+- [x] LoRA 파인튜닝 (RSS 크롤링으로 수집한 AI 뉴스 기사를 LLM으로 번역·요약한 자체 합성 데이터셋, epoch 8, Colab Pro A100) ✅
+- [x] Hugging Face 공개 — LoRA Adapter [`mingyu3939/samsun123`](https://huggingface.co/mingyu3939/samsun123), GGUF [`mingyu3939/samsun1234`](https://huggingface.co/mingyu3939/samsun1234) ✅
 - [x] Supabase pgvector RAG 추천 (기사) ✅
 - [ ] BLEU / COMET / G-Eval 평가 파이프라인
 - [x] 격식체 / 일상체 복사 버튼 ✅
