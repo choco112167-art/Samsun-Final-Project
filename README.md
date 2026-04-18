@@ -155,6 +155,24 @@ AI 종사자·학습자들은 수십 개의 해외 전문 매체에 흩어진 �
 
 ## 🚀 실행 방법
 
+### 가상환경 설정 (최초 1회)
+
+Windows:
+
+```bash
+python -m venv venv
+venv\Scripts\activate
+pip install -r requirements.txt
+```
+
+Mac/Linux:
+
+```bash
+python3 -m venv venv
+source venv/bin/activate
+pip install -r requirements.txt
+```
+
 ### 프론트엔드 (Granite / Vite / TDS)
 
 ```bash
