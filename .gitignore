@@ -29,3 +29,5 @@ frontend/dist/
 
 # 커서 설정
 .cursor/
+
+frontend/node_modules/
