@@ -22,12 +22,10 @@ token.json
 # diff 임시파일
 diff_*.txt
 
-# JS / build
-node_modules/
+# JS / build — any depth
+**/node_modules/
 dist/
 frontend/dist/
 
 # 커서 설정
 .cursor/
-
-frontend/node_modules/
