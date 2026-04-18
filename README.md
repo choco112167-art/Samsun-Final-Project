@@ -231,45 +231,63 @@ python poc_cycle.py
 
 ## 📁 프로젝트 구조
 
-실제 저장소 기준 디렉터리입니다.
+저장소에 실제로 포함된 경로·파일을 기준으로 정리했습니다. (`__pycache__/`, `node_modules/` 등은 생략)
 
 ```
 Samsun-Final-Project-main/
-├── backend/                     # FastAPI (Railway 진입: uvicorn backend.main:app)
+├── backend/                     # FastAPI (Railway: uvicorn backend.main:app)
 │   ├── main.py                  # 온보딩·피드·기사·검색·/health·/translate·/summarize
-│   ├── embedder.py              # 임베딩 (Ollama `qwen3:0.6b`, 1024차원 등, USE_LOCAL_LLM에 따라 OpenRouter 분기)
-│   ├── llm_dispatch.py          # 번역·요약 라우팅 (Ollama vs OpenRouter)
-│   ├── openrouter_llm.py
+│   ├── embedder.py              # 임베딩 (Ollama qwen3-embedding:4b → 1024차원, MODE에 따라 OpenRouter 분기 가능)
+│   ├── llm_dispatch.py          # /translate·/summarize → pipeline.translate_summarize (Ollama)
+│   ├── rag.py                   # 실험용 RAG·임베딩 (SentenceTransformer 등)
 │   └── save_articles.py         # Supabase articles 저장
-├── collect/                     # RSS 수집 모듈 (크롤러·로컬 SQLite 등)
-│   ├── crawler/rss_crawler.py
+├── collect/                     # RSS 수집
 │   ├── main.py
-│   ├── db/, admin/, models/
-│   └── export.py
-├── data/                        # 로컬 JSONL (gitignore, 커밋 제외)
+│   └── crawler/
+│       └── rss_crawler.py
+├── data/                        # 로컬 JSONL (.gitignore, 커밋 제외)
 │   ├── articles_raw.jsonl
 │   ├── articles_translated.jsonl
 │   └── articles_v2_dated.jsonl
-├── eval/                        # BLEU/COMET/G-Eval 등 평가 스크립트·데이터
-│   ├── run_eval.py, reprocess_failed.py, select_testset.py, …
-│   ├── metrics/
-│   └── README.md
+├── eval/                        # 오프라인 평가·실험 스크립트
+│   ├── run_eval.py
+│   ├── run_eval_base.py
+│   ├── select_testset.py
+│   └── kaggle_finetune.py
 ├── frontend/                    # 토스 미니앱 (Granite / Vite / TDS)
-├── pipeline/                    # 영→한 번역·요약 LLM 파이프라인
+│   ├── index.html
+│   ├── package.json
+│   ├── package-lock.json
+│   ├── vite.config.ts
+│   ├── granite.config.ts
+│   ├── tsconfig.json
+│   ├── tsconfig.app.json
+│   ├── tsconfig.node.json
+│   └── src/
+│       ├── App.tsx
+│       ├── components/          # ArticleCard, TabBar, Skeleton
+│       ├── data/                # api.ts, articles.ts
+│       ├── hooks/               # useBookmarks.ts
+│       └── pages/               # HomePage, CategoryPage, SearchPage, MyFeedPage
+├── pipeline/                    # 영→한 번역·요약 (Ollama)
+│   ├── __init__.py
 │   ├── translate_summarize.py
-│   ├── translator.py, summarizer.py, utils.py
+│   ├── translator.py
+│   ├── summarizer.py
+│   ├── utils.py
 │   └── README.md
-├── .cursor/                     # Cursor 에디터 전용 설정 폴더 (프로젝트 규칙·AI 보조 등)
-├── .env
-├── .gitignore
-├── config.py
-├── main.py                      # RSS 수집 → pipeline 번역·요약 → save_articles
-├── poc_cycle.py                 # POC: 샘플 1건 번역·(옵션)임베딩·Supabase 검증
-├── poc_dummy.py                 # 더미 기사 일괄 Supabase 저장 스크립트
+├── config.py                    # FastAPI용 설정 (pydantic-settings, .env)
+├── main.py                      # 배치: RSS → translate_and_summarize → save_articles
+├── poc_cycle.py                 # POC: 샘플 번역·임베딩·Supabase 검증
+├── poc_dummy.py                 # 더미 기사 Supabase 저장 (.gitignore — 로컬 전용 스크립트)
 ├── Procfile
-├── pyproject.toml
 ├── README.md
-└── requirements.txt
+├── requirements.txt
+├── runtime.txt                  # Railway 등 Python 런타임 버전
+├── supabase_schema.sql          # Supabase 스키마 참고용 SQL
+├── .gitattributes
+├── .gitignore
+└── .env                         # 비밀·URL (.gitignore)
 ```
 
 ### 폴더별 파일과 역할
@@ -281,59 +299,42 @@ Samsun-Final-Project-main/
 | 파일 | 역할 |
 | --- | --- |
 | `main.py` | 앱 진입점. 온보딩·피드·기사·검색·`/health`·`/translate`·`/summarize` 등 API 라우트 정의 |
-| `embedder.py` | 기사 등 텍스트 임베딩 (`qwen3:0.6b`, 1024차원 등 Ollama 또는 설정에 따른 OpenRouter 분기) |
-| `llm_dispatch.py` | 번역·요약 요청을 로컬 Ollama(`pipeline`) 또는 OpenRouter로 라우팅 |
-| `openrouter_llm.py` | OpenRouter 연동 클라이언트 |
+| `embedder.py` | 텍스트 임베딩 (기본: Ollama `qwen3-embedding:4b`, 1024차원; `MODE=cloud` 시 OpenRouter 분기 코드 포함) |
+| `llm_dispatch.py` | 번역·요약 → `pipeline.translate_summarize.translate_and_summarize` (Ollama `qwen3.5:4b` 등) |
+| `rag.py` | 실험용 RAG·유저/기사 임베딩 (`sentence_transformers` 등, 운영 경로와 별도) |
 | `save_articles.py` | 처리된 기사를 Supabase `articles` 등에 저장 |
-| `__init__.py` | 패키지 선언 |
 
 #### `pipeline/`
 
-**영→한 번역·요약** LLM 파이프라인. Ollama(Qwen 계열) 기준으로 격식체·일상체 요약을 한 흐름에서 생성합니다. `backend/llm_dispatch.py`가 `USE_LOCAL_LLM`에 따라 이 모듈 또는 OpenRouter를 선택합니다.
+**영→한 번역·요약** LLM 파이프라인. Ollama(Qwen 계열) 기준으로 격식체·일상체 요약을 **단일 호출**에서 생성합니다.
 
 | 파일 | 역할 |
 | --- | --- |
 | `translate_summarize.py` | 번역 + 격식/일상 요약 통합 호출의 중심 로직 |
-| `translator.py` | 번역 단계 |
-| `summarizer.py` | 요약(격식체·일상체) 단계 |
-| `utils.py` | 공통 유틸·프롬프트 보조 등 |
+| `translator.py` | 번역만 필요할 때 (격식/일상 스타일 선택) |
+| `summarizer.py` | 별도 프롬프트 기반 요약 |
+| `utils.py` | 전처리·JSON 필드 추출 등 |
 | `README.md` | 파이프라인 사용·구조 설명 |
 
 #### `collect/`
 
-**영문 기사 RSS 수집** 및 메타데이터·신뢰도 처리, 로컬 DB·내보내기. 루트 `main.py`가 이 모듈과 `pipeline`을 묶어 일괄 배치로 동작합니다.
+**영문 기사 RSS 수집**. 루트 `main.py`가 `crawler`와 `pipeline`을 묶어 배치로 동작합니다.
 
 | 파일·경로 | 역할 |
 | --- | --- |
-| `main.py` | 수집 배치 진입점 |
+| `main.py` | 수집 진입점 |
 | `crawler/rss_crawler.py` | RSS 피드 크롤링 |
-| `db/database.py` | 로컬 SQLite 등 DB 접근 |
-| `models/article.py` | 기사 도메인 모델 |
-| `models/credibility.py` | 신뢰도 관련 로직 |
-| `admin/stats.py` | 수집·통계 보조 |
-| `export.py` | 수집 결과 내보내기 |
-| `README.md` | 수집 모듈 설명 |
 
 #### `eval/`
 
-**품질 평가**(BLEU, COMET, 용어 보존, G-Eval)와 학습·평가용 데이터 준비·테스트셋 선별. 운영 API와 분리된 **실험·오프라인 스크립트** 모음입니다.
+**품질 평가·실험**용 오프라인 스크립트. 운영 API와 분리됩니다.
 
 | 파일·경로 | 역할 |
 | --- | --- |
-| `run_eval.py` | 평가 실행 메인 스크립트 |
-| `reprocess_failed.py` | 실패 샘플 재처리 |
+| `run_eval.py` | 평가 실행 |
+| `run_eval_base.py` | 베이스라인 평가 |
 | `select_testset.py` | 테스트셋 선별 |
-| `report.py` | 결과 리포트 생성 |
-| `rebuild_trainset_translate.py` | 번역 학습·평가용 데이터 재구축 |
-| `prepare_finetune.py` | 파인튜닝용 데이터 준비 |
-| `prepare_summary_finetune.py` | 요약 파인튜닝용 데이터 준비 |
-| `build_dataset.py` | 데이터셋 빌드 |
-| `check_trainset.py`, `check_trainset2.py`, `check_origin.py` | 학습·원본 데이터 점검 |
-| `_make_jsonl.py` | JSONL 생성 보조 |
-| `metrics/bleu_comet.py` | BLEU·COMET 지표 |
-| `metrics/geval.py` | G-Eval 지표 |
-| `metrics/term_preservation.py` | 용어 보존률 등 |
-| `README.md` | 평가 디렉터리 설명 |
+| `kaggle_finetune.py` | 파인튜닝 관련 스크립트 |
 
 #### `frontend/`
 
@@ -341,31 +342,32 @@ Samsun-Final-Project-main/
 
 | 파일·경로 | 역할 |
 | --- | --- |
-| `package.json` | 의존성·스크립트 (`granite dev`, `ait build` 등) |
-| `vite.config.ts` | Vite 번들 설정 |
+| `package.json`, `package-lock.json` | 의존성·잠금 파일 |
+| `vite.config.ts` | Vite 설정 |
 | `granite.config.ts` | Apps in Toss / Granite 프로젝트 설정 |
 | `index.html` | 엔트리 HTML |
-| `src/main.tsx` | React 마운트 |
-| `src/App.tsx` | 라우팅·앱 셸 |
-| `src/pages/` | 화면: `HomePage`, `CategoryPage`, `HotPage`, `DetailPage`, `SearchPage`, `MyFeedPage`, `OnboardingPage` |
-| `src/components/` | `ArticleCard`, `TabBar`, `Skeleton` 등 UI 컴포넌트 |
-| `src/data/api.ts`, `articles.ts` | API 호출·목 데이터 |
-| `src/hooks/useBookmarks.ts` | 북마크 상태 훅 |
-| `src/styles/global.css` | 전역 스타일 |
-| `.env` | API URL 등 환경 변수 (커밋 제외 권장) |
+| `tsconfig*.json` | TypeScript 설정 |
+| `src/App.tsx` | 앱 셸·라우팅 |
+| `src/pages/` | `HomePage`, `CategoryPage`, `SearchPage`, `MyFeedPage` |
+| `src/components/` | `ArticleCard`, `TabBar`, `Skeleton` |
+| `src/data/api.ts`, `articles.ts` | API 호출·데이터 |
+| `src/hooks/useBookmarks.ts` | 북마크 훅 |
+| `.env` | API URL 등 (커밋 제외 권장) |
 
 ### 기타 경로 (요약)
 
 | 경로 | 역할 |
 | --- | --- |
-| **`data/`** | 수집·가공 단계별 **JSONL** (`articles_raw.jsonl`, `articles_translated.jsonl`, `articles_v2_dated.jsonl`). 용량·환경 의존 → **Git 추적 제외** |
-| **`.cursor/`** | Cursor 에디터 프로젝트 설정(규칙·스킬 등). 로컬 전용일 수 있음 |
-| **루트 `main.py`** | 배치 진입점: RSS → `translate_and_summarize` → `save_articles`로 DB 반영 |
-| **`poc_cycle.py`** | 스모크 테스트: 샘플 1건 번역·(옵션) 임베딩·Supabase 검증 |
-| **`poc_dummy.py`** | 더미 기사 일괄 Supabase 저장 |
-| **`config.py`** | `OPENROUTER_*`, `OLLAMA_*`, `SUPABASE_*`, `USE_LOCAL_LLM`, `CORS_ORIGINS` 등 환경 변수 로드 |
+| **`data/`** | 수집·가공 단계별 **JSONL**. `.gitignore`로 **커밋 제외** |
+| **`supabase_schema.sql`** | DB 스키마 참고·초기화용 SQL |
+| **`runtime.txt`** | 배포 환경 Python 버전 고정 |
+| **`.gitattributes`** | 줄바꿈·텍스트 속성 |
+| **루트 `main.py`** | RSS 수집 → `translate_and_summarize` 파이프라인 배치 |
+| **`poc_cycle.py`** | POC 스모크: 번역·임베딩·Supabase 검증 |
+| **`poc_dummy.py`** | 더미 기사 Supabase 저장 (`.gitignore` — 팀원 로컬에만 두는 경우가 많음) |
+| **`config.py`** | FastAPI용 `supabase_url`, `supabase_anon_key`, `cors_origins`, `log_level` 등 (`.env`와 연동) |
 
-> 루트에 예전 `node_modules/`가 남아 있으면 지우고, 프론트는 루트 **`frontend/`** 에서 `npm install` 하면 됩니다.
+> 프론트는 **`frontend/`** 에서 `npm install` 후 `npm run dev` 등을 사용합니다. 루트에 남은 `node_modules/`가 있다면 프론트와 혼동되지 않게 정리하세요.
 
 ---
 
