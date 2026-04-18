@@ -169,7 +169,7 @@ def health():
 @app.post("/translate")
 def translate(req: LlmTextRequest):
     """
-    영문 원문을 한국어로 번역합니다 (USE_LOCAL_LLM에 따라 Ollama 또는 OpenRouter).
+    영문 원문을 한국어로 번역합니다 (Ollama `qwen3.5:4b`, `pipeline.translate_summarize`).
     응답은 translation 필드만 채웁니다.
     """
     from backend.llm_dispatch import translate_and_summarize_dispatch
@@ -181,7 +181,7 @@ def translate(req: LlmTextRequest):
 @app.post("/summarize")
 def summarize(req: LlmTextRequest):
     """
-    원문에 대해 격식체·일상체 요약을 생성합니다 (동일 LLM 파이프라인의 요약 필드만 반환).
+    원문에 대해 격식체·일상체 요약을 생성합니다 (동일 단일 LLM 호출의 요약 필드만 반환).
     """
     from backend.llm_dispatch import translate_and_summarize_dispatch
 
