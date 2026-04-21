@@ -5,6 +5,72 @@
 
 ---
 
+## 🚀 빠른 시작 (팀원용)
+
+> 처음 합류한 팀원은 이 섹션만 따라하면 5분 안에 개발환경 세팅 완료.  
+> 상세 실행 옵션은 아래 `📦 상세 실행 가이드` 참조.
+
+### 필수 설치
+
+| 도구 | 버전 | 다운로드 |
+| --- | --- | --- |
+| Python | **3.11.x** | https://www.python.org/downloads/release/python-3119/ |
+| Node.js | **20.x LTS** | https://nodejs.org/ |
+| Git | 최신 | https://git-scm.com/ |
+| Ollama | 최신 | https://ollama.com/ (선택) |
+
+### 초기 세팅 (최초 1회)
+
+**1. 레포 클론**
+
+```
+git clone https://github.com/choco112167-art/Samsun-Final-Project.git
+cd Samsun-Final-Project
+```
+
+**2. Python 가상환경 (.venv)**
+
+Windows:
+```
+python -m venv .venv
+.venv\Scripts\activate
+pip install -r requirements.txt
+```
+
+Mac/Linux:
+```
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+```
+
+**3. 프론트엔드**
+
+```
+cd frontend
+npm install
+cd ..
+```
+
+**4. 환경변수**
+
+Windows: `copy .env.example .env`  
+Mac/Linux: `cp .env.example .env`  
+이후 `.env` 열어서 Slack 공유 값 입력.
+
+### Cursor 사용자 필수 설정
+
+1. `Ctrl/Cmd + Shift + P` → **Python: Select Interpreter**
+2. `./.venv/Scripts/python.exe` (Windows) 또는 `./.venv/bin/python` (Mac) 선택
+3. 안 하면 시스템 Python 사용됨
+
+### 매일 작업 시작할 때
+
+Windows: `.venv\Scripts\activate`  
+Mac/Linux: `source .venv/bin/activate`
+
+---
+
 ## 👥 팀 소개
 
 | 이름 | 역할 | 담당 |
@@ -154,23 +220,23 @@ AI 종사자·학습자들은 수십 개의 해외 전문 매체에 흩어진 �
 
 ---
 
-## 🚀 실행 방법
+## 📦 상세 실행 가이드
 
 ### 가상환경 설정 (최초 1회)
 
 Windows:
 
 ```bash
-python -m venv venv
-venv\Scripts\activate
+python -m venv .venv
+.venv\Scripts\activate
 pip install -r requirements.txt
 ```
 
 Mac/Linux:
 
 ```bash
-python3 -m venv venv
-source venv/bin/activate
+python3 -m venv .venv
+source .venv/bin/activate
 pip install -r requirements.txt
 ```
 
