@@ -99,8 +99,8 @@ AI 종사자·학습자들은 수십 개의 해외 전문 매체에 흩어진 �
 | --- | --- | --- |
 | 📝 번역 + 3줄 요약 | 영문 기사를 단일 LLM 호출로 번역 및 3줄 요약 동시 생성 | Qwen3.5-4B (Ollama) |
 | 🎨 격식체 / 일상체 | 동일 기사를 두 가지 문체로 동시 제공 + 복사 버튼 | Qwen3.5-4B |
-| 🔍 개인화 추천 (RAG) | 관심 주제 기반 벡터 유사도 검색으로 맞춤 피드 | `qwen3:0.6b` (1024차원) + pgvector |
-| 🔤 신조어 처리 (RAG) | AI 신조어를 DB에서 검색해 첫 등장 시 `Term(음차, 설명)` 형식으로 자동 포매팅 | `qwen3:0.6b` (1024차원) + pgvector |
+| 🔍 개인화 추천 (RAG) | 관심 주제 기반 벡터 유사도 검색으로 맞춤 피드 | `qwen3-embedding:0.6b` (1024차원) + pgvector |
+| 🔤 신조어 처리 (RAG) | AI 신조어를 DB에서 검색해 첫 등장 시 `Term(음차, 설명)` 형식으로 자동 포매팅 | `qwen3-embedding:0.6b` (1024차원) + pgvector |
 | 📋 즉시 공유 포맷 | 복사 버튼 → 사내 메신저 바로 붙여넣기 | — |
 | 🔔 부재중 요약 알림 | 오랜만에 접속 시 부재 중 기사 요약 알림 제공 | — |
 
@@ -130,7 +130,7 @@ AI 종사자·학습자들은 수십 개의 해외 전문 매체에 흩어진 �
 - **LoRA 파인튜닝** — **데이터셋:** RSS·크롤링으로 수집한 AI 뉴스 기사를 LLM으로 번역·요약해 만든 **자체 합성 데이터**. **학습:** epoch **8**, **Google Colab Pro (A100)**. (실험·평가는 `eval/`·파이프라인 기본 경로와 별도.)
 - **공개 모델 (Hugging Face)** — LoRA Adapter [`mingyu3939/samsun123`](https://huggingface.co/mingyu3939/samsun123), GGUF [`mingyu3939/samsun1234`](https://huggingface.co/mingyu3939/samsun1234)
 - **로컬 접근** — Ollama 로컬 서버; 외부에서 붙을 때는 ngrok 등으로 `11434` 터널링.
-- **`qwen3:0.6b` (Ollama `/api/embeddings`)** — 임베딩 전용 소형 모델, **출력 차원 1024**. 기사 번역문·신조어 텍스트 임베딩을 **동일 모델**로 통일. Supabase `pgvector`와 조합해 기사 추천 RAG 및 신조어 DB 유사도 검색에 사용.
+- **`qwen3-embedding:0.6b` (Ollama `/api/embeddings`)** — 임베딩 전용 소형 모델, **출력 차원 1024**, 컨텍스트 32K. 기사 번역문·신조어 텍스트 임베딩을 **동일 모델**로 통일. Supabase `pgvector`와 조합해 기사 추천 RAG 및 신조어 DB 유사도 검색에 사용.
 
 ### 인프라
 
@@ -213,7 +213,7 @@ AI 종사자·학습자들은 수십 개의 해외 전문 매체에 흩어진 �
    ├── articles
    ├── embeddings
    ├── user_feeds
-   └── neologisms                   ← 신조어 DB (`qwen3:0.6b`, 1024차원)
+   └── neologisms                   ← 신조어 DB (`qwen3-embedding:0.6b`, 1024차원)
         ↓
 [Qwen3.5-4B - Ollama + 로컬 GPU · ngrok 외부 접속] — **추후 연결 예정**
 ```
@@ -465,7 +465,7 @@ Samsun-Final-Project-main/
 - [ ] 부재중 요약 알림
 - [ ] 신뢰도·팩트 라벨 (미구현)
 - [ ] **신조어 RAG**
-  - [ ] 신조어 DB 구축 (Supabase pgvector, `qwen3:0.6b`, 1024차원)
+  - [ ] 신조어 DB 구축 (Supabase pgvector, `qwen3-embedding:0.6b`, 1024차원)
   - [ ] 신조어 검색 API (`/neologisms/search`, `/neologisms/context`, `/neologisms/format`)
   - [ ] 번역 파이프라인 통합 (첫등장 포매팅 자동 적용)
   - [ ] Term Preservation Rate ≥ 95%

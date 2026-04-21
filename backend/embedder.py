@@ -1,77 +1,43 @@
 """
-backend/embedder.py — 임베딩 어댑터
+backend/embedder.py — 임베딩 어댑터 (local 전용)
 
-MODE=local  → Ollama 로컬 (개발 중)
-MODE=cloud  → OpenRouter API (배포 시)
+모델: Ollama qwen3-embedding:0.6b (1024차원, 32K context)
+호출: POST {OLLAMA_URL}/api/embeddings
 
-.env에서 MODE 한 줄만 바꾸면 전체 전환됩니다.
+공개 함수 `make_embedding(text) -> list[float]` 시그니처는 유지.
+호출하는 쪽(backend/save_articles.py 등)은 수정할 필요 없음.
+
+2026-04-21: mxbai-embed-large / qwen3-embedding:4b → qwen3-embedding:0.6b 통일.
+  (qwen3:0.6b는 채팅 전용 모델로 /api/embeddings 미지원이므로 임베딩 전용 모델 사용)
 """
 
 import os
 from dotenv import load_dotenv
+import requests
 
 load_dotenv()
 
-MODE = os.getenv("MODE", "local")
+OLLAMA_URL  = os.getenv("OLLAMA_URL") or os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
+EMBED_MODEL = os.getenv("OLLAMA_EMBED_MODEL", "qwen3-embedding:0.6b")
+EMBED_DIM   = 1024
 
-
-# ════════════════════════════════════════════
-# LOCAL — Ollama (개발 환경)
-# 사용: MODE=local
-# 준비: ollama pull qwen3-embedding:4b
-# ════════════════════════════════════════════
 
 def _embed_local(text: str) -> list[float]:
-    # ollama 라이브러리로 직접 호출 (HTTP 요청보다 안정적)
-    import ollama
-    resp = ollama.embeddings(
-        model="qwen3-embedding:4b",
-        prompt=text,
-    )
-    return resp["embedding"][:1024]
-
-
-# ════════════════════════════════════════════
-# CLOUD — OpenRouter Embedding API (배포 환경)
-# 사용: MODE=cloud
-# 준비: .env에 OPENROUTER_API_KEY 설정
-# ════════════════════════════════════════════
-
-def _embed_cloud(text: str) -> list[float]:
-    import requests
-    api_key = os.getenv("OPENROUTER_API_KEY", "")
+    """Ollama /api/embeddings 호출 → 1024차원 벡터."""
     resp = requests.post(
-        "https://openrouter.ai/api/v1/embeddings",
-        headers={
-            "Authorization": f"Bearer {api_key}",
-            "Content-Type":  "application/json",
-        },
-        json={
-            "model": "qwen/qwen3-embedding-4b",
-            "input": text,
-        },
+        f"{OLLAMA_URL}/api/embeddings",
+        json={"model": EMBED_MODEL, "prompt": text},
         timeout=30,
     )
     resp.raise_for_status()
-    return resp.json()["data"][0]["embedding"][:1024]
+    vec = resp.json()["embedding"]
+    if len(vec) < EMBED_DIM:
+        raise ValueError(
+            f"임베딩 차원 불일치: {len(vec)} < {EMBED_DIM} (model={EMBED_MODEL})"
+        )
+    return vec[:EMBED_DIM]
 
-
-# ════════════════════════════════════════════
-# 공개 인터페이스 — 이것만 import해서 쓰세요
-# ════════════════════════════════════════════
 
 def make_embedding(text: str) -> list[float]:
-    """
-    텍스트 → 임베딩 벡터 (1024차원)
-
-    전환 방법:
-      로컬 → 클라우드: 아래 return 줄을 주석 처리하고, 주석 처리된 줄을 활성화
-
-    MODE=local  → Ollama qwen3-embedding:4b  (현재 활성)
-    MODE=cloud  → OpenRouter qwen/qwen3-embedding-4b
-    """
-    # ── 로컬 (개발 중 — 기본값) ──────────────────────────────
+    """텍스트 → 1024차원 임베딩 벡터 (Ollama qwen3-embedding:0.6b)."""
     return _embed_local(text)
-
-    # ── 클라우드 (배포 시 위 줄 주석, 아래 줄 활성화) ─────────
-    # return _embed_cloud(text)
