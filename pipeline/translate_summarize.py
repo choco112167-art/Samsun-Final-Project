@@ -40,17 +40,10 @@ Return ONLY valid JSON. No markdown fences, no explanation outside JSON.
   "title": "<한국어 제목>",
   "translation": "<전체 한국어 번역>",
   "summary_formal": "<격식체 요약>",
-  "summary_casual": "<일상체 요약>",
-  "summary_en": "<English summary>"
+  "summary_casual": "<일상체 요약>"
 }}
-All five fields are REQUIRED. Never leave any field empty.
+All four fields are REQUIRED. Never leave any field empty.
 If no title is provided, set "title" to "".
-
-━━━ ENGLISH SUMMARY RULES ━━━
-- summary_en: exactly {n} English sentence(s), concise journalistic style.
-- Must capture the key facts: who, what, why it matters.
-- Do NOT copy sentences verbatim from the source — paraphrase.
-- Keep abbreviations as-is: LLM, GPU, API, RAG etc.
 
 ━━━ TRANSLATION RULES ━━━
 1. Translate the ENTIRE article into Korean.
@@ -157,11 +150,10 @@ def translate_and_summarize(
 
     Returns:
         {
-            "title":      str,  # 한국어 제목 (title 미제공 시 "")
-            "translation":   str,  # 번역 전문
-            "summary_formal": str, # 격식체 요약
-            "summary_casual": str, # 일상체 요약
-            "summary_en":    str,  # 영어 요약
+            "title":          str,  # 한국어 제목 (title 미제공 시 "")
+            "translation":    str,  # 번역 전문
+            "summary_formal": str,  # 격식체 요약
+            "summary_casual": str,  # 일상체 요약
         }
     """
     system = SYSTEM_PROMPT.format(n=summary_sentences)

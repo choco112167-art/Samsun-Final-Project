@@ -104,7 +104,7 @@ def get_articles(
         "url_hash, url, title, title_en, source, source_type, category, country, "
         "keywords, published_at, collected_at, content, "
         "credibility_score, fact_label, "
-        "translation, summary_formal, summary_casual, summary_en"
+        "translation, summary_formal, summary_casual"
     )
 
     if category:

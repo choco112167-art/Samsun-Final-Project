@@ -110,7 +110,6 @@ def save_articles(articles: list[dict]) -> int:
             "translation":       a.get("translation"),   # 한국어 번역 전문
             "summary_formal":    a.get("summary_formal"),# 격식체 3줄 요약
             "summary_casual":    a.get("summary_casual"),# 일상체 3줄 요약
-            "summary_en":        a.get("summary_en"),    # 영어 요약
             "embedding":         embedding,              # 임베딩 벡터 (RAG에 사용)
         })
 

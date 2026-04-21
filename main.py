@@ -50,7 +50,6 @@ def run_pipeline(max_articles: int = 10, summary_sentences: int = 3):
                 "translation":       processed.get("translation", ""),
                 "summary_formal":    processed.get("summary_formal", ""),
                 "summary_casual":    processed.get("summary_casual", ""),
-                "summary_en":        processed.get("summary_en", ""),
             }
             results.append(result)
 
@@ -58,7 +57,6 @@ def run_pipeline(max_articles: int = 10, summary_sentences: int = 3):
             print(f"  [번역]        {result['translation'][:50]}...")
             print(f"  [격식체 요약]  {result['summary_formal'][:50]}...")
             print(f"  [일상체 요약]  {result['summary_casual'][:50]}...")
-            print(f"  [영어 요약]   {result['summary_en'][:50]}...")
         except Exception as e:
             print(f"  오류: {e}")
             results.append({
@@ -69,7 +67,6 @@ def run_pipeline(max_articles: int = 10, summary_sentences: int = 3):
                 "translation":    "",
                 "summary_formal": "",
                 "summary_casual": "",
-                "summary_en":     "",
                 "error":          str(e),
             })
 

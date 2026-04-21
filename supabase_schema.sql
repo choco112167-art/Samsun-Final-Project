@@ -41,7 +41,6 @@ CREATE TABLE IF NOT EXISTS articles (
     translation       TEXT,                  -- 한국어 번역 전문
     summary_formal    TEXT,                  -- 격식체 3줄 요약 (~습니다)
     summary_casual    TEXT,                  -- 일상체 3줄 요약 (~해요)
-    summary_en        TEXT,                  -- 영어 요약 (확장 화면용)
 
     -- RAG (강주찬)
     embedding         VECTOR(1024)           -- title(한국어) + translation 합산 임베딩
@@ -217,7 +216,6 @@ RETURNS TABLE (
     translation       TEXT,
     summary_formal    TEXT,
     summary_casual    TEXT,
-    summary_en        TEXT,
     credibility_score FLOAT,
     fact_label        VARCHAR,
     similarity        FLOAT
@@ -289,7 +287,6 @@ LANGUAGE sql STABLE AS $$
         a.translation,
         a.summary_formal,
         a.summary_casual,
-        a.summary_en,
         a.credibility_score,
         a.fact_label,
         f.vec_sim AS similarity
