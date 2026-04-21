@@ -29,7 +29,7 @@ export default function App() {
 
   const renderPage = () => {
     switch (activeTab) {
-      case 'home':     return <HomePage bm={bm} />;
+      case 'home':     return <HomePage bm={bm} userId={userId} onNavigateToFeed={() => setActiveTab('my')} />;
       case 'category': return <CategoryPage bm={bm} />;
       case 'hot':      return <HotPage bm={bm} />;
       case 'search':   return <SearchPage bm={bm} />;
@@ -43,7 +43,7 @@ export default function App() {
       height: '100dvh', maxWidth: 480, margin: '0 auto',
       background: 'var(--color-bg)', overflow: 'hidden',
     }}>
-      <div style={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
+      <div style={{ flex: 1, overflow: 'auto', display: 'flex', flexDirection: 'column' }}>
         {renderPage()}
       </div>
       <TabBar activeTab={activeTab} onChange={setActiveTab} />
