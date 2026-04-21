@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
-import { fetchFeed } from '../data/api';
-import type { FeedArticle } from '../data/api';
+import { fetchFeed, recordArticleView } from '../data/api';
+import type { Article } from '../data/articles';
 import ArticleCard from '../components/ArticleCard';
 import DetailPage from './DetailPage';
 import type { BookmarkHook } from '../hooks/useBookmarks';
@@ -25,9 +25,10 @@ interface Props {
 export default function MyFeedPage({ bm, interests, onInterestsChange, userId }: Props) {
   const [tab, setTab]           = useState<MyTab>('feed');
   const [editMode, setEditMode] = useState(false);
-  const [detail, setDetail]     = useState<FeedArticle | null>(null);
+  const [detail, setDetail]     = useState<(Article & { similarity?: number }) | null>(null);
+  const [needsRefresh, setNeedsRefresh] = useState(false);
 
-  const [feedArticles, setFeedArticles] = useState<FeedArticle[]>([]);
+  const [feedArticles, setFeedArticles] = useState<(Article & { similarity?: number })[]>([]);
   const [feedLoading, setFeedLoading]   = useState(false);
   const [feedError, setFeedError]       = useState<string | null>(null);
 
@@ -47,6 +48,15 @@ export default function MyFeedPage({ bm, interests, onInterestsChange, userId }:
     loadFeed();
   }, [loadFeed]);
 
+  const handleArticleClick = async (article: Article & { similarity?: number }) => {
+    // 백엔드에 클릭 기록 → user_vector 업데이트 (0.6:0.4 비율)
+    if (userId) {
+      try { await recordArticleView(userId, article.urlHash); } catch { /* silent */ }
+    }
+    setNeedsRefresh(true); // 돌아올 때 피드 새로고침
+    setDetail(article);
+  };
+
   const toggleInterest = (id: Interest) => {
     onInterestsChange(
       interests.includes(id) ? interests.filter(i => i !== id) : [...interests, id]
@@ -56,9 +66,15 @@ export default function MyFeedPage({ bm, interests, onInterestsChange, userId }:
   if (detail) return (
     <DetailPage
       article={detail}
-      bookmarked={bm.isBookmarked(detail.id)}
+      bookmarked={bm.isBookmarked(detail.urlHash)}
       onBookmark={bm.toggle}
-      onBack={() => setDetail(null)}
+      onBack={() => {
+        setDetail(null);
+        if (needsRefresh) {
+          setNeedsRefresh(false);
+          loadFeed(); // 유저 벡터가 업데이트됐으니 피드 새로고침
+        }
+      }}
     />
   );
 
@@ -128,12 +144,12 @@ export default function MyFeedPage({ bm, interests, onInterestsChange, userId }:
               </div>
             )}
             {!feedLoading && feedArticles.map((article, i) => (
-              <div key={article.id} style={{ position: 'relative', animation: `fadeSlide 0.25s ${i * 0.04}s ease both` }}>
+              <div key={article.urlHash} style={{ position: 'relative', animation: `fadeSlide 0.25s ${i * 0.04}s ease both` }}>
                 <ArticleCard
                   article={article}
-                  bookmarked={bm.isBookmarked(article.id)}
+                  bookmarked={bm.isBookmarked(article.urlHash)}
                   onBookmark={bm.toggle}
-                  onClick={() => setDetail(article)}
+                  onClick={() => handleArticleClick(article)}
                 />
                 {article.similarity !== undefined && (
                   <div style={{
@@ -165,9 +181,9 @@ export default function MyFeedPage({ bm, interests, onInterestsChange, userId }:
               feedArticles
                 .filter(a => bm.isBookmarked(a.id))
                 .map((article, i) => (
-                  <ArticleCard key={article.id} article={article}
-                    bookmarked={bm.isBookmarked(article.id)} onBookmark={bm.toggle}
-                    onClick={() => setDetail(article)}
+                  <ArticleCard key={article.urlHash} article={article}
+                    bookmarked={bm.isBookmarked(article.urlHash)} onBookmark={bm.toggle}
+                    onClick={() => handleArticleClick(article)}
                     style={{ animation: `fadeSlide 0.25s ${i * 0.05}s ease both` }}
                   />
                 ))
