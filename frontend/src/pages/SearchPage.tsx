@@ -1,20 +1,20 @@
 import { useState, useRef } from 'react';
 import { searchArticles } from '../data/api';
-import type { SearchResult } from '../data/api';
+import type { Article } from '../data/articles';
 import DetailPage from './DetailPage';
 import type { BookmarkHook } from '../hooks/useBookmarks';
 
 const RECENT      = ['GPT-5 출시', 'TSMC 반도체', '오픈소스 모델', 'EU AI 규제'];
 const SUGGESTIONS = ['AI 칩 설계', '오픈소스 LLM', '반도체 공급망', 'AI 규제 동향', '스타트업 투자'];
 
-interface Props { bm: BookmarkHook; }
+interface Props { bm: BookmarkHook; onArticleClick?: (urlHash: string) => void; }
 
-export default function SearchPage({ bm }: Props) {
+export default function SearchPage({ bm, onArticleClick }: Props) {
   const [query, setQuery]         = useState('');
   const [submitted, setSubmitted] = useState('');
-  const [results, setResults]     = useState<SearchResult[]>([]);
+  const [results, setResults]     = useState<(Article & { similarity?: number })[]>([]);
   const [loading, setLoading]     = useState(false);
-  const [detail, setDetail]       = useState<SearchResult | null>(null);
+  const [detail, setDetail]       = useState<(Article & { similarity?: number }) | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
   const doSearch = (q: string) => {
@@ -29,7 +29,7 @@ export default function SearchPage({ bm }: Props) {
   if (detail) return (
     <DetailPage
       article={detail}
-      bookmarked={bm.isBookmarked(detail.id)}
+      bookmarked={bm.isBookmarked(detail.urlHash)}
       onBookmark={bm.toggle}
       onBack={() => setDetail(null)}
     />
@@ -122,10 +122,10 @@ export default function SearchPage({ bm }: Props) {
             ) : (
               <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                 {results.map((article, i) => {
-                  const summary = article.summary_ko || article.summary_llm;
+                  const summary = article.summaryCasual || article.summaryFormal;
                   const simPct  = article.similarity !== undefined ? Math.round(article.similarity * 100) : null;
                   return (
-                    <button key={article.id} onClick={() => setDetail(article)} style={{
+                    <button key={article.urlHash} onClick={() => { onArticleClick?.(article.urlHash); setDetail(article); }} style={{
                       background: 'var(--color-surface)', borderRadius: 'var(--radius-lg)',
                       padding: '14px', boxShadow: 'var(--shadow-card)', textAlign: 'left',
                       transition: 'transform 0.12s', animation: `resultIn 0.25s ${i * 0.04}s ease both`,
@@ -134,9 +134,9 @@ export default function SearchPage({ bm }: Props) {
                       onTouchEnd={e => { (e.currentTarget as HTMLElement).style.transform = ''; }}
                     >
                       <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 6 }}>
-                        <div style={{ width: 5, height: 5, borderRadius: '50%', background: article.sourceColor ?? '#6B7280', flexShrink: 0 }} />
+                        <div style={{ width: 5, height: 5, borderRadius: '50%', background: article.sourceColor, flexShrink: 0 }} />
                         <span style={{ fontSize: 11, color: 'var(--color-text-secondary)' }}>{article.source}</span>
-                        <span style={{ fontSize: 11, color: 'var(--color-text-tertiary)' }}>{article.timeAgo ?? ''}</span>
+                        <span style={{ fontSize: 11, color: 'var(--color-text-tertiary)' }}>{article.timeAgo}</span>
                         {simPct !== null && (
                           <div style={{ marginLeft: 'auto', fontSize: 11, fontWeight: 600, color: 'var(--color-primary)', background: 'var(--color-primary-light)', padding: '2px 8px', borderRadius: 6 }}>
                             유사도 {simPct}%
@@ -148,16 +148,16 @@ export default function SearchPage({ bm }: Props) {
                         {summary}
                       </p>
                       <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 8 }}>
-                        <button onClick={e => { e.stopPropagation(); bm.toggle(article.id); }} style={{
+                        <button onClick={e => { e.stopPropagation(); bm.toggle(article.urlHash); }} style={{
                           display: 'flex', alignItems: 'center', gap: 4, fontSize: 11, fontWeight: 500,
-                          color: bm.isBookmarked(article.id) ? '#D97706' : 'var(--color-text-tertiary)',
-                          background: bm.isBookmarked(article.id) ? '#FEF3C7' : 'var(--color-surface-secondary)',
+                          color: bm.isBookmarked(article.urlHash) ? '#D97706' : 'var(--color-text-tertiary)',
+                          background: bm.isBookmarked(article.urlHash) ? '#FEF3C7' : 'var(--color-surface-secondary)',
                           padding: '4px 10px', borderRadius: 6, transition: 'all 0.15s',
                         }}>
-                          <svg width="11" height="11" viewBox="0 0 24 24" fill={bm.isBookmarked(article.id) ? '#D97706' : 'none'}>
-                            <path d="M19 21L12 16L5 21V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v16z" stroke={bm.isBookmarked(article.id) ? '#D97706' : 'currentColor'} strokeWidth="1.7" strokeLinejoin="round"/>
+                          <svg width="11" height="11" viewBox="0 0 24 24" fill={bm.isBookmarked(article.urlHash) ? '#D97706' : 'none'}>
+                            <path d="M19 21L12 16L5 21V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v16z" stroke={bm.isBookmarked(article.urlHash) ? '#D97706' : 'currentColor'} strokeWidth="1.7" strokeLinejoin="round"/>
                           </svg>
-                          {bm.isBookmarked(article.id) ? '저장됨' : '저장'}
+                          {bm.isBookmarked(article.urlHash) ? '저장됨' : '저장'}
                         </button>
                       </div>
                     </button>
