@@ -6,7 +6,6 @@ import type { ApiArticle } from '../data/api';
 import DetailPage from './DetailPage';
 import type { BookmarkHook } from '../hooks/useBookmarks';
 
-// 백엔드 category값 → 프론트 필터 매핑
 const CATEGORY_MAP: Record<string, string> = {
   'AI/스타트업':   'AI 모델',
   'AI 심층':      'AI 모델',
@@ -22,9 +21,12 @@ const CATEGORY_MAP: Record<string, string> = {
 };
 
 type Filter = '전체' | 'AI 모델' | '스타트업' | '빅테크' | '윤리/정책' | '반도체';
-interface Props { bm: BookmarkHook; }
 
-export default function HomePage({ bm }: Props) {
+// [수정1] userId, onNavigateToFeed props 추가
+interface Props { bm: BookmarkHook; userId?: string; onNavigateToFeed?: () => void; }
+
+// [수정2] 함수 선언에 userId, onNavigateToFeed 추가
+export default function HomePage({ bm, userId = '', onNavigateToFeed }: Props) {
   const [articles, setArticles]     = useState<ApiArticle[]>([]);
   const [loading, setLoading]       = useState(true);
   const [error, setError]           = useState<string | null>(null);
@@ -46,8 +48,6 @@ export default function HomePage({ bm }: Props) {
   };
 
   useEffect(() => {
-    // 초기 데이터 로드 (load는 재시도 버튼에서도 사용)
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- mount 시 fetch 후 setState
     load();
   }, []);
 
@@ -102,7 +102,6 @@ export default function HomePage({ bm }: Props) {
         @keyframes toastIn { from{opacity:0;transform:translateY(12px)} to{opacity:1;transform:translateY(0)} }
       `}</style>
 
-      {/* 알림 토스트 */}
       {notifToast && (
         <div style={{
           position: 'fixed', bottom: 80, left: '50%', transform: 'translateX(-50%)',
@@ -115,7 +114,6 @@ export default function HomePage({ bm }: Props) {
         </div>
       )}
 
-      {/* 헤더 */}
       <header style={{ background: 'var(--color-surface)', borderBottom: '0.5px solid var(--color-border)', flexShrink: 0 }}>
         <div style={{ padding: '18px 20px 0' }}>
           <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between' }}>
@@ -137,7 +135,6 @@ export default function HomePage({ bm }: Props) {
             </button>
           </div>
 
-          {/* 카테고리 필터 */}
           <div style={{ display: 'flex', gap: 7, marginTop: 14, paddingBottom: 14, overflowX: 'auto', scrollbarWidth: 'none' }}>
             {(['전체','AI 모델','스타트업','빅테크','윤리/정책','반도체'] as Filter[]).map(f => (
               <button key={f} onClick={() => setFilter(f)} style={{
@@ -152,10 +149,8 @@ export default function HomePage({ bm }: Props) {
         </div>
       </header>
 
-      {/* 피드 */}
       <main style={{ flex: 1, overflowY: 'auto', padding: '12px 16px 20px', display: 'flex', flexDirection: 'column', gap: 10, WebkitOverflowScrolling: 'touch' }}>
 
-        {/* 속보 배너 */}
         {breaking.length > 0 && (filter === '전체' || breaking.some(a => a._filterCategory === filter)) && (
           <div style={{ background: 'var(--color-surface)', borderRadius: 'var(--radius-lg)', border: '0.5px solid var(--color-border)', overflow: 'hidden', animation: 'cardIn 0.3s ease both' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '10px 14px', borderBottom: '0.5px solid var(--color-border)' }}>
@@ -186,9 +181,9 @@ export default function HomePage({ bm }: Props) {
           </div>
         )}
 
-        {/* 관심 주제 추천 배너 */}
+        {/* [수정3] 관심 주제 배너 클릭 시 내 피드 탭으로 이동 */}
         <div
-          onClick={() => setFilter('전체')}
+          onClick={() => onNavigateToFeed ? onNavigateToFeed() : setFilter('전체')}
           style={{ background: 'linear-gradient(135deg,#4F46E5 0%,#7C3AED 100%)', borderRadius: 'var(--radius-lg)', padding: '14px 16px', display: 'flex', alignItems: 'center', gap: 12, animation: 'cardIn 0.35s 0.04s ease both', cursor: 'pointer' }}>
           <div style={{ width: 36, height: 36, borderRadius: 10, background: 'rgba(255,255,255,0.18)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
@@ -204,7 +199,6 @@ export default function HomePage({ bm }: Props) {
           </svg>
         </div>
 
-        {/* 기사 카드 */}
         {filtered.map((article, i) => (
           <ArticleCard
             key={article.id}
