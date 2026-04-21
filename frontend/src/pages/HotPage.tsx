@@ -1,28 +1,28 @@
 import { useState, useEffect } from 'react';
 import { fetchArticles } from '../data/api';
-import type { ApiArticle } from '../data/api';
+import type { Article } from '../data/articles';
 import DetailPage from './DetailPage';
 import type { BookmarkHook } from '../hooks/useBookmarks';
 
 const HEAT_COLORS = ['transparent', '#BFDBFE', '#60A5FA', '#1D4ED8'];
 const heat = (day: number) => { const s = (day * 37 + 11) % 100; return s > 80 ? 3 : s > 50 ? 2 : s > 20 ? 1 : 0; };
 
-function topForDay(articles: ApiArticle[], day: number): (ApiArticle & { dayViews: number })[] {
+function topForDay(articles: Article[], day: number): (Article & { dayViews: number })[] {
   return articles
     .map(a => ({
       ...a,
-      dayViews: Math.abs(Math.sin(day * 7 + a.credibility_score * 100) * 15000) | 0,
+      dayViews: Math.abs(Math.sin(day * 7 + a.credibilityScore * 100) * 15000) | 0,
     }))
     .sort((a, b) => b.dayViews - a.dayViews)
     .slice(0, 5);
 }
 
-interface Props { bm: BookmarkHook; }
+interface Props { bm: BookmarkHook; onArticleClick?: (urlHash: string) => void; }
 
-export default function HotPage({ bm }: Props) {
+export default function HotPage({ bm, onArticleClick }: Props) {
   const [day, setDay]     = useState(25);
-  const [detail, setDetail] = useState<ApiArticle | null>(null);
-  const [articles, setArticles] = useState<ApiArticle[]>([]);
+  const [detail, setDetail] = useState<(Article & { dayViews: number }) | null>(null);
+  const [articles, setArticles] = useState<Article[]>([]);
 
   useEffect(() => {
     fetchArticles({ limit: 50 }).then(setArticles).catch(() => {});
@@ -31,7 +31,7 @@ export default function HotPage({ bm }: Props) {
   const tops = topForDay(articles, day);
 
   if (detail) return (
-    <DetailPage article={detail} bookmarked={bm.isBookmarked(detail.id)} onBookmark={bm.toggle} onBack={() => setDetail(null)} />
+    <DetailPage article={detail} bookmarked={bm.isBookmarked(detail.urlHash)} onBookmark={bm.toggle} onBack={() => setDetail(null)} />
   );
 
   return (
@@ -94,7 +94,7 @@ export default function HotPage({ bm }: Props) {
               const rankColor = i === 0 ? '#B45309' : i === 1 ? '#6B7280' : i === 2 ? '#92400E' : 'var(--color-text-tertiary)';
               const maxV = tops[0]?.dayViews ?? 1;
               return (
-                <button key={`${day}-${article.id}`} onClick={() => setDetail(article)} style={{
+                <button key={`${day}-${article.urlHash}`} onClick={() => { onArticleClick?.(article.urlHash); setDetail(article); }} style={{
                   display: 'flex', alignItems: 'flex-start', gap: 12,
                   background: 'var(--color-surface)', borderRadius: 'var(--radius-md)',
                   padding: '13px 14px', boxShadow: 'var(--shadow-card)', textAlign: 'left',
@@ -106,7 +106,7 @@ export default function HotPage({ bm }: Props) {
                   <span style={{ fontSize: 16, fontWeight: 700, color: rankColor, minWidth: 24, paddingTop: 1 }}>{i + 1}</span>
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 5, marginBottom: 4 }}>
-                      <div style={{ width: 5, height: 5, borderRadius: '50%', background: article.sourceColor ?? '#6B7280' }} />
+                      <div style={{ width: 5, height: 5, borderRadius: '50%', background: article.sourceColor }} />
                       <span style={{ fontSize: 11, color: 'var(--color-text-secondary)' }}>{article.source}</span>
                     </div>
                     <p style={{ fontSize: 13, fontWeight: 600, color: 'var(--color-text-primary)', lineHeight: 1.4, marginBottom: 8 }}>{article.title}</p>
@@ -117,13 +117,13 @@ export default function HotPage({ bm }: Props) {
                       <span style={{ fontSize: 11, color: 'var(--color-text-tertiary)', whiteSpace: 'nowrap' }}>{article.dayViews.toLocaleString()}</span>
                     </div>
                   </div>
-                  <button onClick={e => { e.stopPropagation(); bm.toggle(article.id); }} style={{
+                  <button onClick={e => { e.stopPropagation(); bm.toggle(article.urlHash); }} style={{
                     width: 28, height: 28, borderRadius: 6, flexShrink: 0,
-                    background: bm.isBookmarked(article.id) ? '#FEF3C7' : 'var(--color-surface-secondary)',
+                    background: bm.isBookmarked(article.urlHash) ? '#FEF3C7' : 'var(--color-surface-secondary)',
                     display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'all 0.15s',
                   }}>
-                    <svg width="12" height="12" viewBox="0 0 24 24" fill={bm.isBookmarked(article.id) ? '#D97706' : 'none'}>
-                      <path d="M19 21L12 16L5 21V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v16z" stroke={bm.isBookmarked(article.id) ? '#D97706' : 'var(--color-text-tertiary)'} strokeWidth="1.7" strokeLinejoin="round"/>
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill={bm.isBookmarked(article.urlHash) ? '#D97706' : 'none'}>
+                      <path d="M19 21L12 16L5 21V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v16z" stroke={bm.isBookmarked(article.urlHash) ? '#D97706' : 'var(--color-text-tertiary)'} strokeWidth="1.7" strokeLinejoin="round"/>
                     </svg>
                   </button>
                 </button>
