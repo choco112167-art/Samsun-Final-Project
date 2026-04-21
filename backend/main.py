@@ -193,25 +193,28 @@ def summarize(req: LlmTextRequest):
 
 @app.post("/article-view/{user_id}/{url_hash}")
 def record_article_view(user_id: str, url_hash: str):
-    # 1. user_logs에 기록
-    sb.table("user_logs").insert({
-        "user_id": user_id,
-        "url_hash": url_hash,
-        "action": "view",
-    }).execute()
+    # 1. 클릭한 기사 임베딩 가져오기
+    article_res = sb.table("articles").select("embedding").eq("url_hash", url_hash).execute()
+    if not article_res.data or not article_res.data[0].get("embedding"):
+        return {"message": "embedding 없음 — 스킵"}
+    article_vector = article_res.data[0]["embedding"]
 
-    # 2. 클릭한 기사 임베딩 가져오기
-    article = sb.table("articles").select("embedding").eq("url_hash", url_hash).execute()
-    article_vector = article.data[0]["embedding"]
+    # 2. 유저 벡터 가져오기
+    user_res = sb.table("users").select("user_vector").eq("user_id", user_id).execute()
+    if not user_res.data or not user_res.data[0].get("user_vector"):
+        return {"message": "유저 없음 — 스킵"}
+    user_vector = user_res.data[0]["user_vector"]
 
-    # 3. 유저 벡터 가져오기
-    user = sb.table("users").select("user_vector").eq("user_id", user_id).execute()
-    user_vector = user.data[0]["user_vector"]
-
-    # 4. 평균 내서 유저 벡터 업데이트 (0.8:0.2 비율)
+    # 3. 유저 벡터 업데이트 (클릭 기사 임베딩 40% 반영)
+    # 문자열로 저장된 경우 리스트로 변환
+    import json
+    if isinstance(article_vector, str):
+        article_vector = json.loads(article_vector)
+    if isinstance(user_vector, str):
+        user_vector = json.loads(user_vector)
     new_vector = [u * 0.6 + a * 0.4 for u, a in zip(user_vector, article_vector)]
 
-    # 5. users 테이블 업데이트
+    # 4. users 테이블 업데이트
     sb.table("users").update({"user_vector": new_vector}).eq("user_id", user_id).execute()
 
     return {"message": "조회 기록 완료"}
