@@ -1,8 +1,8 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import ArticleCard from '../components/ArticleCard';
 import { FeedSkeleton } from '../components/Skeleton';
 import { fetchArticles } from '../data/api';
-import type { ApiArticle } from '../data/api';
+import type { Article } from '../data/articles';
 import DetailPage from './DetailPage';
 import type { BookmarkHook } from '../hooks/useBookmarks';
 
@@ -20,19 +20,27 @@ const CATEGORY_MAP: Record<string, string> = {
   'AI 제품':     '스타트업',
 };
 
+const LIMIT = 20;
+
 type Filter = '전체' | 'AI 모델' | '스타트업' | '빅테크' | '윤리/정책' | '반도체';
+interface Props { bm: BookmarkHook; onNavigateToFeed: () => void; }
 
-// [수정1] userId, onNavigateToFeed props 추가
-interface Props { bm: BookmarkHook; userId?: string; onNavigateToFeed?: () => void; }
-
-// [수정2] 함수 선언에 userId, onNavigateToFeed 추가
-export default function HomePage({ bm, userId = '', onNavigateToFeed }: Props) {
-  const [articles, setArticles]     = useState<ApiArticle[]>([]);
-  const [loading, setLoading]       = useState(true);
-  const [error, setError]           = useState<string | null>(null);
-  const [filter, setFilter]         = useState<Filter>('전체');
-  const [detail, setDetail]         = useState<ApiArticle | null>(null);
-  const [notifToast, setNotifToast] = useState(false);
+export default function HomePage({ bm, onNavigateToFeed }: Props) {
+  const [articles, setArticles]       = useState<Article[]>([]);
+  const [loading, setLoading]         = useState(true);
+  const [error, setError]             = useState<string | null>(null);
+  const [filter, setFilter]           = useState<Filter>('전체');
+  const [detail, setDetail]           = useState<Article | null>(null);
+  const [notifToast, setNotifToast]   = useState(false);
+  const [hasMore, setHasMore]         = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const mainRef      = useRef<HTMLDivElement>(null);
+  const sentinelRef  = useRef<HTMLDivElement>(null); // 바닥 감지용 sentinel
+  const scrollPos    = useRef(0);
+  const offsetRef      = useRef(0);
+  const loadingMoreRef    = useRef(false);
+  const hasMoreRef        = useRef(true);
+  const initialLoadDone   = useRef(false); // sentinel은 첫 로드 완료 후에만 활성화
 
   const handleNotif = () => {
     setNotifToast(true);
@@ -42,14 +50,75 @@ export default function HomePage({ bm, userId = '', onNavigateToFeed }: Props) {
   const load = () => {
     setLoading(true);
     setError(null);
-    fetchArticles({ limit: 50 })
-      .then(data => { setArticles(data); setLoading(false); })
+    offsetRef.current = 0;
+    hasMoreRef.current = true;
+    setHasMore(true);
+    fetchArticles({ limit: LIMIT, offset: 0 })
+      .then(data => {
+        setArticles(data);
+        const more = data.length >= LIMIT;
+        hasMoreRef.current = more;
+        setHasMore(more);
+        initialLoadDone.current = true;
+        setLoading(false);
+      })
       .catch(() => { setError('기사를 불러오지 못했어요'); setLoading(false); });
   };
 
+  const loadMore = useCallback(() => {
+    // Use refs to avoid stale closure issues
+    if (!initialLoadDone.current || loadingMoreRef.current || !hasMoreRef.current) return;
+
+    loadingMoreRef.current = true;
+    setLoadingMore(true);
+
+    const newOffset = offsetRef.current + LIMIT;
+    fetchArticles({ limit: LIMIT, offset: newOffset })
+      .then(data => {
+        setArticles(prev => [...prev, ...data]);
+        offsetRef.current = newOffset;
+        const more = data.length >= LIMIT;
+        hasMoreRef.current = more;
+        setHasMore(more);
+        loadingMoreRef.current = false;
+        setLoadingMore(false);
+      })
+      .catch(() => {
+        loadingMoreRef.current = false;
+        setLoadingMore(false);
+      });
+  }, []); // no deps needed — all state accessed via refs
+
+  useEffect(() => { load(); }, []);
+
+  // 스크롤 위치 저장 (상세 → 목록 복귀 시 사용)
   useEffect(() => {
-    load();
+    const el = mainRef.current;
+    if (!el) return;
+    const onScroll = () => { scrollPos.current = el.scrollTop; };
+    el.addEventListener('scroll', onScroll, { passive: true });
+    return () => el.removeEventListener('scroll', onScroll);
   }, []);
+
+  // IntersectionObserver: sentinel이 뷰포트에 보이면 loadMore 호출
+  useEffect(() => {
+    const sentinel = sentinelRef.current;
+    if (!sentinel) return;
+    const observer = new IntersectionObserver(
+      (entries) => { if (entries[0].isIntersecting) loadMore(); },
+      { threshold: 0.1 }
+    );
+    observer.observe(sentinel);
+    return () => observer.disconnect();
+  }, [loadMore]);
+
+  useEffect(() => {
+    if (!detail && mainRef.current) {
+      setTimeout(() => {
+        if (mainRef.current) mainRef.current.scrollTop = scrollPos.current;
+      }, 50);
+    }
+  }, [detail]);
 
   const mapped = articles.map(a => ({
     ...a,
@@ -57,15 +126,13 @@ export default function HomePage({ bm, userId = '', onNavigateToFeed }: Props) {
   }));
 
   const breaking = mapped.filter(a => a.isNew);
-  const filtered  = filter === '전체'
-    ? mapped
-    : mapped.filter(a => a._filterCategory === filter);
+  const filtered = filter === '전체' ? mapped : mapped.filter(a => a._filterCategory === filter);
   const newCount = articles.filter(a => a.isNew).length;
 
   if (detail) return (
     <DetailPage
       article={detail}
-      bookmarked={bm.isBookmarked(detail.id)}
+      bookmarked={bm.isBookmarked(detail.urlHash)}
       onBookmark={bm.toggle}
       onBack={() => setDetail(null)}
     />
@@ -84,10 +151,7 @@ export default function HomePage({ bm, userId = '', onNavigateToFeed }: Props) {
   if (error) return (
     <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100%', gap: 12 }}>
       <p style={{ fontSize: 15, color: 'var(--color-text-secondary)' }}>😢 {error}</p>
-      <button
-        onClick={load}
-        style={{ fontSize: 13, color: 'var(--color-primary)', padding: '8px 18px', border: '1px solid var(--color-primary)', borderRadius: 20 }}
-      >
+      <button onClick={load} style={{ fontSize: 13, color: 'var(--color-primary)', padding: '8px 18px', border: '1px solid var(--color-primary)', borderRadius: 20 }}>
         다시 시도
       </button>
     </div>
@@ -100,6 +164,7 @@ export default function HomePage({ bm, userId = '', onNavigateToFeed }: Props) {
         @keyframes cardIn { from{opacity:0;transform:translateY(14px)} to{opacity:1;transform:translateY(0)} }
         @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.55} }
         @keyframes toastIn { from{opacity:0;transform:translateY(12px)} to{opacity:1;transform:translateY(0)} }
+        @keyframes spin { to{transform:rotate(360deg)} }
       `}</style>
 
       {notifToast && (
@@ -149,7 +214,7 @@ export default function HomePage({ bm, userId = '', onNavigateToFeed }: Props) {
         </div>
       </header>
 
-      <main style={{ flex: 1, overflowY: 'auto', padding: '12px 16px 20px', display: 'flex', flexDirection: 'column', gap: 10, WebkitOverflowScrolling: 'touch' }}>
+      <main ref={mainRef} style={{ flex: 1, overflowY: 'auto', padding: '12px 16px 20px', display: 'flex', flexDirection: 'column', gap: 10, WebkitOverflowScrolling: 'touch' }}>
 
         {breaking.length > 0 && (filter === '전체' || breaking.some(a => a._filterCategory === filter)) && (
           <div style={{ background: 'var(--color-surface)', borderRadius: 'var(--radius-lg)', border: '0.5px solid var(--color-border)', overflow: 'hidden', animation: 'cardIn 0.3s ease both' }}>
@@ -163,7 +228,7 @@ export default function HomePage({ bm, userId = '', onNavigateToFeed }: Props) {
                 .filter(a => filter === '전체' || a._filterCategory === filter)
                 .slice(0, 5)
                 .map((a, i, arr) => (
-                  <button key={a.id} onClick={() => setDetail(a)} style={{
+                  <button key={a.urlHash} onClick={() => setDetail(a)} style={{
                     flexShrink: 0, width: 220, padding: '12px 14px', textAlign: 'left',
                     borderRight: i < arr.length - 1 ? '0.5px solid var(--color-border)' : 'none',
                   }}>
@@ -181,9 +246,8 @@ export default function HomePage({ bm, userId = '', onNavigateToFeed }: Props) {
           </div>
         )}
 
-        {/* [수정3] 관심 주제 배너 클릭 시 내 피드 탭으로 이동 */}
         <div
-          onClick={() => onNavigateToFeed ? onNavigateToFeed() : setFilter('전체')}
+          onClick={onNavigateToFeed}
           style={{ background: 'linear-gradient(135deg,#4F46E5 0%,#7C3AED 100%)', borderRadius: 'var(--radius-lg)', padding: '14px 16px', display: 'flex', alignItems: 'center', gap: 12, animation: 'cardIn 0.35s 0.04s ease both', cursor: 'pointer' }}>
           <div style={{ width: 36, height: 36, borderRadius: 10, background: 'rgba(255,255,255,0.18)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
@@ -201,20 +265,44 @@ export default function HomePage({ bm, userId = '', onNavigateToFeed }: Props) {
 
         {filtered.map((article, i) => (
           <ArticleCard
-            key={article.id}
+            key={article.urlHash}
             article={article}
-            bookmarked={bm.isBookmarked(article.id)}
+            bookmarked={bm.isBookmarked(article.urlHash)}
             onBookmark={bm.toggle}
             onClick={() => setDetail(article)}
-            style={{ animation: `cardIn 0.3s ${0.06 + i * 0.05}s ease both` }}
+            style={{ animation: `cardIn 0.3s ${0.06 + Math.min(i, 10) * 0.05}s ease both` }}
           />
         ))}
+
+        {loadingMore && (
+          <div style={{ display: 'flex', justifyContent: 'center', padding: '20px 0' }}>
+            <div style={{ width: 22, height: 22, border: '2.5px solid var(--color-border)', borderTopColor: 'var(--color-primary)', borderRadius: '50%', animation: 'spin 0.7s linear infinite' }} />
+          </div>
+        )}
+
+        {hasMore && !loadingMore && articles.length > 0 && (
+          <button
+            onClick={loadMore}
+            style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, margin: '4px auto 8px', padding: '10px 24px', fontSize: 13, color: 'var(--color-primary)', background: 'var(--color-primary-light)', border: '1px solid var(--color-primary-mid)', borderRadius: 20, cursor: 'pointer' }}
+          >
+            기사 더 보기
+          </button>
+        )}
+
+        {!hasMore && articles.length > 0 && (
+          <div style={{ textAlign: 'center', padding: '20px 0', color: 'var(--color-text-tertiary)', fontSize: 13 }}>
+            모든 기사를 불러왔어요 🎉
+          </div>
+        )}
 
         {filtered.length === 0 && (
           <div style={{ textAlign: 'center', padding: '60px 0', color: 'var(--color-text-tertiary)', fontSize: 14 }}>
             해당 카테고리의 기사가 없습니다
           </div>
         )}
+
+        {/* IntersectionObserver 감지용 sentinel */}
+        <div ref={sentinelRef} style={{ height: 1 }} />
       </main>
     </div>
   );
