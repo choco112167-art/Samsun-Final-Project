@@ -23,9 +23,9 @@ const CATEGORY_MAP: Record<string, string> = {
 const LIMIT = 20;
 
 type Filter = '전체' | 'AI 모델' | '스타트업' | '빅테크' | '윤리/정책' | '반도체';
-interface Props { bm: BookmarkHook; onNavigateToFeed: () => void; }
+interface Props { bm: BookmarkHook; onNavigateToFeed: () => void; onArticleClick?: (urlHash: string) => void; }
 
-export default function HomePage({ bm, onNavigateToFeed }: Props) {
+export default function HomePage({ bm, onNavigateToFeed, onArticleClick }: Props) {
   const [articles, setArticles]       = useState<Article[]>([]);
   const [loading, setLoading]         = useState(true);
   const [error, setError]             = useState<string | null>(null);
@@ -228,7 +228,7 @@ export default function HomePage({ bm, onNavigateToFeed }: Props) {
                 .filter(a => filter === '전체' || a._filterCategory === filter)
                 .slice(0, 5)
                 .map((a, i, arr) => (
-                  <button key={a.urlHash} onClick={() => setDetail(a)} style={{
+                  <button key={a.urlHash} onClick={() => { onArticleClick?.(a.urlHash); setDetail(a); }} style={{
                     flexShrink: 0, width: 220, padding: '12px 14px', textAlign: 'left',
                     borderRight: i < arr.length - 1 ? '0.5px solid var(--color-border)' : 'none',
                   }}>
@@ -269,7 +269,7 @@ export default function HomePage({ bm, onNavigateToFeed }: Props) {
             article={article}
             bookmarked={bm.isBookmarked(article.urlHash)}
             onBookmark={bm.toggle}
-            onClick={() => setDetail(article)}
+            onClick={() => { onArticleClick?.(article.urlHash); setDetail(article); }}
             style={{ animation: `cardIn 0.3s ${0.06 + Math.min(i, 10) * 0.05}s ease both` }}
           />
         ))}
