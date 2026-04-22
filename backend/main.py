@@ -69,7 +69,7 @@ def onboarding(req: OnboardingRequest):
 
 
 @app.get("/feed/{user_id}")
-def get_feed(user_id: str, top_k: int = 10):
+def get_feed(user_id: str, top_k: int = 20):
     """
     유저 맞춤 기사 피드를 돌려준다. 추천 이유도 함께 생성.
     """
