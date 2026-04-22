@@ -1,3 +1,6 @@
+# Install from repo root: pip install -r requirements.txt
+# FastAPI + RSS pipeline (main.py) + backend API common deps
+
 fastapi>=0.115.0
 uvicorn[standard]>=0.32.0
 supabase>=2.10.0
@@ -8,3 +11,6 @@ requests>=2.32.0
 httpx>=0.25.0
 feedparser>=6.0.11
 ollama>=0.3.0
+
+# Gemini (fact_checker + neologism RAG with Google Search Grounding)
+google-genai>=1.0.0

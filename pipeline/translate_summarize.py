@@ -8,13 +8,22 @@ Setup:
 
 Usage:
   python pipeline/translate_summarize.py
+
+Note:
+  번역 프롬프트 생성 직전에 backend.neologism_rag.explain_neologism 으로
+  신조어 용어집(glossary)을 만들어 user_content 앞에 주입합니다.
+  신조어 조회 실패 시에도 파이프라인은 중단되지 않고 기존 프롬프트로 진행.
 """
 
+import logging
+import os
 import re
 import sys
+
 import ollama
 from dotenv import load_dotenv
-import os
+
+from backend.neologism_rag import explain_neologism
 from pipeline.utils import preprocess_text, extract_json as _extract_json_util
 
 if sys.stdout.encoding != "utf-8":
@@ -22,7 +31,39 @@ if sys.stdout.encoding != "utf-8":
 
 load_dotenv()
 
+logger = logging.getLogger(__name__)
+
 MODEL = os.getenv("MODEL_NAME", "qwen3.5:4b")
+
+# ────────────────────────────────────────────────
+# 신조어 감지용 상수
+# ────────────────────────────────────────────────
+# 우선적으로 감지할 AI/기술 용어 (요구사항에서 지정한 큐레이션 목록).
+# Fine-tuning 처럼 하이픈 포함 토큰도 \b(word boundary) 기반으로 잡힘.
+AI_TERMS: tuple[str, ...] = (
+    "LoRA", "RLHF", "RAG", "Transformer", "Diffusion",
+    "Fine-tuning", "Quantization", "Hallucination", "Multimodal",
+    "Benchmark", "Grounding", "Embedding", "Inference", "Agent",
+)
+
+# 대문자로 시작하는 단어 중 제외할 일반 영어 (문장 시작 관사/대명사/조동사 등).
+# 이 목록에 없는 모든 Capitalized Word 는 후보로 간주하고 최대 5개까지 처리.
+STOPWORDS: frozenset[str] = frozenset({
+    "The", "This", "That", "These", "Those", "An",
+    "In", "On", "At", "For", "With", "But", "And", "Or", "If",
+    "When", "Where", "Why", "How", "What", "Who", "Which",
+    "It", "Its", "They", "We", "Our", "Their", "His", "Her",
+    "Have", "Has", "Had", "Will", "Would", "Could", "Should",
+    "Can", "May", "Must",
+    "Is", "Are", "Was", "Were", "Be", "Been", "Being",
+    "Do", "Does", "Did", "Not", "As", "Of", "To", "By", "From",
+    "About", "After", "Before", "While", "Since", "Until",
+    "However", "Meanwhile", "Also", "Only",
+})
+
+# 용어 감지·조회 상한 (API 비용 절감).
+MAX_GLOSSARY_TERMS: int = 5
+
 
 SYSTEM_PROMPT = """You are a professional Korean translator and summarizer.
 
@@ -49,32 +90,19 @@ If no title is provided, set "title_ko" to "".
 1. Translate the ENTIRE article into Korean.
    Use journalistic body style (~했다 / ~밝혔다 / ~에 따르면). Prefer active voice: '발표했다' over '발표됐다'.
 2. Keep these abbreviations in English exactly as-is: RAG, LLM, GPU, NPU, API, RLHF, SFT, LoRA, QLoRA, P2P, B2B, SNS.
-3. Standard tech transliterations (use exactly these):
-   Fine-tuning→파인튜닝 / Embedding→임베딩 / Prompt→프롬프트 / Transformer→트랜스포머
-   Startup→스타트업 / Platform→플랫폼 / Algorithm→알고리즘
+3. AI/tech terms must stay in English — do NOT transliterate:
+   Fine-tuning, Embedding, Prompt, Transformer, Benchmark, Inference, Token, Dataset, Checkpoint
+   General loanwords already standard in Korean are fine: Startup→스타트업, Platform→플랫폼, Algorithm→알고리즘
 
-4. PROPER NOUN FORMAT — applies ONLY to English/Western company names, product names, and brand names.
-   • Rule: EnglishName(한국어 음차) on FIRST mention only. EnglishName alone after that.
-   • Standard glossary (use exactly these Korean forms):
-     ▸ IT 기업: Anthropic(앤트로픽) / OpenAI(오픈에이아이) / Google(구글) / Meta(메타) / Microsoft(마이크로소프트)
-       Nvidia(엔비디아) / Apple(애플) / Amazon(아마존) / Intel(인텔) / Tesla(테슬라)
-       SpaceX(스페이스X) / DeepMind(딥마인드) / xAI(xAI) / Huawei(화웨이) / Xiaomi(샤오미)
-       Tencent(텐센트) / Alibaba(알리바바) / ByteDance(바이트댄스)
-     ▸ AI 스타트업·연구소: Cohere(코히어) / Perplexity AI(퍼플렉시티 AI) / Runway(런웨이)
-       Stability AI(스태빌리티 AI) / Midjourney(미드저니) / Mistral AI(미스트랄 AI)
-       Scale AI(스케일 AI) / Hugging Face(허깅 페이스) / Inflection AI(인플렉션 AI) / Together AI(투게더 AI)
-     ▸ AI 모델·제품: ChatGPT(챗GPT) / Gemini(제미나이) / Llama(라마) / Grok(그록)
-       Copilot(코파일럿) / Claude(클로드) / Sora(소라) / DALL-E(달리) / Gemma(젬마) / Phi(파이)
+4. PROPER NOUNS — company names, product names, brand names must stay in English. No Korean transliteration.
+   • Rule: English name ONLY — do NOT add Korean phonetic transcription in parentheses.
+   • e.g., Anthropic (NOT 앤트로픽), OpenAI (NOT 오픈에이아이), Nvidia (NOT 엔비디아),
+     Google (NOT 구글), Meta (NOT 메타), Microsoft (NOT 마이크로소프트),
+     Gemini (NOT 제미나이), Llama (NOT 라마), Claude (NOT 클로드), ChatGPT (NOT 챗GPT)
    • Model version numbers always stay in English: e.g., GPT-4o, Claude 3.5 Sonnet, Llama 3.1 70B
-   • For names NOT in the glossary: use the most widely recognized Korean transliteration.
 
-5. PERSON NAMES (Western only)
-   • First mention: FullName(한국어 음차) — e.g., Sam Altman(샘 올트먼)
-   • After that: last name only or full English name — e.g., 올트먼 or Sam Altman
-   • Standard names: Sam Altman(샘 올트먼) / Elon Musk(일론 머스크) / Jensen Huang(젠슨 황)
-     Sundar Pichai(순다르 피차이) / Mark Zuckerberg(마크 저커버그) / Satya Nadella(사티아 나델라)
-     Dario Amodei(다리오 아모데이) / Demis Hassabis(데미스 하사비스) / Yann LeCun(얀 르쿤)
-     Geoffrey Hinton(제프리 힌튼) / Greg Brockman(그렉 브록만) / Ilya Sutskever(일리야 수츠케버)
+5. PERSON NAMES — use English name only. Do NOT add Korean transliteration.
+   • e.g., Sam Altman (NOT 샘 올트먼), Jensen Huang (NOT 젠슨 황), Elon Musk (NOT 일론 머스크)
    • Job titles are translated into Korean: professor→교수, researcher→연구원, founder→창업자
 
 6. NUMBERS AND UNITS
@@ -89,13 +117,12 @@ If no title is provided, set "title_ko" to "".
    • Multipliers: 2x → 2배 / 3x → 3배
    • Technical units (GB, TB, ms, TFLOPS, %) — keep as-is
 
-7. DO NOT apply the English(한국어) format to:
-   • Korean person names (홍길동, 이재용 etc.) — write in Korean only, no parentheses
-   • Korean company/institution names (삼성전자, 국가정보원 etc.) — Korean only
-   • Already-Korean loanwords (디즈니, 인터넷 etc.) — no duplication
+7. Korean-origin names: write in Korean only, no parenthetical annotation.
+   • Korean person names: 홍길동, 이재용 etc.
+   • Korean company/institution names: 삼성전자, 국가정보원 etc.
 
-8. New English coinages not in the glossary: EnglishTerm(한국어 음차, 한 줄 설명) on first mention.
-   Example: Blackwell Ultra(블랙웰 울트라, Nvidia 차세대 GPU 아키텍처)
+8. Brand-new English coinages with no established Korean equivalent: EnglishTerm(한 줄 설명) on first mention.
+   Example: Blackwell Ultra(Nvidia 차세대 GPU 아키텍처) — explanation in Korean, but NO Korean phonetic transcription.
 
 ━━━ TITLE TRANSLATION RULES ━━━
 - title_ko: translate the English title into Korean headline style.
@@ -131,6 +158,85 @@ def estimate_sentences(text: str, max_sentences: int = 3) -> int:
 
 
 # ────────────────────────────────────────────────
+# Neologism Glossary (신조어 용어집 주입)
+# ────────────────────────────────────────────────
+def _extract_candidate_terms(text: str, max_terms: int = MAX_GLOSSARY_TERMS) -> list[str]:
+    """
+    영문 본문에서 신조어 후보를 최대 max_terms 개까지 추출.
+
+    우선순위:
+      1) AI_TERMS 목록 매치 (대소문자 무시, 표기는 정규 형태로 통일)
+      2) 대문자로 시작하는 3자+ 단어 (STOPWORDS 제외, 출현 순서)
+
+    중복 제거. 원문의 첫 출현 순서를 최대한 보존.
+    """
+    found: list[str] = []
+    seen: set[str] = set()
+
+    # (1) AI_TERMS 우선 — 등장하기만 하면 canonical 표기로 수집
+    for term in AI_TERMS:
+        if len(found) >= max_terms:
+            return found
+        pattern = re.compile(rf"\b{re.escape(term)}\b", re.IGNORECASE)
+        if pattern.search(text) and term not in seen:
+            found.append(term)
+            seen.add(term)
+
+    # (2) Capitalized 단어 — 출현 순서대로
+    cap_pattern = re.compile(r"\b[A-Z][A-Za-z][A-Za-z0-9\-]+\b")
+    for m in cap_pattern.finditer(text):
+        if len(found) >= max_terms:
+            break
+        word = m.group()
+        if word in STOPWORDS or word in seen:
+            continue
+        # ALL CAPS 약어(GPU, API 등)는 SYSTEM_PROMPT 규칙 2번에서 이미 처리됨 — skip
+        if word.isupper() and len(word) <= 4:
+            continue
+        found.append(word)
+        seen.add(word)
+
+    return found[:max_terms]
+
+
+def _build_glossary(text: str, title: str = "") -> str:
+    """
+    본문 + 제목에서 신조어 추출 → explain_neologism 호출 → 용어집 문자열 반환.
+
+    반환 형식:
+        "다음 용어를 참고하세요:\n<Term1(음차, 설명)>\n<Term2(음차, 설명)>\n..."
+
+    조회 결과가 없거나 모두 실패하면 빈 문자열 반환 → 기존 프롬프트 그대로 사용.
+    개별 용어 조회 실패는 silent skip (파이프라인 중단 방지).
+    """
+    combined = f"{title}\n{text}" if title else text
+    terms = _extract_candidate_terms(combined)
+    if not terms:
+        return ""
+
+    entries: list[str] = []
+    for term in terms:
+        try:
+            explanation = explain_neologism(term)
+        except Exception as e:
+            logger.warning("explain_neologism 실패 (term=%s): %s", term, e)
+            continue
+        if not explanation:
+            continue
+        # 설명이 비어있는 폴백 응답("Term" 또는 "Term(Term)")은 주입 가치 없음 — skip
+        inside = explanation[explanation.find("(") + 1 : -1] if "(" in explanation else ""
+        if ", " not in inside:
+            continue
+        entries.append(explanation)
+
+    if not entries:
+        return ""
+
+    logger.info("glossary 주입: %d개 용어 (%s)", len(entries), ", ".join(terms[:len(entries)]))
+    return "다음 용어를 참고하세요:\n" + "\n".join(entries)
+
+
+# ────────────────────────────────────────────────
 # Core Function
 # ────────────────────────────────────────────────
 def translate_and_summarize(
@@ -159,6 +265,16 @@ def translate_and_summarize(
     system = SYSTEM_PROMPT.format(n=summary_sentences)
     user_content = f"[TITLE]\n{title}\n\n[BODY]\n{text}" if title else text
 
+    # 번역 프롬프트 생성 직전 — 신조어 용어집 주입 (실패해도 파이프라인 계속)
+    try:
+        glossary = _build_glossary(text, title)
+    except Exception as e:
+        logger.warning("glossary 생성 실패 (건너뜀): %s", e)
+        glossary = ""
+
+    if glossary:
+        user_content = f"{glossary}\n\n{user_content}"
+
     for attempt in range(3):   # 최대 3회 시도
         response = ollama.chat(
             model=MODEL,
@@ -169,7 +285,7 @@ def translate_and_summarize(
             options={
                 "temperature": 0.1,
                 "num_predict": -1,   # 무제한 — EOS 토큰까지 생성
-                "num_gpu": 99,
+                "num_gpu": 0,        # 0 = Ollama가 VRAM에 맞게 자동 분할 (이전 99는 VRAM 부족 시 실패)
             },
             think=False,  # thinking 모드 비활성화 (qwen3.5:4b 전용)
         )
@@ -197,9 +313,7 @@ def batch_translate_summarize(
     for i, text in enumerate(texts, 1):
         print(f"[{i}/{len(texts)}] 처리 중...")
         try:
-            result = translate_and_summarize(
-                text, summary_sentences=summary_sentences
-            )
+            result = translate_and_summarize(text, summary_sentences)
             results.append({"index": i, "status": "ok", **result})
         except Exception as e:
             results.append({"index": i, "status": "error", "error": str(e)})
