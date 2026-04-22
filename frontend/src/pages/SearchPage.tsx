@@ -1,14 +1,32 @@
-import { useState, useRef } from 'react';
+import { useState, useRef, useCallback } from 'react';
 import { searchArticles } from '../data/api';
+import { toArticle } from '../data/articles';
 import type { Article } from '../data/articles';
 import DetailPage from './DetailPage';
 import type { BookmarkHook } from '../hooks/useBookmarks';
 
-/** searchArticles 반환 타입 — api.ts에서 이미 Article로 변환되어 옴 */
+/** SearchResult를 Article로 변환하되 similarity는 보존 */
 type SearchItem = Article & { similarity?: number };
 
-const RECENT      = ['GPT-5 출시', 'TSMC 반도체', '오픈소스 모델', 'EU AI 규제'];
+const RECENT_KEY  = 'samsun_recent_searches';
+const MAX_RECENT  = 8;
 const SUGGESTIONS = ['AI 칩 설계', '오픈소스 LLM', '반도체 공급망', 'AI 규제 동향', '스타트업 투자'];
+
+/** localStorage에서 최근 검색어 목록을 불러온다 */
+function loadRecent(): string[] {
+  try {
+    return JSON.parse(localStorage.getItem(RECENT_KEY) ?? '[]');
+  } catch {
+    return [];
+  }
+}
+
+/** 검색어를 최근 검색 목록 맨 앞에 추가하고 저장한다 (중복 제거, 최대 MAX_RECENT개) */
+function saveRecent(q: string, prev: string[]): string[] {
+  const next = [q, ...prev.filter(s => s !== q)].slice(0, MAX_RECENT);
+  try { localStorage.setItem(RECENT_KEY, JSON.stringify(next)); } catch { /* noop */ }
+  return next;
+}
 
 interface Props { bm: BookmarkHook; }
 
@@ -18,19 +36,40 @@ export default function SearchPage({ bm }: Props) {
   const [results, setResults]     = useState<SearchItem[]>([]);
   const [loading, setLoading]     = useState(false);
   const [detail, setDetail]       = useState<SearchItem | null>(null);
+  const [recent, setRecent]       = useState<string[]>(loadRecent);
   const inputRef = useRef<HTMLInputElement>(null);
 
-  const doSearch = (q: string) => {
+  const doSearch = useCallback((q: string) => {
     if (!q.trim()) return;
+    const trimmed = q.trim();
     setLoading(true);
-    setSubmitted(q);
-    searchArticles(q, 15)
+    setSubmitted(trimmed);
+    // 검색할 때마다 최근 검색 목록 맨 앞에 추가
+    setRecent(prev => saveRecent(trimmed, prev));
+    searchArticles(trimmed, 15)
       .then(data => {
-        // api.ts의 searchArticles가 이미 Article로 변환 + similarity 보존하여 반환
-        setResults(data);
+        // SearchResult(ApiArticle 기반) → Article(camelCase)로 변환하고 similarity 보존
+        const items: SearchItem[] = data.map(r => ({ ...toArticle(r), similarity: r.similarity }));
+        setResults(items);
         setLoading(false);
       })
       .catch(() => { setResults([]); setLoading(false); });
+  }, []);
+
+  /** 최근 검색어 항목 하나 삭제 */
+  const removeRecent = (s: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    setRecent(prev => {
+      const next = prev.filter(r => r !== s);
+      try { localStorage.setItem(RECENT_KEY, JSON.stringify(next)); } catch { /* noop */ }
+      return next;
+    });
+  };
+
+  /** 최근 검색어 전체 삭제 */
+  const clearRecent = () => {
+    setRecent([]);
+    try { localStorage.removeItem(RECENT_KEY); } catch { /* noop */ }
   };
 
   if (detail) return (
@@ -66,9 +105,16 @@ export default function SearchPage({ bm }: Props) {
               placeholder="자연어로 검색해보세요"
               style={{ flex: 1, background: 'none', border: 'none', outline: 'none', fontSize: 14, color: 'var(--color-text-primary)', fontFamily: 'inherit' }}
             />
-            {query && <button type="button" onClick={() => { setQuery(''); setResults([]); setSubmitted(''); }} style={{ fontSize: 18, color: 'var(--color-text-tertiary)', lineHeight: 1 }}>×</button>}
+            {query && (
+              <button type="button" onClick={() => { setQuery(''); setResults([]); setSubmitted(''); }}
+                style={{ fontSize: 18, color: 'var(--color-text-tertiary)', lineHeight: 1 }}>×</button>
+            )}
           </div>
         </form>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 5, marginTop: 10 }}>
+          <div style={{ width: 6, height: 6, borderRadius: '50%', background: '#60a5fa' }} />
+          <span style={{ fontSize: 11, color: 'var(--color-header-text-secondary)' }}>pgvector 유사도 검색 · mxbai-embed-large</span>
+        </div>
       </header>
 
       <main style={{ flex: 1, overflowY: 'auto', WebkitOverflowScrolling: 'touch', background: 'var(--color-bg)', borderRadius: '32px 32px 0 0' }}>
@@ -84,22 +130,39 @@ export default function SearchPage({ bm }: Props) {
         {/* 초기 상태 */}
         {!loading && !submitted && (
           <div style={{ padding: '20px 16px' }}>
-            <p style={{ fontSize: 12, fontWeight: 600, color: 'var(--color-text-tertiary)', letterSpacing: '0.04em', textTransform: 'uppercase', marginBottom: 10 }}>최근 검색</p>
-            {RECENT.map(s => (
-              <button key={s} onClick={() => { setQuery(s); doSearch(s); }} style={{
-                display: 'flex', alignItems: 'center', gap: 10, width: '100%',
-                padding: '11px 4px', borderBottom: '0.5px solid var(--color-border)', textAlign: 'left',
-              }}>
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none">
-                  <path d="M3 12C3 7.03 7.03 3 12 3s9 4.03 9 9-4.03 9-9 9S3 16.97 3 12z" stroke="var(--color-text-tertiary)" strokeWidth="1.5"/>
-                  <path d="M12 7v5l3 3" stroke="var(--color-text-tertiary)" strokeWidth="1.5" strokeLinecap="round"/>
-                </svg>
-                <span style={{ fontSize: 14, color: 'var(--color-text-secondary)', flex: 1 }}>{s}</span>
-                <svg width="13" height="13" viewBox="0 0 24 24" fill="none">
-                  <path d="M7 17L17 7M7 7h10v10" stroke="var(--color-text-tertiary)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
-                </svg>
-              </button>
-            ))}
+
+            {/* 최근 검색 */}
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
+              <p style={{ fontSize: 12, fontWeight: 600, color: 'var(--color-text-tertiary)', letterSpacing: '0.04em', textTransform: 'uppercase' }}>최근 검색</p>
+              {recent.length > 0 && (
+                <button onClick={clearRecent} style={{ fontSize: 11, color: 'var(--color-text-tertiary)' }}>전체 삭제</button>
+              )}
+            </div>
+
+            {recent.length === 0 ? (
+              <p style={{ fontSize: 13, color: 'var(--color-text-tertiary)', padding: '12px 0 8px' }}>최근 검색 기록이 없어요</p>
+            ) : (
+              recent.map(s => (
+                <div key={s} style={{ display: 'flex', alignItems: 'center', gap: 10, borderBottom: '0.5px solid var(--color-border)' }}>
+                  <button onClick={() => { setQuery(s); doSearch(s); }} style={{
+                    display: 'flex', alignItems: 'center', gap: 10, flex: 1,
+                    padding: '11px 4px', textAlign: 'left',
+                  }}>
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none">
+                      <path d="M3 12C3 7.03 7.03 3 12 3s9 4.03 9 9-4.03 9-9 9S3 16.97 3 12z" stroke="var(--color-text-tertiary)" strokeWidth="1.5"/>
+                      <path d="M12 7v5l3 3" stroke="var(--color-text-tertiary)" strokeWidth="1.5" strokeLinecap="round"/>
+                    </svg>
+                    <span style={{ fontSize: 14, color: 'var(--color-text-secondary)', flex: 1 }}>{s}</span>
+                  </button>
+                  {/* 개별 삭제 버튼 */}
+                  <button onClick={e => removeRecent(s, e)} style={{
+                    padding: '4px 6px', fontSize: 16, color: 'var(--color-text-tertiary)', lineHeight: 1,
+                  }}>×</button>
+                </div>
+              ))
+            )}
+
+            {/* 추천 검색어 */}
             <p style={{ fontSize: 12, fontWeight: 600, color: 'var(--color-text-tertiary)', letterSpacing: '0.04em', textTransform: 'uppercase', marginTop: 24, marginBottom: 10 }}>추천 검색어</p>
             <div style={{ display: 'flex', gap: 7, flexWrap: 'wrap' }}>
               {SUGGESTIONS.map(s => (
@@ -116,9 +179,11 @@ export default function SearchPage({ bm }: Props) {
         {/* 검색 결과 */}
         {!loading && submitted && (
           <div style={{ padding: '14px 16px 24px' }}>
-            <div style={{ display: 'flex', alignItems: 'baseline', gap: 6, marginBottom: 12 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 12 }}>
               <span style={{ fontSize: 14, fontWeight: 600 }}>"{submitted}"</span>
               <span style={{ fontSize: 12, color: 'var(--color-text-tertiary)' }}>{results.length}건</span>
+              <button onClick={() => { setSubmitted(''); setResults([]); setQuery(''); }}
+                style={{ marginLeft: 'auto', fontSize: 12, color: 'var(--color-text-tertiary)' }}>← 돌아가기</button>
             </div>
             {results.length === 0 ? (
               <div style={{ textAlign: 'center', padding: '48px 0', color: 'var(--color-text-tertiary)', fontSize: 14 }}>검색 결과가 없어요</div>
@@ -150,7 +215,7 @@ export default function SearchPage({ bm }: Props) {
                         {article.summaryFormal}
                       </p>
                       <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 8 }}>
-                        <button onClick={e => { e.stopPropagation(); bm.toggle(article.urlHash, article); }} style={{
+                        <button onClick={e => { e.stopPropagation(); bm.toggle(article.urlHash); }} style={{
                           display: 'flex', alignItems: 'center', gap: 4, fontSize: 11, fontWeight: 500,
                           color: bm.isBookmarked(article.urlHash) ? '#D97706' : 'var(--color-text-tertiary)',
                           background: bm.isBookmarked(article.urlHash) ? '#FEF3C7' : 'var(--color-surface-secondary)',
