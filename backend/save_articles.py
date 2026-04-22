@@ -86,15 +86,17 @@ def save_articles(articles: list[dict]) -> int:
         url   = a.get("url", "")
         score = a.get("credibility_score") or 0.5   # 신뢰도가 없으면 기본값 0.5
 
-        # translation(한국어 번역본)을 벡터로 변환
-        # 한국어 쿼리에 더 잘 맞고, 검색/추천 품질이 높다
-        embedding = make_embedding(a.get("translation", ""))
+        # 한국어 제목 + 한국어 번역 합산 임베딩
+        title_en = a.get("title_en", "") or ""
+        combined = f"{a.get('title', '')}\n{a.get('translation', '')}"
+        embedding = make_embedding(combined)
 
         # DB에 저장할 한 기사의 데이터를 딕셔너리로 조립
         batch.append({
             "url_hash":          make_url_hash(url),     # PK: URL의 MD5 해시
             "url":               url,                    # 원문 URL
-            "title":             a.get("title"),         # 기사 제목 (영문)
+            "title":             a.get("title") or title_en,  # 한국어 제목, 없으면 영어 fallback
+            "title_en":          title_en,
             "source":            a.get("source"),        # 언론사명
             "source_type":       a.get("source_type"),   # 'media' | 'community'
             "category":          a.get("category"),      # 카테고리

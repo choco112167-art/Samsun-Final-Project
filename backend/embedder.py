@@ -18,14 +18,14 @@ MODE = os.getenv("MODE", "local")
 # ════════════════════════════════════════════
 # LOCAL — Ollama (개발 환경)
 # 사용: MODE=local
-# 준비: ollama pull qwen3-embedding:4b
+# 준비: ollama pull qwen3-embedding:0.6b
 # ════════════════════════════════════════════
 
 def _embed_local(text: str) -> list[float]:
     # ollama 라이브러리로 직접 호출 (HTTP 요청보다 안정적)
     import ollama
     resp = ollama.embeddings(
-        model="qwen3-embedding:4b",
+        model="qwen3-embedding:0.6b",
         prompt=text,
     )
     return resp["embedding"][:1024]
@@ -64,14 +64,10 @@ def make_embedding(text: str) -> list[float]:
     """
     텍스트 → 임베딩 벡터 (1024차원)
 
-    전환 방법:
-      로컬 → 클라우드: 아래 return 줄을 주석 처리하고, 주석 처리된 줄을 활성화
-
-    MODE=local  → Ollama qwen3-embedding:4b  (현재 활성)
-    MODE=cloud  → OpenRouter qwen/qwen3-embedding-4b
+    .env의 MODE 값으로 전환:
+      MODE=local  → Ollama qwen3-embedding:0.6b  (개발용, 기본값)
+      MODE=cloud  → OpenRouter qwen/qwen3-embedding-4b (Railway 배포용)
     """
-    # ── 로컬 (개발 중 — 기본값) ──────────────────────────────
+    if MODE == "cloud":
+        return _embed_cloud(text)
     return _embed_local(text)
-
-    # ── 클라우드 (배포 시 위 줄 주석, 아래 줄 활성화) ─────────
-    # return _embed_cloud(text)

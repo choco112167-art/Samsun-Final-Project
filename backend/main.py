@@ -139,7 +139,7 @@ def get_articles(
     HomePage, CategoryPage 등에서 기사 목록을 가져올 때 호출된다.
     """
     query = sb.table("articles").select(
-        "url_hash, url, title, source, source_type, category, country, "
+        "url_hash, url, title, title_en, source, source_type, category, country, "
         "keywords, published_at, collected_at, content, "
         "credibility_score, fact_label, "
         "translation, summary_formal, summary_casual"
@@ -182,16 +182,29 @@ def save_articles_endpoint(req: ArticleRequest):
 
 
 @app.get("/search")
-def search(q: str, top_k: int = 10):
+def search(q: str, top_k: int = 15, category: str | None = None):
     """
     SearchPage에서 자연어 검색을 할 때 호출된다.
+
+    hybrid_search_articles RPC 사용:
+      - 벡터 유사도 (의미 검색; 'LLM' → GPT 관련 기사 포함)
+      - pg_trgm 오타 키워드 (오타 허용: 'LLl' → LLM 기사 포함)
+      - RRF(Reciprocal Rank Fusion)으로 두 순위를 결합
     """
+    if not q.strip():
+        return {"results": []}
+
     query_vector = make_embedding(q)
 
-    result = sb.rpc("match_articles", {
+    params: dict = {
+        "query_text":   q,
         "query_vector": query_vector,
-        "top_k": top_k,
-    }).execute()
+        "top_k":        top_k,
+    }
+    if category:
+        params["filter_category"] = category
+
+    result = sb.rpc("hybrid_search_articles", params).execute()
 
     return {"results": result.data}
 

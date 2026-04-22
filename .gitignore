@@ -29,3 +29,6 @@ frontend/dist/
 
 # 커서 설정
 .cursor/
+
+# Claude Code
+.claude/
