@@ -30,12 +30,13 @@ export default function HotPage({ bm, onArticleClick }: Props) {
 
   const tops = topForDay(articles, day);
 
-  if (detail) return (
-    <DetailPage article={detail} bookmarked={bm.isBookmarked(detail.urlHash)} onBookmark={bm.toggle} onBack={() => setDetail(null)} />
-  );
-
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden' }}>
+    <div style={{ display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden', position: 'relative' }}>
+      {detail && (
+        <div style={{ position: 'absolute', inset: 0, zIndex: 100, background: 'var(--color-bg)', overflow: 'hidden' }}>
+          <DetailPage article={detail} bookmarked={bm.isBookmarked(detail.urlHash)} onBookmark={bm.toggle} onBack={() => setDetail(null)} />
+        </div>
+      )}
       <style>{`@keyframes listIn { from{opacity:0;transform:translateY(8px)} to{opacity:1;transform:translateY(0)} }`}</style>
 
       <header style={{ background: 'var(--color-surface)', borderBottom: '0.5px solid var(--color-border)', padding: '18px 20px 14px', flexShrink: 0 }}>
