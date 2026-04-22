@@ -35,7 +35,6 @@ export default function HomePage({ bm, onNavigateToFeed, onArticleClick }: Props
   const [hasMore, setHasMore]         = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
   const mainRef      = useRef<HTMLDivElement>(null);
-  const sentinelRef  = useRef<HTMLDivElement>(null); // 바닥 감지용 sentinel
   const scrollPos    = useRef(0);
   const offsetRef      = useRef(0);
   const loadingMoreRef    = useRef(false);
@@ -100,25 +99,9 @@ export default function HomePage({ bm, onNavigateToFeed, onArticleClick }: Props
     return () => el.removeEventListener('scroll', onScroll);
   }, []);
 
-  // IntersectionObserver: sentinel이 뷰포트에 보이면 loadMore 호출
-  useEffect(() => {
-    const sentinel = sentinelRef.current;
-    if (!sentinel) return;
-    const observer = new IntersectionObserver(
-      (entries) => { if (entries[0].isIntersecting) loadMore(); },
-      { threshold: 0.1 }
-    );
-    observer.observe(sentinel);
-    return () => observer.disconnect();
-  }, [loadMore]);
 
-  useEffect(() => {
-    if (!detail && mainRef.current) {
-      setTimeout(() => {
-        if (mainRef.current) mainRef.current.scrollTop = scrollPos.current;
-      }, 50);
-    }
-  }, [detail]);
+
+
 
   const mapped = articles.map(a => ({
     ...a,
@@ -128,15 +111,6 @@ export default function HomePage({ bm, onNavigateToFeed, onArticleClick }: Props
   const breaking = mapped.filter(a => a.isNew);
   const filtered = filter === '전체' ? mapped : mapped.filter(a => a._filterCategory === filter);
   const newCount = articles.filter(a => a.isNew).length;
-
-  if (detail) return (
-    <DetailPage
-      article={detail}
-      bookmarked={bm.isBookmarked(detail.urlHash)}
-      onBookmark={bm.toggle}
-      onBack={() => setDetail(null)}
-    />
-  );
 
   if (loading) return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden' }}>
@@ -158,7 +132,18 @@ export default function HomePage({ bm, onNavigateToFeed, onArticleClick }: Props
   );
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden', animation: 'pageFadeIn 0.3s ease' }}>
+    <div style={{ display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden', animation: 'pageFadeIn 0.3s ease', position: 'relative' }}>
+      {/* DetailPage overlay — main은 DOM에 유지되어 스크롤 위치 보존 */}
+      {detail && (
+        <div style={{ position: 'absolute', inset: 0, zIndex: 100, background: 'var(--color-bg)', overflow: 'hidden' }}>
+          <DetailPage
+            article={detail}
+            bookmarked={bm.isBookmarked(detail.urlHash)}
+            onBookmark={bm.toggle}
+            onBack={() => setDetail(null)}
+          />
+        </div>
+      )}
       <style>{`
         @keyframes pageFadeIn { from{opacity:0;transform:translateY(8px)} to{opacity:1;transform:translateY(0)} }
         @keyframes cardIn { from{opacity:0;transform:translateY(14px)} to{opacity:1;transform:translateY(0)} }
@@ -300,9 +285,6 @@ export default function HomePage({ bm, onNavigateToFeed, onArticleClick }: Props
             해당 카테고리의 기사가 없습니다
           </div>
         )}
-
-        {/* IntersectionObserver 감지용 sentinel */}
-        <div ref={sentinelRef} style={{ height: 1 }} />
       </main>
     </div>
   );
