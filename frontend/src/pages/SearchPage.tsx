@@ -10,19 +10,21 @@ type SearchItem = Article & { similarity?: number };
 const RECENT      = ['GPT-5 출시', 'TSMC 반도체', '오픈소스 모델', 'EU AI 규제'];
 const SUGGESTIONS = ['AI 칩 설계', '오픈소스 LLM', '반도체 공급망', 'AI 규제 동향', '스타트업 투자'];
 
-interface Props { bm: BookmarkHook; }
+interface Props { bm: BookmarkHook; onArticleClick?: (urlHash: string) => void; }
 
-export default function SearchPage({ bm }: Props) {
+export default function SearchPage({ bm, onArticleClick }: Props) {
   const [query, setQuery]         = useState('');
   const [submitted, setSubmitted] = useState('');
   const [results, setResults]     = useState<SearchItem[]>([]);
   const [loading, setLoading]     = useState(false);
   const [detail, setDetail]       = useState<SearchItem | null>(null);
+  const [visibleCount, setVisibleCount] = useState(20);
   const inputRef = useRef<HTMLInputElement>(null);
 
   const doSearch = (q: string) => {
     if (!q.trim()) return;
     setLoading(true);
+    setVisibleCount(20);
     setSubmitted(q);
     searchArticles(q, 15)
       .then(data => {
@@ -124,10 +126,11 @@ export default function SearchPage({ bm }: Props) {
               <div style={{ textAlign: 'center', padding: '48px 0', color: 'var(--color-text-tertiary)', fontSize: 14 }}>검색 결과가 없어요</div>
             ) : (
               <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                {results.map((article, i) => {
-                  const simPct = article.similarity !== undefined ? Math.round(article.similarity * 100) : null;
+                {results.slice(0, visibleCount).map((article, i) => {
+                  const summary = article.summaryCasual || article.summaryFormal;
+                  const simPct  = article.similarity !== undefined ? Math.round(article.similarity * 100) : null;
                   return (
-                    <button key={article.urlHash} onClick={() => setDetail(article)} style={{
+                    <button key={article.urlHash} onClick={() => { onArticleClick?.(article.urlHash); setDetail(article); }} style={{
                       background: 'var(--color-surface)', borderRadius: 'var(--radius-lg)',
                       padding: '14px', boxShadow: 'var(--shadow-card)', textAlign: 'left',
                       transition: 'transform 0.12s', animation: `resultIn 0.25s ${i * 0.04}s ease both`,
@@ -147,7 +150,7 @@ export default function SearchPage({ bm }: Props) {
                       </div>
                       <p style={{ fontSize: 13, fontWeight: 600, color: 'var(--color-text-primary)', lineHeight: 1.4, marginBottom: 5 }}>{article.title}</p>
                       <p style={{ fontSize: 12, color: 'var(--color-text-secondary)', lineHeight: 1.5, display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
-                        {article.summaryFormal}
+                        {summary}
                       </p>
                       <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 8 }}>
                         <button onClick={e => { e.stopPropagation(); bm.toggle(article.urlHash, article); }} style={{
@@ -166,6 +169,14 @@ export default function SearchPage({ bm }: Props) {
                   );
                 })}
               </div>
+            )}
+            {visibleCount < results.length && (
+              <button onClick={() => setVisibleCount(v => v + 20)} style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '4px auto 8px', padding: '10px 24px', fontSize: 13, color: 'var(--color-primary)', background: 'var(--color-primary-light)', border: '1px solid var(--color-primary-mid)', borderRadius: 20, cursor: 'pointer' }}>
+                기사 더 보기
+              </button>
+            )}
+            {visibleCount >= results.length && results.length > 0 && (
+              <div style={{ textAlign: 'center', padding: '20px 0', color: 'var(--color-text-tertiary)', fontSize: 13 }}>모든 결과를 불러왔어요 🎉</div>
             )}
           </div>
         )}

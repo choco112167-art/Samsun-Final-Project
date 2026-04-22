@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import ArticleCard from '../components/ArticleCard';
 import { FeedSkeleton } from '../components/Skeleton';
-import { fetchArticles, recordArticleView } from '../data/api';
+import { fetchArticles } from '../data/api';
 import type { Article } from '../data/articles';
 import DetailPage from './DetailPage';
 import type { BookmarkHook } from '../hooks/useBookmarks';
@@ -12,11 +12,11 @@ type Filter = '전체' | 'AI 연구' | 'AI 스타트업' | '테크 전반' | '�
 
 interface Props {
   bm: BookmarkHook;
-  userId: string;
   onNavigateToFeed?: () => void;
+  onArticleClick?: (urlHash: string) => void;
 }
 
-export default function HomePage({ bm, userId, onNavigateToFeed }: Props) {
+export default function HomePage({ bm, onNavigateToFeed, onArticleClick }: Props) {
   const [articles, setArticles]     = useState<Article[]>([]);
   const [loading, setLoading]       = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
@@ -66,11 +66,9 @@ export default function HomePage({ bm, userId, onNavigateToFeed }: Props) {
   }, [loadInitial]);
 
   const openDetail = useCallback((article: Article) => {
-    if (userId) {
-      recordArticleView(userId, article.urlHash).catch(() => {});
-    }
+    onArticleClick?.(article.urlHash);
     setDetail(article);
-  }, [userId]);
+  }, [onArticleClick]);
 
   const handleMainScroll = useCallback((e: React.UIEvent<HTMLElement>) => {
     const el = e.currentTarget;
@@ -102,7 +100,7 @@ export default function HomePage({ bm, userId, onNavigateToFeed }: Props) {
   if (loading) return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden', background: 'var(--color-header-bg)' }}>
       <header style={{ padding: '22px 20px 20px', flexShrink: 0 }}>
-        <h1 style={{ fontSize: 26, fontWeight: 800, letterSpacing: '-0.04em', color: 'var(--color-header-text)' }}>삼선뉴스</h1>
+        <h1 style={{ fontSize: 26, fontWeight: 800, letterSpacing: '-0.04em', color: 'var(--color-header-text)' }}>일선뉴스</h1>
         <p style={{ fontSize: 12, color: 'var(--color-header-text-secondary)', marginTop: 3 }}>불러오는 중...</p>
       </header>
       <div style={{ flex: 1, overflowY: 'auto', background: 'var(--color-bg)', borderRadius: '32px 32px 0 0' }}>
@@ -114,10 +112,10 @@ export default function HomePage({ bm, userId, onNavigateToFeed }: Props) {
   if (error) return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden', background: 'var(--color-header-bg)' }}>
       <header style={{ padding: '22px 20px 20px', flexShrink: 0 }}>
-        <h1 style={{ fontSize: 26, fontWeight: 800, letterSpacing: '-0.04em', color: 'var(--color-header-text)' }}>삼선뉴스</h1>
+        <h1 style={{ fontSize: 26, fontWeight: 800, letterSpacing: '-0.04em', color: 'var(--color-header-text)' }}>일선뉴스</h1>
       </header>
       <div style={{ flex: 1, background: 'var(--color-bg)', borderRadius: '32px 32px 0 0', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 12 }}>
-        <p style={{ fontSize: 15, color: 'var(--color-text-secondary)' }}>😢 {error}</p>
+        <p style={{ fontSize: 15, color: 'var(--color-text-secondary)' }}>⚠️ {error}</p>
         <button
           onClick={loadInitial}
           style={{ fontSize: 13, color: 'var(--color-primary)', padding: '8px 18px', border: '1px solid var(--color-primary)', borderRadius: 20 }}
@@ -145,16 +143,16 @@ export default function HomePage({ bm, userId, onNavigateToFeed }: Props) {
           borderRadius: 20, zIndex: 999, whiteSpace: 'nowrap',
           animation: 'toastIn 0.22s ease', backdropFilter: 'blur(8px)',
         }}>
-          🔔 새 기사 알림이 설정됐어요
+          🔔 새 기사 알림이 설정되었어요
         </div>
       )}
 
       <header style={{ flexShrink: 0, padding: '22px 20px 0' }}>
         <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between' }}>
           <div>
-            <h1 style={{ fontSize: 26, fontWeight: 800, letterSpacing: '-0.04em', color: 'var(--color-header-text)' }}>삼선뉴스</h1>
+            <h1 style={{ fontSize: 26, fontWeight: 800, letterSpacing: '-0.04em', color: 'var(--color-header-text)' }}>일선뉴스</h1>
             <p style={{ fontSize: 12, color: 'var(--color-header-text-secondary)', marginTop: 3 }}>
-              <span style={{ color: 'var(--color-primary)', fontWeight: 600 }}>{newCount}개 새 기사</span>
+              <span style={{ color: 'var(--color-primary)', fontWeight: 600 }}>{newCount}개의 새 기사</span>
             </p>
           </div>
           <button

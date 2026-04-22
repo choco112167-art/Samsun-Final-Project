@@ -20,6 +20,11 @@ import type { Article } from './articles';
 const BASE_URL = (import.meta.env.VITE_API_BASE_URL as string | undefined)
   ?? 'http://localhost:8000';
 
+// 코랩 ngrok URL — AI 추천 전용
+// 코랩 실행 후 출력된 ngrok URL로 교체하세요
+const COLAB_URL = (import.meta.env.VITE_COLAB_URL as string | undefined)
+  ?? 'https://purebred-cadmium-rosy.ngrok-free.dev';
+
 /**
  * 모든 API 요청의 공통 처리를 담당하는 내부 함수.
  * 직접 호출하지 않고 아래 함수들이 내부적으로 사용한다.
@@ -131,7 +136,7 @@ export async function fetchArticles(params: FetchArticlesParams = {}): Promise<A
   if (params.source)      qs.set('source',      params.source);
   if (params.source_type) qs.set('source_type', params.source_type);
   if (params.limit)       qs.set('limit',       String(params.limit));
-  if (params.offset)      qs.set('offset',      String(params.offset));
+  if (params.offset !== undefined) qs.set('offset', String(params.offset));
   if (params.is_breaking !== undefined) qs.set('is_breaking', String(params.is_breaking));
 
   // 파라미터가 있으면 "?category=AI+모델&limit=20" 형태로 붙인다
@@ -187,6 +192,19 @@ export async function fetchFeed(userId: string, topK = 10): Promise<(Article & {
  * @param query 검색어
  * @param topK  가져올 결과 수 (기본 10개)
  */
+export async function fetchFeedLlm(userId: string): Promise<(Article & { reason?: string })[]> {
+  // 로컬 사용 시
+  // const res = await request<{ feed: FeedArticle[] }>(
+  //   `/feed-llm/${encodeURIComponent(userId)}`,
+  // );
+  const res = await fetch(`${COLAB_URL}/feed-llm/${encodeURIComponent(userId)}`, {
+    headers: { 'ngrok-skip-browser-warning': 'true' }
+  }).then(r => r.json()) as { feed: FeedArticle[] };
+
+  const list = res.feed ?? [];
+  return list.map(f => ({ ...toArticle(f), reason: (f as any).reason }));
+}
+
 export async function searchArticles(query: string, topK = 10): Promise<(Article & { similarity?: number })[]> {
   const res = await request<{ results: SearchResult[] }>(
     `/search?q=${encodeURIComponent(query)}&top_k=${topK}`,

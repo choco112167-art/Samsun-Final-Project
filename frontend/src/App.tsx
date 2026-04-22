@@ -7,6 +7,7 @@ import HotPage from './pages/HotPage';
 import SearchPage from './pages/SearchPage';
 import MyFeedPage from './pages/MyFeedPage';
 import { useBookmarks } from './hooks/useBookmarks';
+import { recordArticleView } from './data/api';
 
 const LS_ONBOARDED = 'samsun_onboarded';
 const LS_INTERESTS = 'samsun_interests';
@@ -35,6 +36,13 @@ export default function App() {
     localStorage.setItem(LS_INTERESTS, JSON.stringify(next));
   };
 
+  // 모든 탭에서 기사 클릭 시 호출 — user_vector 업데이트
+  const handleArticleClick = (urlHash: string) => {
+    if (userId) {
+      recordArticleView(userId, urlHash).catch(() => {});
+    }
+  };
+
   if (!onboarded) {
     return (
       <div style={{ height: '100dvh', maxWidth: 480, margin: '0 auto', overflow: 'hidden' }}>
@@ -55,13 +63,13 @@ export default function App() {
         return (
           <HomePage
             bm={bm}
-            userId={userId}
             onNavigateToFeed={() => setActiveTab('my')}
+            onArticleClick={handleArticleClick}
           />
         );
-      case 'category': return <CategoryPage bm={bm} />;
-      case 'hot':      return <HotPage bm={bm} />;
-      case 'search':   return <SearchPage bm={bm} />;
+      case 'category': return <CategoryPage bm={bm} onArticleClick={handleArticleClick} />;
+      case 'hot':      return <HotPage bm={bm} onArticleClick={handleArticleClick} />;
+      case 'search':   return <SearchPage bm={bm} onArticleClick={handleArticleClick} />;
       case 'my':
         return (
           <MyFeedPage
@@ -81,7 +89,7 @@ export default function App() {
       height: '100dvh', maxWidth: 480, margin: '0 auto',
       background: 'var(--color-bg)', overflow: 'hidden',
     }}>
-      <div style={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
+      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0, position: 'relative' }}>
         {renderPage()}
       </div>
       <TabBar activeTab={activeTab} onChange={setActiveTab} />

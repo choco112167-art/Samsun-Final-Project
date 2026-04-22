@@ -10,9 +10,9 @@ const PAGE_SIZE = 50;
 type SubTab = '전체' | Category;
 const CATEGORY_TABS: SubTab[] = ['전체', 'AI 연구', 'AI 스타트업', '테크 전반', '윤리·정책', '반도체'];
 
-interface Props { bm: BookmarkHook; }
+interface Props { bm: BookmarkHook; onArticleClick?: (urlHash: string) => void; }
 
-export default function CategoryPage({ bm }: Props) {
+export default function CategoryPage({ bm, onArticleClick }: Props) {
   const [tab, setTab]       = useState<SubTab>('전체');
   const [detail, setDetail] = useState<Article | null>(null);
   const [articles, setArticles] = useState<Article[]>([]);
@@ -94,7 +94,7 @@ export default function CategoryPage({ bm }: Props) {
           const rankColor = i === 0 ? '#B45309' : i === 1 ? '#6B7280' : i === 2 ? '#92400E' : 'var(--color-text-tertiary)';
           const maxScore  = sorted[0]?.credibilityScore ?? 1;
           return (
-            <button key={article.urlHash} onClick={() => setDetail(article)} style={{
+            <button key={article.urlHash} onClick={() => { onArticleClick?.(article.urlHash); setDetail(article); }} style={{
               display: 'flex', alignItems: 'flex-start', gap: 12,
               background: 'var(--color-surface)', borderRadius: 'var(--radius-lg)',
               padding: '14px', boxShadow: 'var(--shadow-card)', textAlign: 'left',
