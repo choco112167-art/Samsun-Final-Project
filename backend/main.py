@@ -69,7 +69,7 @@ def onboarding(req: OnboardingRequest):
 
 
 @app.get("/feed/{user_id}")
-def get_feed(user_id: str, top_k: int = 20):
+def get_feed(user_id: str, top_k: int = 10):
     """
     유저 맞춤 기사 피드를 돌려준다. 추천 이유도 함께 생성.
     """
@@ -195,51 +195,45 @@ def search(q: str, top_k: int = 10):
     return {"results": result.data}
 
 
-@app.get("/feed-llm/{user_id}")
-def get_feed_llm(user_id: str):
-    """
-    LLM 기반 개인화 추천 — 벡터 top10 중 qwen이 5개 선별 + 추천 이유 생성
-    """
-    # 1. 유저 정보 조회
-    user_res = sb.table("users").select("user_vector, interest_tags").eq("user_id", user_id).execute()
-    if not user_res.data:
-        raise HTTPException(status_code=404, detail="유저 없음")
-    user_vector = user_res.data[0]["user_vector"]
-    interest_tags = user_res.data[0].get("interest_tags", [])
-
-    # 2. 최근 클릭 키워드 조회
-    logs = sb.table("user_logs").select("url_hash").eq("user_id", user_id).order("created_at", desc=True).limit(10).execute()
-    recent_keywords = []
-    if logs.data:
-        recent_hashes = [l["url_hash"] for l in logs.data]
-        recent_articles = sb.table("articles").select("category, keywords").in_("url_hash", recent_hashes).execute()
-        for a in recent_articles.data:
-            recent_keywords.append(a.get("category", ""))
-            recent_keywords.extend(a.get("keywords", []) or [])
-    recent_keywords = list(set(filter(None, recent_keywords)))[:10]
-
-    # 3. 벡터 유사도 top10 추출
-    vec_result = sb.rpc("match_articles", {
-        "query_vector": user_vector,
-        "top_k": 10,
-    }).execute()
-    top_articles = vec_result.data
-
-    # 4. LLM으로 5개 선별 + 추천 이유 생성
-    try:
-        from pipeline.recommend import recommend_articles
-        recommended = recommend_articles(
-            interest_tags=interest_tags,
-            recent_keywords=recent_keywords,
-            articles=top_articles,
-        )
-    except Exception as e:
-        import traceback
-        logging.error(f"LLM 추천 오류: {e}")
-        logging.error(traceback.format_exc())
-        raise HTTPException(status_code=500, detail=str(e))
-
-    return {"feed": recommended}
+# ── /feed-llm 엔드포인트 ──
+# 코랩에서 LLM 실행 시 사용 (코랩 colab_feed_llm.py에서 별도 서버로 운영)
+# 로컬에서는 주석 해제하여 사용 가능하나, 모델 로드로 인해 시작이 느려질 수 있음
+#
+# @app.get("/feed-llm/{user_id}")
+# def get_feed_llm(user_id: str):
+#     user_res = sb.table("users").select("user_vector, interest_tags").eq("user_id", user_id).execute()
+#     if not user_res.data:
+#         raise HTTPException(status_code=404, detail="유저 없음")
+#     user_vector = user_res.data[0]["user_vector"]
+#     interest_tags = user_res.data[0].get("interest_tags", [])
+#
+#     logs = sb.table("user_logs").select("url_hash").eq("user_id", user_id).order("created_at", desc=True).limit(10).execute()
+#     recent_keywords = []
+#     if logs.data:
+#         recent_hashes = [l["url_hash"] for l in logs.data]
+#         recent_articles = sb.table("articles").select("category, keywords").in_("url_hash", recent_hashes).execute()
+#         for a in recent_articles.data:
+#             recent_keywords.append(a.get("category", ""))
+#             recent_keywords.extend(a.get("keywords", []) or [])
+#     recent_keywords = list(set(filter(None, recent_keywords)))[:10]
+#
+#     vec_result = sb.rpc("match_articles", {"query_vector": user_vector, "top_k": 20}).execute()
+#     top_articles = vec_result.data
+#
+#     try:
+#         from pipeline.recommend import recommend_articles
+#         recommended = recommend_articles(
+#             interest_tags=interest_tags,
+#             recent_keywords=recent_keywords,
+#             articles=top_articles,
+#         )
+#     except Exception as e:
+#         import traceback
+#         logging.error(f"LLM 추천 오류: {e}")
+#         logging.error(traceback.format_exc())
+#         raise HTTPException(status_code=500, detail=str(e))
+#
+#     return {"feed": recommended}
 
 
 @app.get("/health")
