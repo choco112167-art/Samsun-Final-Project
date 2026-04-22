@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { fetchFeed, recordArticleView } from '../data/api';
+import { fetchFeed, fetchFeedLlm, recordArticleView } from '../data/api';
 import type { Article } from '../data/articles';
 import ArticleCard from '../components/ArticleCard';
 import DetailPage from './DetailPage';
@@ -13,7 +13,7 @@ const ALL_INTERESTS: { id: Interest; emoji: string; desc: string }[] = [
   { id: '대기업',        emoji: '🏢', desc: '구글·MS·애플·Meta·삼성 등 빅테크 동향' },
 ];
 
-type MyTab = 'feed' | 'bookmarks' | 'interests';
+type MyTab = 'feed' | 'llm' | 'bookmarks' | 'interests';
 
 interface Props {
   bm: BookmarkHook;
@@ -32,6 +32,10 @@ export default function MyFeedPage({ bm, interests, onInterestsChange, userId }:
   const [feedLoading, setFeedLoading]   = useState(false);
   const [feedError, setFeedError]       = useState<string | null>(null);
   const [visibleCount, setVisibleCount] = useState(20);
+  const [llmArticles, setLlmArticles]   = useState<(Article & { reason?: string })[]>([]);
+  const [llmLoading, setLlmLoading]     = useState(false);
+  const [llmError, setLlmError]         = useState<string | null>(null);
+  const [llmLoaded, setLlmLoaded]       = useState(false);
 
   const mainRef    = useRef<HTMLDivElement>(null);
   const scrollPos  = useRef(0);
@@ -52,6 +56,15 @@ export default function MyFeedPage({ bm, interests, onInterestsChange, userId }:
     // eslint-disable-next-line react-hooks/set-state-in-effect -- userId 변경 시 피드 재로드 (loadFeed는 버튼과 공유)
     loadFeed();
   }, [loadFeed]);
+
+  const loadLlmFeed = useCallback(() => {
+    if (!userId) return;
+    setLlmLoading(true);
+    setLlmError(null);
+    fetchFeedLlm(userId)
+      .then(data => { setLlmArticles(data); setLlmLoading(false); setLlmLoaded(true); })
+      .catch(() => { setLlmError('LLM 추천을 불러오지 못했어요'); setLlmLoading(false); });
+  }, [userId]);
 
   // 스크롤 위치 저장
   useEffect(() => {
@@ -123,8 +136,8 @@ export default function MyFeedPage({ bm, interests, onInterestsChange, userId }:
 
         {/* 탭 */}
         <div style={{ display: 'flex', marginTop: 12 }}>
-          {([['feed','추천 피드'], ['bookmarks','북마크'], ['interests','관심 주제']] as [MyTab, string][]).map(([id, label]) => (
-            <button key={id} onClick={() => setTab(id)} style={{
+          {([['feed','추천 피드'], ['llm','AI 추천'], ['bookmarks','북마크'], ['interests','관심 주제']] as [MyTab, string][]).map(([id, label]) => (
+            <button key={id} onClick={() => { setTab(id); if (id === 'llm' && !llmLoaded) loadLlmFeed(); }} style={{
               flex: 1, padding: '10px 0', fontSize: 13,
               fontWeight: tab === id ? 600 : 400,
               color: tab === id ? 'var(--color-primary)' : 'var(--color-text-tertiary)',
@@ -181,12 +194,65 @@ export default function MyFeedPage({ bm, interests, onInterestsChange, userId }:
                     {Math.round(article.similarity * 100)}% 매칭
                   </div>
                 )}
+                {(article as any).reason && (
+                  <div style={{
+                    marginTop: 6, fontSize: 11, color: 'var(--color-text-tertiary)',
+                    background: 'var(--color-surface-secondary)',
+                    padding: '5px 10px', borderRadius: 8,
+                    display: 'flex', alignItems: 'center', gap: 5,
+                  }}>
+                    <span>💡</span>
+                    <span>{(article as any).reason}</span>
+                  </div>
+                )}
               </div>
             ))}
           {visibleCount < feedArticles.length && !feedLoading && (
               <button onClick={() => setVisibleCount(v => v + 20)} style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '4px auto 8px', padding: '10px 24px', fontSize: 13, color: 'var(--color-primary)', background: 'var(--color-primary-light)', border: '1px solid var(--color-primary-mid)', borderRadius: 20, cursor: 'pointer' }}>
                 기사 더 보기
               </button>
+            )}
+          </div>
+        )}
+
+        {/* ── AI 추천 탭 */}
+        {tab === 'llm' && (
+          <div style={{ padding: '12px 16px 24px', display: 'flex', flexDirection: 'column', gap: 10 }}>
+            <div style={{ background: 'linear-gradient(135deg,#4F46E5 0%,#7C3AED 100%)', borderRadius: 12, padding: '12px 16px', marginBottom: 4 }}>
+              <p style={{ fontSize: 13, fontWeight: 600, color: '#fff' }}>🤖 AI가 직접 고른 기사</p>
+              <p style={{ fontSize: 11, color: 'rgba(255,255,255,0.75)', marginTop: 2 }}>관심사와 읽기 패턴을 분석해 5개를 선별했어요</p>
+            </div>
+            {llmLoading && (
+              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', padding: '60px 0', gap: 12 }}>
+                <div style={{ width: 24, height: 24, border: '2.5px solid var(--color-border)', borderTopColor: 'var(--color-primary)', borderRadius: '50%', animation: 'spin 0.7s linear infinite' }} />
+                <span style={{ fontSize: 13, color: 'var(--color-text-tertiary)' }}>AI가 기사를 분석 중이에요...</span>
+              </div>
+            )}
+            {!llmLoading && llmError && (
+              <div style={{ textAlign: 'center', padding: '48px 0' }}>
+                <p style={{ fontSize: 14, color: 'var(--color-text-tertiary)', marginBottom: 12 }}>😢 {llmError}</p>
+                <button onClick={loadLlmFeed} style={{ fontSize: 13, color: 'var(--color-primary)', padding: '8px 18px', border: '1px solid var(--color-primary)', borderRadius: 20 }}>다시 시도</button>
+              </div>
+            )}
+            {!llmLoading && !llmError && llmArticles.map((article, i) => (
+              <div key={article.urlHash} style={{ position: 'relative', animation: `fadeSlide 0.25s ${i * 0.08}s ease both` }}>
+                <ArticleCard
+                  article={article}
+                  bookmarked={bm.isBookmarked(article.urlHash)}
+                  onBookmark={bm.toggle}
+                  onClick={() => handleArticleClick(article)}
+                />
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 4, padding: '0 4px' }}>
+                  <span style={{ fontSize: 13 }}>💡</span>
+                  <span style={{ fontSize: 11, color: 'var(--color-text-tertiary)' }}>{article.reason ?? '회원님의 취향을 분석해 추천했어요'}</span>
+                </div>
+              </div>
+            ))}
+            {!llmLoading && llmLoaded && llmArticles.length === 0 && (
+              <div style={{ textAlign: 'center', padding: '60px 0' }}>
+                <div style={{ fontSize: 36, marginBottom: 12 }}>🤖</div>
+                <p style={{ fontSize: 14, color: 'var(--color-text-tertiary)' }}>추천할 기사가 없어요</p>
+              </div>
             )}
           </div>
         )}
