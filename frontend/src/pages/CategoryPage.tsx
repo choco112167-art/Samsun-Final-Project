@@ -5,7 +5,7 @@ import DetailPage from './DetailPage';
 import type { BookmarkHook } from '../hooks/useBookmarks';
 
 type SubTab = '전체' | Category;
-const CATEGORY_TABS: SubTab[] = ['전체', 'AI 모델', 'LLM', '스타트업', '빅테크', '반도체', '윤리/정책', 'AI 제품'];
+const CATEGORY_TABS: SubTab[] = ['전체', 'AI 연구', 'AI 심층', 'AI 스타트업', 'AI 비즈니스', 'AI 윤리', 'AI 커뮤니티', '테크 전반'];
 
 interface Props {
   bm: BookmarkHook;
