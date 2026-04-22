@@ -38,22 +38,28 @@ def _embed_local(text: str) -> list[float]:
 # ════════════════════════════════════════════
 
 def _embed_cloud(text: str) -> list[float]:
-    import requests
+    import requests, time
     api_key = os.getenv("OPENROUTER_API_KEY", "")
-    resp = requests.post(
-        "https://openrouter.ai/api/v1/embeddings",
-        headers={
-            "Authorization": f"Bearer {api_key}",
-            "Content-Type":  "application/json",
-        },
-        json={
-            "model": "qwen/qwen3-embedding-4b",
-            "input": text,
-        },
-        timeout=30,
-    )
-    resp.raise_for_status()
-    return resp.json()["data"][0]["embedding"][:1024]
+    for attempt in range(3):
+        resp = requests.post(
+            "https://openrouter.ai/api/v1/embeddings",
+            headers={
+                "Authorization": f"Bearer {api_key}",
+                "Content-Type":  "application/json",
+            },
+            json={
+                "model": "qwen/qwen3-embedding-4b",
+                "input": text,
+            },
+            timeout=30,
+        )
+        body = resp.json()
+        if "data" in body:
+            return body["data"][0]["embedding"][:1024]
+        # 429 rate limit 또는 일시 오류 → 재시도
+        if attempt < 2:
+            time.sleep(2 ** attempt)
+    raise RuntimeError(f"OpenRouter 임베딩 실패: {body}")
 
 
 # ════════════════════════════════════════════

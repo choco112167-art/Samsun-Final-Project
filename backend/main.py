@@ -144,31 +144,16 @@ def save_articles_endpoint(req: ArticleRequest):
 
 
 @app.get("/search")
-def search(q: str, top_k: int = 15, category: str | None = None):
-    """
-    SearchPage에서 자연어 검색을 할 때 호출된다.
-
-    hybrid_search_articles RPC 사용:
-      - 벡터 유사도 (의미 검색: 'LLM' → GPT 관련 기사 포함)
-      - pg_trgm 퍼지 키워드 (오타 허용: 'LLl' → LLM 기사 포함)
-      - RRF(Reciprocal Rank Fusion)으로 두 순위를 결합
-    """
+def search(q: str, top_k: int = 10, threshold: float = 0.4):
     if not q.strip():
         return {"results": []}
-
     query_vector = make_embedding(q)
-
-    params: dict = {
-        "query_text":   q,
+    result = sb.rpc("match_articles", {
         "query_vector": query_vector,
         "top_k":        top_k,
-    }
-    if category:
-        params["filter_category"] = category
-
-    result = sb.rpc("hybrid_search_articles", params).execute()
-
-    return {"results": result.data}
+    }).execute()
+    filtered = [r for r in (result.data or []) if r.get("similarity", 0) >= threshold]
+    return {"results": filtered}
 
 
 @app.get("/health")
