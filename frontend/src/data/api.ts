@@ -172,6 +172,19 @@ export async function markUserSeen(userId: string): Promise<void> {
   await request<{ message: string }>(`/user-seen/${encodeURIComponent(userId)}`, { method: 'POST' });
 }
 
+export async function logArticleView(userId: string, urlHash: string): Promise<void> {
+  if (!userId?.trim() || !urlHash) return;
+  await request<{ message?: string }>(
+    `/logs/view?user_id=${encodeURIComponent(userId)}&url_hash=${encodeURIComponent(urlHash)}`,
+    { method: 'POST' },
+  );
+}
+
+export async function fetchHot(date: string): Promise<(Article & { view_count: number })[]> {
+  const list = await request<(ApiArticle & { view_count: number })[]>(`/hot/${date}`);
+  return list.map(a => ({ ...toArticle(a), view_count: a.view_count ?? 0 }));
+}
+
 /**
  * 영문 원문을 한국어로 번역한다.
  * DetailPage의 "재번역" 버튼에서 호출.
