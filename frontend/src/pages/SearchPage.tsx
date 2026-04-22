@@ -15,28 +15,31 @@ export default function SearchPage({ bm, onArticleClick }: Props) {
   const [results, setResults]     = useState<(Article & { similarity?: number })[]>([]);
   const [loading, setLoading]     = useState(false);
   const [detail, setDetail]       = useState<(Article & { similarity?: number }) | null>(null);
+  const [visibleCount, setVisibleCount] = useState(20);
   const inputRef = useRef<HTMLInputElement>(null);
 
   const doSearch = (q: string) => {
     if (!q.trim()) return;
     setLoading(true);
+    setVisibleCount(20);
     setSubmitted(q);
     searchArticles(q, 15)
       .then(data => { setResults(data); setLoading(false); })
       .catch(() => { setResults([]); setLoading(false); });
   };
 
-  if (detail) return (
-    <DetailPage
-      article={detail}
-      bookmarked={bm.isBookmarked(detail.urlHash)}
-      onBookmark={bm.toggle}
-      onBack={() => setDetail(null)}
-    />
-  );
-
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden' }}>
+    <div style={{ display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden', position: 'relative' }}>
+      {detail && (
+        <div style={{ position: 'absolute', inset: 0, zIndex: 100, background: 'var(--color-bg)', overflow: 'hidden' }}>
+          <DetailPage
+            article={detail}
+            bookmarked={bm.isBookmarked(detail.urlHash)}
+            onBookmark={bm.toggle}
+            onBack={() => setDetail(null)}
+          />
+        </div>
+      )}
       <style>{`
         @keyframes resultIn { from{opacity:0;transform:translateY(10px)} to{opacity:1;transform:translateY(0)} }
         @keyframes spin { to{transform:rotate(360deg)} }
@@ -121,7 +124,7 @@ export default function SearchPage({ bm, onArticleClick }: Props) {
               <div style={{ textAlign: 'center', padding: '48px 0', color: 'var(--color-text-tertiary)', fontSize: 14 }}>검색 결과가 없어요</div>
             ) : (
               <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                {results.map((article, i) => {
+                {results.slice(0, visibleCount).map((article, i) => {
                   const summary = article.summaryCasual || article.summaryFormal;
                   const simPct  = article.similarity !== undefined ? Math.round(article.similarity * 100) : null;
                   return (
@@ -164,6 +167,14 @@ export default function SearchPage({ bm, onArticleClick }: Props) {
                   );
                 })}
               </div>
+            )}
+            {visibleCount < results.length && (
+              <button onClick={() => setVisibleCount(v => v + 20)} style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '4px auto 8px', padding: '10px 24px', fontSize: 13, color: 'var(--color-primary)', background: 'var(--color-primary-light)', border: '1px solid var(--color-primary-mid)', borderRadius: 20, cursor: 'pointer' }}>
+                기사 더 보기
+              </button>
+            )}
+            {visibleCount >= results.length && results.length > 0 && (
+              <div style={{ textAlign: 'center', padding: '20px 0', color: 'var(--color-text-tertiary)', fontSize: 13 }}>모든 결과를 불러왔어요 🎉</div>
             )}
           </div>
         )}
