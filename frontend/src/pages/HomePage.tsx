@@ -242,7 +242,7 @@ export default function HomePage({ bm, onNavigateToFeed, onArticleClick, absence
 
         {/* 카테고리 필터 — 8개 */}
         <div style={{ display: 'flex', gap: 7, marginTop: 16, paddingBottom: 16, overflowX: 'auto', scrollbarWidth: 'none' }}>
-          {(['전체','AI 모델','LLM','스타트업','빅테크','반도체','윤리/정책','AI 제품'] as Filter[]).map(f => (
+          {(['전체','AI 연구','AI 심층','AI 스타트업','AI 비즈니스','AI 윤리','AI 커뮤니티','테크 전반'] as Filter[]).map(f => (
             <button key={f} onClick={() => setFilter(f)} style={{
               flexShrink: 0, fontSize: 12, fontWeight: filter === f ? 700 : 400,
               color: filter === f ? '#FFFFFF' : '#6B7684',
