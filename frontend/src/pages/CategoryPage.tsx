@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { fetchArticles } from '../data/api';
 import type { Article } from '../data/articles';
 import DetailPage from './DetailPage';
@@ -25,12 +25,57 @@ interface Props { bm: BookmarkHook; onArticleClick?: (urlHash: string) => void; 
 
 export default function CategoryPage({ bm, onArticleClick }: Props) {
   const [tab, setTab]       = useState<SubTab>('전체');
-  const [detail, setDetail] = useState<Article | null>(null);
+  const [detail, setDetail]   = useState<Article | null>(null);
   const [articles, setArticles] = useState<Article[]>([]);
+  const [hasMore, setHasMore]   = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const mainRef        = useRef<HTMLDivElement>(null);
+  const scrollPos      = useRef(0);
+  const offsetRef      = useRef(0);
+  const loadingMoreRef = useRef(false);
+  const hasMoreRef     = useRef(true);
+  const initDone       = useRef(false);
+  const LIMIT = 20;
 
   useEffect(() => {
-    fetchArticles({ limit: 100 }).then(setArticles).catch(() => {});
+    offsetRef.current = 0;
+    hasMoreRef.current = true;
+    initDone.current = false;
+    fetchArticles({ limit: LIMIT, offset: 0 }).then(data => {
+      setArticles(data);
+      const more = data.length >= LIMIT;
+      hasMoreRef.current = more;
+      setHasMore(more);
+      initDone.current = true;
+    }).catch(() => {});
   }, []);
+
+  const loadMore = useCallback(() => {
+    if (!initDone.current || loadingMoreRef.current || !hasMoreRef.current) return;
+    loadingMoreRef.current = true;
+    setLoadingMore(true);
+    const newOffset = offsetRef.current + LIMIT;
+    fetchArticles({ limit: LIMIT, offset: newOffset }).then(data => {
+      setArticles(prev => [...prev, ...data]);
+      offsetRef.current = newOffset;
+      const more = data.length >= LIMIT;
+      hasMoreRef.current = more;
+      setHasMore(more);
+      loadingMoreRef.current = false;
+      setLoadingMore(false);
+    }).catch(() => { loadingMoreRef.current = false; setLoadingMore(false); });
+  }, []);
+
+  // 스크롤 위치 저장
+  useEffect(() => {
+    const el = mainRef.current;
+    if (!el) return;
+    const onScroll = () => { scrollPos.current = el.scrollTop; };
+    el.addEventListener('scroll', onScroll, { passive: true });
+    return () => el.removeEventListener('scroll', onScroll);
+  }, []);
+
+
 
   const mapped = articles.map(a => ({
     ...a,
@@ -40,13 +85,14 @@ export default function CategoryPage({ bm, onArticleClick }: Props) {
   const filtered = tab === '전체' ? mapped : mapped.filter(a => a._sub === tab);
   const sorted   = [...filtered].sort((a, b) => (b.credibilityScore ?? 0) - (a.credibilityScore ?? 0));
 
-  if (detail) return (
-    <DetailPage article={detail} bookmarked={bm.isBookmarked(detail.urlHash)} onBookmark={bm.toggle} onBack={() => setDetail(null)} />
-  );
-
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden' }}>
-      <style>{`@keyframes rankIn { from{opacity:0;transform:translateX(-8px)} to{opacity:1;transform:translateX(0)} }`}</style>
+    <div style={{ display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden', position: 'relative' }}>
+      {detail && (
+        <div style={{ position: 'absolute', inset: 0, zIndex: 100, background: 'var(--color-bg)', overflow: 'hidden' }}>
+          <DetailPage article={detail} bookmarked={bm.isBookmarked(detail.urlHash)} onBookmark={bm.toggle} onBack={() => { setDetail(null); setTimeout(() => { if (mainRef.current) mainRef.current.scrollTop = scrollPos.current; }, 0); }} />
+        </div>
+      )}
+      <style>{`@keyframes rankIn { from{opacity:0;transform:translateX(-8px)} to{opacity:1;transform:translateX(0)} } @keyframes spin { to{transform:rotate(360deg)} }`}</style>
 
       <header style={{ background: 'var(--color-surface)', borderBottom: '0.5px solid var(--color-border)', flexShrink: 0 }}>
         <div style={{ padding: '18px 20px 0' }}>
@@ -66,7 +112,7 @@ export default function CategoryPage({ bm, onArticleClick }: Props) {
         </div>
       </header>
 
-      <main style={{ flex: 1, overflowY: 'auto', WebkitOverflowScrolling: 'touch', padding: '12px 16px 24px', display: 'flex', flexDirection: 'column', gap: 8 }}>
+      <main ref={mainRef} style={{ flex: 1, overflowY: 'auto', WebkitOverflowScrolling: 'touch', padding: '12px 16px 24px', display: 'flex', flexDirection: 'column', gap: 8 }}>
         {sorted.map((article, i) => {
           const rankColor = i === 0 ? '#B45309' : i === 1 ? '#6B7280' : i === 2 ? '#92400E' : 'var(--color-text-tertiary)';
           const maxScore  = sorted[0]?.credibilityScore ?? 1;
@@ -112,6 +158,19 @@ export default function CategoryPage({ bm, onArticleClick }: Props) {
           <div style={{ textAlign: 'center', padding: '60px 0', color: 'var(--color-text-tertiary)', fontSize: 14 }}>
             해당 카테고리의 기사가 없습니다
           </div>
+        )}
+        {loadingMore && (
+          <div style={{ display: 'flex', justifyContent: 'center', padding: '20px 0' }}>
+            <div style={{ width: 22, height: 22, border: '2.5px solid var(--color-border)', borderTopColor: 'var(--color-primary)', borderRadius: '50%', animation: 'spin 0.7s linear infinite' }} />
+          </div>
+        )}
+        {hasMore && !loadingMore && articles.length > 0 && (
+          <button onClick={loadMore} style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '4px auto 8px', padding: '10px 24px', fontSize: 13, color: 'var(--color-primary)', background: 'var(--color-primary-light)', border: '1px solid var(--color-primary-mid)', borderRadius: 20, cursor: 'pointer' }}>
+            기사 더 보기
+          </button>
+        )}
+        {!hasMore && articles.length > 0 && (
+          <div style={{ textAlign: 'center', padding: '20px 0', color: 'var(--color-text-tertiary)', fontSize: 13 }}>모든 기사를 불러왔어요 🎉</div>
         )}
       </main>
     </div>
