@@ -288,12 +288,6 @@ ollama serve
 ngrok http 11434
 ```
 
-### POC 사이클
-
-```bash
-python poc_cycle.py
-```
-
 ---
 
 ## 📁 프로젝트 구조
@@ -319,8 +313,7 @@ Samsun-Final-Project-main/
 ├── eval/                        # 오프라인 평가·실험 스크립트
 │   ├── run_eval.py
 │   ├── run_eval_base.py
-│   ├── select_testset.py
-│   └── kaggle_finetune.py
+│   └── select_testset.py
 ├── frontend/                    # 토스 미니앱 (Granite / Vite / TDS)
 │   ├── index.html
 │   ├── package.json
@@ -345,8 +338,6 @@ Samsun-Final-Project-main/
 │   └── README.md
 ├── config.py                    # FastAPI용 설정 (pydantic-settings, .env)
 ├── main.py                      # 배치: RSS → translate_and_summarize → save_articles
-├── poc_cycle.py                 # POC: 샘플 번역·임베딩·Supabase 검증
-├── poc_dummy.py                 # 더미 기사 Supabase 저장 (.gitignore — 로컬 전용 스크립트)
 ├── Procfile
 ├── README.md
 ├── requirements.txt
@@ -401,7 +392,6 @@ Samsun-Final-Project-main/
 | `run_eval.py` | 평가 실행 |
 | `run_eval_base.py` | 베이스라인 평가 |
 | `select_testset.py` | 테스트셋 선별 |
-| `kaggle_finetune.py` | 파인튜닝 관련 스크립트 |
 
 #### `frontend/`
 
@@ -430,8 +420,6 @@ Samsun-Final-Project-main/
 | **`runtime.txt`** | 배포 환경 Python 버전 고정 |
 | **`.gitattributes`** | 줄바꿈·텍스트 속성 |
 | **루트 `main.py`** | RSS 수집 → `translate_and_summarize` 파이프라인 배치 |
-| **`poc_cycle.py`** | POC 스모크: 번역·임베딩·Supabase 검증 |
-| **`poc_dummy.py`** | 더미 기사 Supabase 저장 (`.gitignore` — 팀원 로컬에만 두는 경우가 많음) |
 | **`config.py`** | FastAPI용 `supabase_url`, `supabase_anon_key`, `cors_origins`, `log_level` 등 (`.env`와 연동) |
 
 > 프론트는 **`frontend/`** 에서 `npm install` 후 `npm run dev` 등을 사용합니다. 루트에 남은 `node_modules/`가 있다면 프론트와 혼동되지 않게 정리하세요.
