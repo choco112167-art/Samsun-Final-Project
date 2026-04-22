@@ -1,8 +1,8 @@
 import { useState, useRef } from 'react';
-import type { ApiArticle } from '../data/api';
+import type { Article } from '../data/articles';
 
 interface Props {
-  article: ApiArticle;
+  article: Article;
   bookmarked: boolean;
   onBookmark: (id: string) => void;
   onBack: () => void;
@@ -69,15 +69,17 @@ export default function DetailPage({ article, bookmarked, onBookmark, onBack }: 
   const mainRef = useRef<HTMLDivElement>(null);
 
   const handleShare = () => {
-    navigator.clipboard.writeText(`[${article.source}] ${article.title}\n\n${article.translation_formal}\n\n요약: ${article.summary_ko || article.summary_llm}`).catch(() => {});
+    navigator.clipboard.writeText(
+      `[${article.source}] ${article.title}\n\n${article.translation}\n\n요약: ${article.summaryFormal}`
+    ).catch(() => {});
     setCopiedShare(true); setTimeout(() => setCopiedShare(false), 2000);
   };
   const handleCopyFormal = () => {
-    navigator.clipboard.writeText(article.translation_formal).catch(() => {});
+    navigator.clipboard.writeText(article.translation).catch(() => {});
     setCopiedFormal(true); setTimeout(() => setCopiedFormal(false), 2000);
   };
   const handleCopyCasual = () => {
-    navigator.clipboard.writeText(article.translation_casual).catch(() => {});
+    navigator.clipboard.writeText(article.summaryCasual).catch(() => {});
     setCopiedCasual(true); setTimeout(() => setCopiedCasual(false), 2000);
   };
 
@@ -109,7 +111,7 @@ export default function DetailPage({ article, bookmarked, onBookmark, onBack }: 
             <span style={{ fontSize: 11, color: 'var(--color-text-tertiary)' }}>{article.timeAgo ?? ''}</span>
           </div>
         </div>
-        <button onClick={() => onBookmark(article.id)} style={{ width: 36, height: 36, borderRadius: '50%', background: bookmarked ? '#FEF3C7' : 'var(--color-surface-secondary)', display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'all 0.15s' }}>
+        <button onClick={() => onBookmark(article.urlHash)} style={{ width: 36, height: 36, borderRadius: '50%', background: bookmarked ? '#FEF3C7' : 'var(--color-surface-secondary)', display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'all 0.15s' }}>
           <svg width="16" height="16" viewBox="0 0 24 24" fill={bookmarked ? '#D97706' : 'none'}>
             <path d="M19 21L12 16L5 21V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v16z" stroke={bookmarked ? '#D97706' : 'var(--color-text-secondary)'} strokeWidth="1.7" strokeLinejoin="round"/>
           </svg>
@@ -135,10 +137,10 @@ export default function DetailPage({ article, bookmarked, onBookmark, onBack }: 
         {/* 3줄 요약 */}
         <div style={{ background: 'var(--color-surface)', padding: '16px 20px', marginBottom: 8 }}>
           <p style={{ fontSize: 11, fontWeight: 600, color: 'var(--color-text-tertiary)', letterSpacing: '0.04em', textTransform: 'uppercase', marginBottom: 10 }}>3줄 요약</p>
-          <p style={{ fontSize: 14, color: 'var(--color-text-secondary)', lineHeight: 1.75 }}>{article.summary_ko || article.summary_llm}</p>
+          <p style={{ fontSize: 14, color: 'var(--color-text-secondary)', lineHeight: 1.75 }}>{article.summaryFormal}</p>
         </div>
 
-        {/* 번역 — 격식체 + 일상체 동시 표시 */}
+        {/* 번역 */}
         <div style={{ background: 'var(--color-surface)', padding: '16px 20px', marginBottom: 8, position: 'relative' }}>
           <p style={{ fontSize: 11, fontWeight: 600, color: 'var(--color-text-tertiary)', letterSpacing: '0.04em', textTransform: 'uppercase', marginBottom: 12 }}>번역</p>
 
@@ -165,7 +167,7 @@ export default function DetailPage({ article, bookmarked, onBookmark, onBack }: 
               <CopyBtn copied={copiedFormal} onClick={handleCopyFormal} />
             </div>
             <p style={{ fontSize: 14, lineHeight: 1.78, color: 'var(--color-text-primary)', letterSpacing: '-0.01em' }}>
-              <HighlightedText text={article.translation_formal} onTap={handleJargon} />
+              <HighlightedText text={article.translation} onTap={handleJargon} />
             </p>
           </div>
 
@@ -176,7 +178,7 @@ export default function DetailPage({ article, bookmarked, onBookmark, onBack }: 
               <CopyBtn copied={copiedCasual} onClick={handleCopyCasual} />
             </div>
             <p style={{ fontSize: 14, lineHeight: 1.78, color: 'var(--color-text-primary)', letterSpacing: '-0.01em' }}>
-              <HighlightedText text={article.translation_casual} onTap={handleJargon} />
+              <HighlightedText text={article.summaryCasual} onTap={handleJargon} />
             </p>
           </div>
 
