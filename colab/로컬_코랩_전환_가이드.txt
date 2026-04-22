@@ -1,0 +1,125 @@
+================================================================
+삼선뉴스 - 로컬 / 코랩 전환 가이드
+================================================================
+
+AI 추천 탭(/feed-llm)은 LLM 모델이 필요합니다.
+실행 환경에 따라 아래 파일들의 주석을 조정하세요.
+================================================================
+■ Colab_feed_llm.ipyb 코렙에 업로드(프론트 엔드, 벡엔드 실행 완료 후, 실행)
+■ 벡엔드>>uvicorn backend.main:app --reload
+■ 프론트엔드>>프론트엔드 디렉토리로 이동 후, npm run dev(npm 미설치 시, npm install 실행 후 진행)
+================================================================
+■ 코랩(Colab)에서 LLM 실행할 때 (기본 설정)
+================================================================
+
+[1] backend/main.py
+    → /feed-llm 엔드포인트 전체가 주석처리된 상태 유지
+    → 변경 없음 (기본값)
+
+    # @app.get("/feed-llm/{user_id}")
+    # def get_feed_llm(user_id: str):
+    #     ...
+
+[2] src/data/api.ts
+    → COLAB_URL에 코랩 ngrok URL 입력
+    → fetchFeedLlm 함수에서 코랩 fetch 방식 사용
+
+    // 코랩 사용 시 (ngrok URL로 교체)
+    const COLAB_URL = (import.meta.env.VITE_COLAB_URL as string | undefined)
+      ?? 'https://xxxx.ngrok-free.dev';  ← 코랩 실행 후 나온 URL로 교체
+
+    // fetchFeedLlm 함수 안:
+    const res = await fetch(`${COLAB_URL}/feed-llm/${encodeURIComponent(userId)}`, {
+      headers: { 'ngrok-skip-browser-warning': 'true' }
+    }).then(r => r.json()) as { feed: FeedArticle[] };
+
+[3] 코랩 실행 순서
+    1. colab_feed_llm.py 셀 순서대로 실행
+    2. ngrok URL 확인 (예: https://xxxx.ngrok-free.dev)
+    3. api.ts의 COLAB_URL에 해당 URL 붙여넣기
+    4. 프론트엔드 재시작 (npm run dev)
+    5. 로컬 백엔드 실행 (uvicorn backend.main:app)
+
+
+================================================================
+■ 로컬에서 LLM 실행할 때
+================================================================
+
+주의: 로컬 실행은 모델 파일(merged_model)이 있어야 합니다.
+      모델이 없는 팀원 PC에서는 코랩 방식을 사용하세요.
+
+[1] backend/main.py
+    → /feed-llm 엔드포인트 주석 해제
+
+    주석 해제 전 (현재):
+    # @app.get("/feed-llm/{user_id}")
+    # def get_feed_llm(user_id: str):
+    #     ...
+
+    주석 해제 후:
+    @app.get("/feed-llm/{user_id}")
+    def get_feed_llm(user_id: str):
+        ...
+
+[2] src/data/api.ts
+    → fetchFeedLlm 함수에서 로컬 request 방식으로 교체
+
+    // 로컬 사용 시 (아래 줄 주석 해제)
+    const res = await request<{ feed: FeedArticle[] }>(
+      `/feed-llm/${encodeURIComponent(userId)}`,
+    );
+
+    // 코랩 사용 시 (아래 줄 주석처리)
+    // const res = await fetch(`${COLAB_URL}/feed-llm/${encodeURIComponent(userId)}`, {
+    //   headers: { 'ngrok-skip-browser-warning': 'true' }
+    // }).then(r => r.json()) as { feed: FeedArticle[] };
+
+[3] pipeline/translate_summarize.py
+    → MODEL_PATH가 본인 PC의 모델 경로인지 확인
+    → 예: MODEL_PATH = r"D:\final_project\llm_code\merged_model"
+
+[4] 로컬 실행 순서
+    1. 백엔드 실행 (--reload 없이)
+       uvicorn backend.main:app
+    2. 모델 로딩 완료 메시지 확인
+       "모델 로딩 완료!"
+    3. 프론트엔드 실행
+       npm run dev
+
+
+================================================================
+■ 수정이 필요한 파일 요약
+================================================================
+
+전환 시 수정할 파일:
+  - backend/main.py         ← /feed-llm 엔드포인트 주석 ON/OFF
+  - src/data/api.ts         ← fetch 방식 또는 COLAB_URL 변경
+
+수정 불필요한 파일 (그대로 사용):
+  - pipeline/recommend.py   ← 코랩/로컬 모두 동일 코드
+  - colab_feed_llm.py       ← 코랩 전용 서버 코드
+
+
+================================================================
+■ 로컬 백엔드 실행 방법
+================================================================
+
+# 코랩 사용 시 (모델 로드 없이 빠르게 시작)
+uvicorn backend.main:app
+
+# 로컬 LLM 사용 시 (모델 로드로 인해 시작 느림, --reload 사용 금지)
+uvicorn backend.main:app
+
+
+================================================================
+■ 주의사항
+================================================================
+
+1. 코랩 ngrok URL은 세션마다 바뀝니다.
+   코랩 재실행 시 api.ts의 COLAB_URL을 새 URL로 교체하세요.
+
+2. --reload 옵션은 사용하지 마세요.
+   uvicorn backend.main:app --reload (X)
+   uvicorn backend.main:app           (O)
+
+================================================================
