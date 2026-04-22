@@ -8,6 +8,7 @@ Railway에 배포되어 24시간 돌아간다.
 
 import logging
 import os
+from datetime import datetime, timezone, timedelta
 
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
@@ -32,6 +33,7 @@ app.add_middleware(
 
 _sb_key = os.getenv("SUPABASE_KEY") or _settings.supabase_anon_key
 sb = create_client(_settings.supabase_url, _sb_key)
+ARTICLES_TABLE = _settings.articles_table
 
 
 class OnboardingRequest(BaseModel):
@@ -100,7 +102,7 @@ def get_articles(
     """
     HomePage, CategoryPage 등에서 기사 목록을 가져올 때 호출된다.
     """
-    query = sb.table("articles").select(
+    query = sb.table(ARTICLES_TABLE).select(
         "url_hash, url, title, source, source_type, category, country, "
         "keywords, published_at, collected_at, content, "
         "credibility_score, fact_label, "
@@ -124,7 +126,7 @@ def get_article(url_hash: str):
     """
     DetailPage에서 기사 하나의 전체 내용을 가져올 때 호출된다.
     """
-    result = sb.table("articles").select("*").eq("url_hash", url_hash).execute()
+    result = sb.table(ARTICLES_TABLE).select("*").eq("url_hash", url_hash).execute()
 
     if not result.data:
         raise HTTPException(status_code=404, detail="기사 없음")
@@ -191,13 +193,119 @@ def summarize(req: LlmTextRequest):
         "summary_casual": out.get("summary_casual", ""),
     }
 
-
 @app.post("/article-view/{user_id}/{url_hash}")
 def record_article_view(user_id: str, url_hash: str):
-    """프론트에서 기사 카드 조회 시 호출 — user_logs에 적재."""
-    sb.table("user_logs").insert({
-        "user_id": user_id,
-        "url_hash": url_hash,
-        "action": "view",
-    }).execute()
+    # 1. 클릭한 기사 임베딩 가져오기
+    article_res = sb.table(ARTICLES_TABLE).select("embedding").eq("url_hash", url_hash).execute()
+    if not article_res.data or not article_res.data[0].get("embedding"):
+        return {"message": "embedding 없음 — 스킵"}
+    article_vector = article_res.data[0]["embedding"]
+
+    # 2. 유저 벡터 가져오기
+    user_res = sb.table("users").select("user_vector").eq("user_id", user_id).execute()
+    if not user_res.data or not user_res.data[0].get("user_vector"):
+        return {"message": "유저 없음 — 스킵"}
+    user_vector = user_res.data[0]["user_vector"]
+
+    # 3. 유저 벡터 업데이트 (클릭 기사 임베딩 40% 반영)
+    # 문자열로 저장된 경우 리스트로 변환
+    import json
+    if isinstance(article_vector, str):
+        article_vector = json.loads(article_vector)
+    if isinstance(user_vector, str):
+        user_vector = json.loads(user_vector)
+    new_vector = [u * 0.6 + a * 0.4 for u, a in zip(user_vector, article_vector)]
+
+    # 4. users 테이블 업데이트
+    sb.table("users").update({"user_vector": new_vector}).eq("user_id", user_id).execute()
+
     return {"message": "조회 기록 완료"}
+
+
+@app.get("/absence-summary/{user_id}")
+def absence_summary(user_id: str, top_k: int = 5):
+    """
+    유저가 오랫동안 접속하지 않았을 때 놓친 기사 요약을 반환한다.
+    부재 기간에 따라 가져오는 기간과 메시지가 달라진다.
+      - 1일   → 어제 놓친 기사
+      - 2~6일 → 부재 기간 전체
+      - 7일+  → 최근 7일치 (상한선)
+    마지막으로 last_seen_at을 현재 시각으로 업데이트한다.
+    """
+    now = datetime.now(timezone.utc)
+
+    # 1. 유저 정보 조회
+    user_res = sb.table("users").select("user_vector, last_seen_at").eq("user_id", user_id).execute()
+    if not user_res.data:
+        return {"show": False}
+
+    user_data   = user_res.data[0]
+    user_vector = user_data.get("user_vector")
+    last_seen   = user_data.get("last_seen_at")
+
+    # last_seen_at 업데이트 (공통)
+    def update_last_seen():
+        sb.table("users").update({"last_seen_at": now.isoformat()}).eq("user_id", user_id).execute()
+
+    # 처음 방문이거나 벡터 없으면 기록만 하고 종료
+    if not user_vector or not last_seen:
+        update_last_seen()
+        return {"show": False}
+
+    # 2. 부재 기간 계산
+    try:
+        last_seen_dt = datetime.fromisoformat(last_seen.replace("Z", "+00:00"))
+    except ValueError:
+        update_last_seen()
+        return {"show": False}
+
+    days_away = (now - last_seen_dt).days
+
+    # 하루도 안 지났으면 표시 안 함
+    if days_away < 1:
+        update_last_seen()
+        return {"show": False}
+
+    # 3. 부재 기간별 fetch 범위 & 메시지 결정
+    if days_away == 1:
+        fetch_days = 1
+        message    = "어제 놓친 기사예요!"
+    elif days_away <= 6:
+        fetch_days = days_away
+        message    = f"{days_away}일간 놓친 기사예요!"
+    elif days_away < 30:
+        fetch_days = days_away #7(테스트용으로 수정함)
+        message    = f"{days_away}일 만에 오셨네요! 최근 1주일 주요 기사예요"
+    else:
+        fetch_days = days_away #7(테스트용으로 수정함)
+        message    = "오랫동안 안 오셨네요! 최근 주요 기사만 추려봤어요"
+
+    since_date = (now - timedelta(days=fetch_days)).isoformat()
+
+    # 4. RAG 검색
+    articles_res = sb.rpc("match_articles_since", {
+        "query_vector": user_vector,
+        "since_date":   since_date,
+        "top_k":        top_k,
+    }).execute()
+
+    if not articles_res.data:
+        return {"show": False}
+
+    return {
+        "show":      True,
+        "message":   message,
+        "days_away": days_away,
+        "articles":  articles_res.data,
+    }
+
+
+@app.post("/user-seen/{user_id}")
+def user_seen(user_id: str):
+    """
+    유저가 부재중 알림을 확인('확인했어요' 버튼)했을 때 호출.
+    last_seen_at을 현재 시각으로 업데이트한다.
+    """
+    now = datetime.now(timezone.utc)
+    sb.table("users").update({"last_seen_at": now.isoformat()}).eq("user_id", user_id).execute()
+    return {"message": "last_seen_at 업데이트 완료"}
