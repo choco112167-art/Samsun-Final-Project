@@ -17,8 +17,14 @@ import type { Article } from './articles';
 
 // 백엔드 서버 주소를 환경변수에서 읽는다
 // .env 파일의 VITE_API_BASE_URL 값을 사용하고, 없으면 로컬호스트를 기본값으로
+
 const BASE_URL = (import.meta.env.VITE_API_BASE_URL as string | undefined)
   ?? 'http://localhost:8000';
+
+// 코랩 ngrok URL — AI 추천 전용
+// 코랩 실행 후 출력된 ngrok URL로 교체하세요
+const COLAB_URL = (import.meta.env.VITE_COLAB_URL as string | undefined)
+  ?? 'https://purebred-cadmium-rosy.ngrok-free.dev';
 
 /**
  * 모든 API 요청의 공통 처리를 담당하는 내부 함수.
@@ -187,6 +193,19 @@ export async function fetchFeed(userId: string, topK = 10): Promise<(Article & {
  * @param query 검색어
  * @param topK  가져올 결과 수 (기본 10개)
  */
+export async function fetchFeedLlm(userId: string): Promise<(Article & { reason?: string })[]> {
+  // 로컬 사용 시
+  // const res = await request<{ feed: FeedArticle[] }>(
+  //   `/feed-llm/${encodeURIComponent(userId)}`,
+  // );
+  const res = await fetch(`${COLAB_URL}/feed-llm/${encodeURIComponent(userId)}`, {
+  headers: { 'ngrok-skip-browser-warning': 'true' }
+  }).then(r => r.json()) as { feed: FeedArticle[] };
+
+  const list = res.feed ?? [];
+  return list.map(f => ({ ...toArticle(f), reason: (f as any).reason }));
+}
+
 export async function searchArticles(query: string, topK = 10): Promise<(Article & { similarity?: number })[]> {
   const res = await request<{ results: SearchResult[] }>(
     `/search?q=${encodeURIComponent(query)}&top_k=${topK}`,
