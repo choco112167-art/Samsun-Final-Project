@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { fetchFeed, recordArticleView } from '../data/api';
 import type { Article } from '../data/articles';
 import ArticleCard from '../components/ArticleCard';
@@ -31,6 +31,10 @@ export default function MyFeedPage({ bm, interests, onInterestsChange, userId }:
   const [feedArticles, setFeedArticles] = useState<(Article & { similarity?: number })[]>([]);
   const [feedLoading, setFeedLoading]   = useState(false);
   const [feedError, setFeedError]       = useState<string | null>(null);
+  const [visibleCount, setVisibleCount] = useState(20);
+
+  const mainRef    = useRef<HTMLDivElement>(null);
+  const scrollPos  = useRef(0);
 
   const bookmarkCount = bm.bookmarked.size;
 
@@ -38,7 +42,8 @@ export default function MyFeedPage({ bm, interests, onInterestsChange, userId }:
     if (!userId) return;
     setFeedLoading(true);
     setFeedError(null);
-    fetchFeed(userId, 20)
+    setVisibleCount(20);
+    fetchFeed(userId, 50)
       .then(data => { setFeedArticles(data); setFeedLoading(false); })
       .catch(() => { setFeedError('피드를 불러오지 못했어요'); setFeedLoading(false); });
   }, [userId]);
@@ -47,6 +52,15 @@ export default function MyFeedPage({ bm, interests, onInterestsChange, userId }:
     // eslint-disable-next-line react-hooks/set-state-in-effect -- userId 변경 시 피드 재로드 (loadFeed는 버튼과 공유)
     loadFeed();
   }, [loadFeed]);
+
+  // 스크롤 위치 저장
+  useEffect(() => {
+    const el = mainRef.current;
+    if (!el) return;
+    const onScroll = () => { scrollPos.current = el.scrollTop; };
+    el.addEventListener('scroll', onScroll, { passive: true });
+    return () => el.removeEventListener('scroll', onScroll);
+  }, []);
 
   const handleArticleClick = async (article: Article & { similarity?: number }) => {
     // 백엔드에 클릭 기록 → user_vector 업데이트 (0.6:0.4 비율)
@@ -63,23 +77,28 @@ export default function MyFeedPage({ bm, interests, onInterestsChange, userId }:
     );
   };
 
-  if (detail) return (
-    <DetailPage
-      article={detail}
-      bookmarked={bm.isBookmarked(detail.urlHash)}
-      onBookmark={bm.toggle}
-      onBack={() => {
-        setDetail(null);
-        if (needsRefresh) {
-          setNeedsRefresh(false);
-          loadFeed(); // 유저 벡터가 업데이트됐으니 피드 새로고침
-        }
-      }}
-    />
-  );
-
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden' }}>
+    <div style={{ display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden', position: 'relative' }}>
+      {detail && (
+        <div style={{ position: 'absolute', inset: 0, zIndex: 100, background: 'var(--color-bg)', overflow: 'hidden' }}>
+          <DetailPage
+            article={detail}
+            bookmarked={bm.isBookmarked(detail.urlHash)}
+            onBookmark={bm.toggle}
+            onBack={() => {
+              setDetail(null);
+              if (needsRefresh) {
+                setNeedsRefresh(false);
+                loadFeed();
+              }
+              // 스크롤 위치 복원
+              setTimeout(() => {
+                if (mainRef.current) mainRef.current.scrollTop = scrollPos.current;
+              }, 0);
+            }}
+          />
+        </div>
+      )}
       <style>{`
         @keyframes fadeSlide { from{opacity:0;transform:translateY(6px)} to{opacity:1;transform:translateY(0)} }
         @keyframes spin { to{transform:rotate(360deg)} }
@@ -116,7 +135,7 @@ export default function MyFeedPage({ bm, interests, onInterestsChange, userId }:
         </div>
       </header>
 
-      <main style={{ flex: 1, overflowY: 'auto', WebkitOverflowScrolling: 'touch' }}>
+      <main ref={mainRef} style={{ flex: 1, overflowY: 'auto', WebkitOverflowScrolling: 'touch' }}>
 
         {/* ── 추천 피드 탭 */}
         {tab === 'feed' && (
@@ -143,7 +162,7 @@ export default function MyFeedPage({ bm, interests, onInterestsChange, userId }:
                 </p>
               </div>
             )}
-            {!feedLoading && feedArticles.map((article, i) => (
+            {!feedLoading && feedArticles.slice(0, visibleCount).map((article, i) => (
               <div key={article.urlHash} style={{ position: 'relative', animation: `fadeSlide 0.25s ${i * 0.04}s ease both` }}>
                 <ArticleCard
                   article={article}
@@ -164,6 +183,11 @@ export default function MyFeedPage({ bm, interests, onInterestsChange, userId }:
                 )}
               </div>
             ))}
+          {visibleCount < feedArticles.length && !feedLoading && (
+              <button onClick={() => setVisibleCount(v => v + 20)} style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '4px auto 8px', padding: '10px 24px', fontSize: 13, color: 'var(--color-primary)', background: 'var(--color-primary-light)', border: '1px solid var(--color-primary-mid)', borderRadius: 20, cursor: 'pointer' }}>
+                기사 더 보기
+              </button>
+            )}
           </div>
         )}
 
