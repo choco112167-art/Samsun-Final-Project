@@ -1,4 +1,5 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
+import { BottomSheet } from '@toss/tds-mobile';
 import TabBar, { type TabId } from './components/TabBar';
 import OnboardingPage, { type Interest } from './pages/OnboardingPage';
 import HomePage from './pages/HomePage';
@@ -7,7 +8,12 @@ import HotPage from './pages/HotPage';
 import SearchPage from './pages/SearchPage';
 import MyFeedPage from './pages/MyFeedPage';
 import { useBookmarks } from './hooks/useBookmarks';
-import { recordArticleView } from './data/api';
+import {
+  recordArticleView,
+  fetchAbsenceSummary,
+  markUserSeen,
+  type AbsenceSummaryResponse,
+} from './data/api';
 
 const LS_ONBOARDED = 'samsun_onboarded';
 const LS_INTERESTS = 'samsun_interests';
@@ -31,6 +37,28 @@ export default function App() {
   const [activeTab, setActiveTab] = useState<TabId>('home');
   const bm = useBookmarks();
 
+  const [absenceData, setAbsenceData] = useState<AbsenceSummaryResponse | null>(null);
+  const [absenceOpen, setAbsenceOpen] = useState(false);
+
+  // 앱 진입 시 부재중 요약 확인
+  useEffect(() => {
+    if (!userId) return;
+    fetchAbsenceSummary(userId)
+      .then(res => {
+        if (res.show) {
+          setAbsenceData(res);
+          setAbsenceOpen(true);
+        }
+      })
+      .catch(() => {});
+  }, [userId]);
+
+  const handleAbsenceDismiss = () => {
+    setAbsenceOpen(false);
+    if (userId) markUserSeen(userId).catch(() => {});
+    setAbsenceData(null);
+  };
+
   const handleInterestsChange = (next: Interest[]) => {
     setInterests(next);
     localStorage.setItem(LS_INTERESTS, JSON.stringify(next));
@@ -52,6 +80,7 @@ export default function App() {
           setOnboarded(true);
           localStorage.setItem(LS_ONBOARDED, 'true');
           localStorage.setItem(LS_INTERESTS, JSON.stringify(selected));
+          localStorage.setItem('samsun_user_id', uid); // 최초 진입 시에도 persistence 확보
         }} />
       </div>
     );
@@ -93,6 +122,50 @@ export default function App() {
         {renderPage()}
       </div>
       <TabBar activeTab={activeTab} onChange={setActiveTab} />
+
+      {/* 부재중 알림 BottomSheet */}
+      {absenceData?.show && (
+        <BottomSheet open={absenceOpen} onClose={handleAbsenceDismiss}>
+          <BottomSheet.Header>
+            <BottomSheet.Title>{absenceData.message ?? '놓친 기사예요!'}</BottomSheet.Title>
+            {absenceData.days_away !== undefined && (
+              <BottomSheet.Description>
+                {absenceData.days_away}일 만에 들르셨네요. 그동안 주목받은 기사를 모아봤어요.
+              </BottomSheet.Description>
+            )}
+          </BottomSheet.Header>
+          <BottomSheet.Body>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 12, padding: '0 20px 12px' }}>
+              {(absenceData.articles ?? []).map(a => (
+                <div
+                  key={a.url_hash}
+                  onClick={() => { handleArticleClick(a.url_hash); handleAbsenceDismiss(); }}
+                  style={{
+                    background: 'var(--color-surface)',
+                    border: '0.5px solid var(--color-border)',
+                    borderRadius: 'var(--radius-md)',
+                    padding: 14, cursor: 'pointer',
+                  }}
+                >
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 6 }}>
+                    <span style={{ fontSize: 11, color: 'var(--color-text-secondary)' }}>{a.source}</span>
+                    <span style={{ fontSize: 11, color: 'var(--color-text-tertiary)' }}>· {a.category}</span>
+                  </div>
+                  <p style={{ fontSize: 14, fontWeight: 600, color: 'var(--color-text-primary)', lineHeight: 1.4, marginBottom: 6 }}>
+                    {a.title}
+                  </p>
+                  <p style={{ fontSize: 12, color: 'var(--color-text-secondary)', lineHeight: 1.5, display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
+                    {a.summary_formal}
+                  </p>
+                </div>
+              ))}
+            </div>
+          </BottomSheet.Body>
+          <BottomSheet.Footer>
+            <BottomSheet.Button onClick={handleAbsenceDismiss}>확인했어요</BottomSheet.Button>
+          </BottomSheet.Footer>
+        </BottomSheet>
+      )}
     </div>
   );
 }

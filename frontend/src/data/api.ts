@@ -231,3 +231,74 @@ export async function recordArticleView(userId: string, urlHash: string): Promis
 export async function healthCheck(): Promise<{ status: string }> {
   return request<{ status: string }>('/health');
 }
+
+
+// ─────────────────────────────────────────────
+// 부재중 요약 알림
+// ─────────────────────────────────────────────
+
+/** /absence-summary 응답 내 기사 요약 */
+export interface AbsenceArticle {
+  url_hash:       string;
+  title:          string;
+  source:         string;
+  category:       string;
+  published_at:   string;
+  summary_formal: string;
+  similarity:     number;
+}
+
+/** /absence-summary 응답 — 사용자가 오랫동안 안 들어왔을 때 놓친 기사 요약 */
+export interface AbsenceSummaryResponse {
+  show:       boolean;
+  message?:   string;
+  days_away?: number;
+  articles?:  AbsenceArticle[];
+}
+
+/**
+ * 유저의 부재 기간에 따라 놓친 기사 요약을 가져온다.
+ * App.tsx 진입 시 한 번 호출 → show=true면 BottomSheet로 노출.
+ */
+export async function fetchAbsenceSummary(userId: string): Promise<AbsenceSummaryResponse> {
+  return request<AbsenceSummaryResponse>(`/absence-summary/${encodeURIComponent(userId)}`);
+}
+
+/**
+ * 부재중 알림 '확인했어요' 버튼 클릭 시 호출 — last_seen_at 갱신.
+ */
+export async function markUserSeen(userId: string): Promise<void> {
+  await request<{ message: string }>(
+    `/user-seen/${encodeURIComponent(userId)}`,
+    { method: 'POST' },
+  );
+}
+
+
+// ─────────────────────────────────────────────
+// 온디맨드 번역·요약 (DetailPage "번역하기" / "요약하기" 버튼용)
+// ─────────────────────────────────────────────
+
+/**
+ * 영문 원문을 한국어로 번역 (Ollama qwen3.5:4b).
+ * DetailPage의 "번역하기" 버튼에서 호출.
+ */
+export async function translateArticle(text: string): Promise<{ translation: string }> {
+  return request<{ translation: string }>('/translate', {
+    method: 'POST',
+    body: JSON.stringify({ text }),
+  });
+}
+
+/**
+ * 영문 원문에 대한 격식체·일상체 3줄 요약을 생성 (Ollama qwen3.5:4b).
+ * DetailPage의 "요약하기" 버튼에서 호출.
+ */
+export async function summarizeArticle(
+  text: string,
+): Promise<{ summary_formal: string; summary_casual: string }> {
+  return request<{ summary_formal: string; summary_casual: string }>('/summarize', {
+    method: 'POST',
+    body: JSON.stringify({ text }),
+  });
+}

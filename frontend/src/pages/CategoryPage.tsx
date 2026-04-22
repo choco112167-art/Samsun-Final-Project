@@ -119,15 +119,20 @@ export default function CategoryPage({ bm, onArticleClick }: Props) {
                   <span style={{ fontSize: 11, color: 'var(--color-text-tertiary)', whiteSpace: 'nowrap' }}>신뢰도 {Math.round((article.credibilityScore ?? 0) * 100)}%</span>
                 </div>
               </div>
-              <button onClick={e => { e.stopPropagation(); bm.toggle(article.urlHash, article); }} style={{
-                width: 30, height: 30, borderRadius: 8, flexShrink: 0, marginTop: -2,
-                background: bm.isBookmarked(article.urlHash) ? '#FEF3C7' : 'var(--color-surface-secondary)',
-                display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'all 0.15s',
-              }}>
+              <div
+                role="button"
+                onClick={e => { e.stopPropagation(); bm.toggle(article.urlHash, article); }}
+                style={{
+                  width: 30, height: 30, borderRadius: 8, flexShrink: 0, marginTop: -2,
+                  background: bm.isBookmarked(article.urlHash) ? '#FEF3C7' : 'var(--color-surface-secondary)',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'all 0.15s',
+                  cursor: 'pointer',
+                }}
+              >
                 <svg width="13" height="13" viewBox="0 0 24 24" fill={bm.isBookmarked(article.urlHash) ? '#D97706' : 'none'}>
                   <path d="M19 21L12 16L5 21V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v16z" stroke={bm.isBookmarked(article.urlHash) ? '#D97706' : 'var(--color-text-tertiary)'} strokeWidth="1.7" strokeLinejoin="round"/>
                 </svg>
-              </button>
+              </div>
             </button>
           );
         })}

@@ -153,17 +153,22 @@ export default function SearchPage({ bm, onArticleClick }: Props) {
                         {summary}
                       </p>
                       <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 8 }}>
-                        <button onClick={e => { e.stopPropagation(); bm.toggle(article.urlHash, article); }} style={{
-                          display: 'flex', alignItems: 'center', gap: 4, fontSize: 11, fontWeight: 500,
-                          color: bm.isBookmarked(article.urlHash) ? '#D97706' : 'var(--color-text-tertiary)',
-                          background: bm.isBookmarked(article.urlHash) ? '#FEF3C7' : 'var(--color-surface-secondary)',
-                          padding: '4px 10px', borderRadius: 6, transition: 'all 0.15s',
-                        }}>
+                        <div
+                          role="button"
+                          onClick={e => { e.stopPropagation(); bm.toggle(article.urlHash, article); }}
+                          style={{
+                            display: 'flex', alignItems: 'center', gap: 4, fontSize: 11, fontWeight: 500,
+                            color: bm.isBookmarked(article.urlHash) ? '#D97706' : 'var(--color-text-tertiary)',
+                            background: bm.isBookmarked(article.urlHash) ? '#FEF3C7' : 'var(--color-surface-secondary)',
+                            padding: '4px 10px', borderRadius: 6, transition: 'all 0.15s',
+                            cursor: 'pointer',
+                          }}
+                        >
                           <svg width="11" height="11" viewBox="0 0 24 24" fill={bm.isBookmarked(article.urlHash) ? '#D97706' : 'none'}>
                             <path d="M19 21L12 16L5 21V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v16z" stroke={bm.isBookmarked(article.urlHash) ? '#D97706' : 'currentColor'} strokeWidth="1.7" strokeLinejoin="round"/>
                           </svg>
                           {bm.isBookmarked(article.urlHash) ? '저장됨' : '저장'}
-                        </button>
+                        </div>
                       </div>
                     </button>
                   );

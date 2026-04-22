@@ -8,6 +8,7 @@ Railway에 배포되어 24시간 돌아간다.
 
 import logging
 import os
+from datetime import datetime, timezone, timedelta
 
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
@@ -323,3 +324,91 @@ def record_article_view(user_id: str, url_hash: str):
     sb.table("users").update({"user_vector": new_vector}).eq("user_id", user_id).execute()
 
     return {"message": "조회 기록 완료"}
+
+
+@app.get("/absence-summary/{user_id}")
+def absence_summary(user_id: str, top_k: int = 5):
+    """
+    유저가 오랫동안 접속하지 않았을 때 놓친 기사 요약을 반환한다.
+    부재 기간에 따라 가져오는 기간과 메시지가 달라진다.
+      - 1일   → 어제 놓친 기사
+      - 2~6일 → 부재 기간 전체
+      - 7일+  → 최근 7일치 (상한선)
+    마지막으로 last_seen_at을 현재 시각으로 업데이트한다.
+    """
+    now = datetime.now(timezone.utc)
+
+    # 1. 유저 정보 조회
+    user_res = sb.table("users").select("user_vector, last_seen_at").eq("user_id", user_id).execute()
+    if not user_res.data:
+        return {"show": False}
+
+    user_data   = user_res.data[0]
+    user_vector = user_data.get("user_vector")
+    last_seen   = user_data.get("last_seen_at")
+
+    def update_last_seen():
+        sb.table("users").update({"last_seen_at": now.isoformat()}).eq("user_id", user_id).execute()
+
+    # 처음 방문이거나 벡터 없으면 기록만 하고 종료
+    if not user_vector or not last_seen:
+        update_last_seen()
+        return {"show": False}
+
+    # 2. 부재 기간 계산
+    try:
+        last_seen_dt = datetime.fromisoformat(last_seen.replace("Z", "+00:00"))
+    except ValueError:
+        update_last_seen()
+        return {"show": False}
+
+    days_away = (now - last_seen_dt).days
+
+    # 하루도 안 지났으면 표시 안 함
+    if days_away < 1:
+        update_last_seen()
+        return {"show": False}
+
+    # 3. 부재 기간별 fetch 범위 & 메시지 결정
+    if days_away == 1:
+        fetch_days = 1
+        message    = "어제 놓친 기사예요!"
+    elif days_away <= 6:
+        fetch_days = days_away
+        message    = f"{days_away}일간 놓친 기사예요!"
+    elif days_away < 30:
+        fetch_days = 7
+        message    = f"{days_away}일 만에 오셨네요! 최근 1주일 주요 기사예요"
+    else:
+        fetch_days = 7
+        message    = "오랫동안 안 오셨네요! 최근 주요 기사만 추려봤어요"
+
+    since_date = (now - timedelta(days=fetch_days)).isoformat()
+
+    # 4. 날짜 필터 RAG 검색 (match_articles_since RPC는 supabase_schema.sql 참조)
+    articles_res = sb.rpc("match_articles_since", {
+        "query_vector": user_vector,
+        "since_date":   since_date,
+        "top_k":        top_k,
+    }).execute()
+
+    if not articles_res.data:
+        return {"show": False}
+
+    return {
+        "show":      True,
+        "message":   message,
+        "days_away": days_away,
+        "articles":  articles_res.data,
+    }
+
+
+@app.post("/user-seen/{user_id}")
+def user_seen(user_id: str):
+    """
+    유저가 부재중 알림을 확인('확인했어요' 버튼)했을 때 호출.
+    last_seen_at을 현재 시각으로 업데이트한다.
+    """
+    now = datetime.now(timezone.utc)
+    sb.table("users").update({"last_seen_at": now.isoformat()}).eq("user_id", user_id).execute()
+    return {"message": "last_seen_at 업데이트 완료"}

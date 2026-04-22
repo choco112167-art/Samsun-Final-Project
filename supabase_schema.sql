@@ -295,3 +295,49 @@ LANGUAGE sql STABLE AS $$
     ORDER BY f.rrf_score DESC
     LIMIT top_k;
 $$;
+
+
+-- ============================================================
+-- 8. users 테이블 last_seen_at 컬럼 (부재중 알림용)
+--    이 컬럼은 users 테이블에 존재해야 하며,
+--    없다면 아래 ALTER로 추가.
+-- ============================================================
+ALTER TABLE IF EXISTS users
+    ADD COLUMN IF NOT EXISTS last_seen_at TIMESTAMPTZ DEFAULT NOW();
+
+
+-- ============================================================
+-- 9. match_articles_since  (부재 기간 내 RAG 벡터 검색 · 강수민)
+--    /absence-summary 엔드포인트에서 since_date 이후 발행된
+--    기사 중에서 유사도 상위 top_k 개를 반환.
+-- ============================================================
+CREATE OR REPLACE FUNCTION match_articles_since(
+    query_vector VECTOR(1024),
+    since_date   TIMESTAMPTZ,
+    top_k        INT DEFAULT 5
+)
+RETURNS TABLE (
+    url_hash          VARCHAR,
+    title             TEXT,
+    source            VARCHAR,
+    category          VARCHAR,
+    published_at      TIMESTAMPTZ,
+    summary_formal    TEXT,
+    similarity        FLOAT
+)
+LANGUAGE sql STABLE AS $$
+    SELECT
+        a.url_hash,
+        a.title,
+        a.source,
+        a.category,
+        a.published_at,
+        a.summary_formal,
+        1 - (a.embedding <=> query_vector) AS similarity
+    FROM articles a
+    WHERE
+        a.embedding IS NOT NULL
+        AND a.published_at >= since_date
+    ORDER BY a.embedding <=> query_vector
+    LIMIT top_k;
+$$;
