@@ -10,10 +10,13 @@ type FeedItem = Article & { similarity?: number };
 type LlmItem  = Article & { reason?: string };
 
 const ALL_INTERESTS: { id: Interest; emoji: string; desc: string }[] = [
-  { id: '신규 출시/제품', emoji: '🚀', desc: '스냅드래곤, 엑시노스 등 신제품 출시 소식' },
-  { id: '기술 이슈',      emoji: '⚡', desc: 'AI·반도체·소프트웨어 핵심 기술 동향' },
-  { id: '블록체인/양자',  emoji: '🔬', desc: '블록체인, 양자컴퓨팅 관련 뉴스' },
-  { id: '대기업',          emoji: '🏢', desc: '구글·MS·애플·Meta·삼성 등 빅테크 동향' },
+  { id: 'AI 연구',    emoji: '🔮', desc: 'MIT TR · The Decoder 등 AI 최신 연구 동향' },
+  { id: 'AI 서베이',  emoji: '📘', desc: 'MIT TR · The Decoder 등 AI 서베이 분석·리포트' },
+  { id: 'AI 스타트업', emoji: '🚀', desc: 'TechCrunch · VentureBeat 등 AI 스타트업·투자 동향' },
+  { id: 'AI 비즈니스', emoji: '💼', desc: 'VentureBeat 등 AI 비즈니스·산업 적용 소식' },
+  { id: 'AI 윤리',    emoji: '⚖️', desc: 'The Guardian 등 AI 윤리·규제·사회적 영향' },
+  { id: 'AI 커뮤니티', emoji: '💬', desc: 'Reddit 등 AI 커뮤니티 여론·트렌드' },
+  { id: '테크 전반',  emoji: '💻', desc: 'The Verge 등 AI를 포함한 테크 업계 전반 소식' },
 ];
 
 type MyTab = 'feed' | 'llm' | 'bookmarks' | 'interests';

@@ -8,7 +8,7 @@ import type { BookmarkHook } from '../hooks/useBookmarks';
 const PAGE_SIZE = 50;
 
 type SubTab = '전체' | Category;
-const CATEGORY_TABS: SubTab[] = ['전체', 'AI 연구', 'AI 스타트업', '테크 전반', '윤리·정책', '반도체'];
+const CATEGORY_TABS: SubTab[] = ['전체', 'AI 연구', 'AI 심층', 'AI 스타트업', 'AI 비즈니스', 'AI 윤리', 'AI 커뮤니티', '테크 전반'];
 
 interface Props { bm: BookmarkHook; onArticleClick?: (urlHash: string) => void; }
 

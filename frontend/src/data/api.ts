@@ -276,8 +276,36 @@ export async function markUserSeen(userId: string): Promise<void> {
 
 
 // ─────────────────────────────────────────────
+// Hot 페이지 — 일자별 조회수 집계
+// ─────────────────────────────────────────────
+
+/**
+ * 기사 조회 로그 적재 (Hot 페이지 조회수 집계용).
+ * /article-view와 별개 엔드포인트로, 일간 카운트를 위해 사용.
+ */
+export async function logArticleView(userId: string, urlHash: string): Promise<void> {
+  if (!userId?.trim() || !urlHash) return;
+  await request<{ message?: string }>(
+    `/logs/view?user_id=${encodeURIComponent(userId)}&url_hash=${encodeURIComponent(urlHash)}`,
+    { method: 'POST' },
+  );
+}
+
+/**
+ * 특정 일자의 Hot 기사 목록 (조회수 내림차순).
+ * HotPage에서 사용.
+ * @param date YYYY-MM-DD 형식의 날짜 문자열
+ */
+export async function fetchHot(date: string): Promise<(Article & { view_count: number })[]> {
+  const list = await request<(ApiArticle & { view_count: number })[]>(`/hot/${date}`);
+  return list.map(a => ({ ...toArticle(a), view_count: a.view_count ?? 0 }));
+}
+
+
+// ─────────────────────────────────────────────
 // 온디맨드 번역·요약 (DetailPage "번역하기" / "요약하기" 버튼용)
 // ─────────────────────────────────────────────
+
 
 /**
  * 영문 원문을 한국어로 번역 (Ollama qwen3.5:4b).

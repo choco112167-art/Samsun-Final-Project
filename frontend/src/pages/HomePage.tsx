@@ -8,7 +8,7 @@ import type { BookmarkHook } from '../hooks/useBookmarks';
 
 const PAGE_SIZE = 50;
 
-type Filter = '전체' | 'AI 연구' | 'AI 스타트업' | '테크 전반' | '윤리·정책' | '반도체';
+type Filter = '전체' | 'AI 연구' | 'AI 심층' | 'AI 스타트업' | 'AI 비즈니스' | 'AI 윤리' | 'AI 커뮤니티' | '테크 전반';
 
 interface Props {
   bm: BookmarkHook;
@@ -172,7 +172,7 @@ export default function HomePage({ bm, onNavigateToFeed, onArticleClick }: Props
         </div>
 
         <div style={{ display: 'flex', gap: 7, marginTop: 16, paddingBottom: 16, overflowX: 'auto', scrollbarWidth: 'none' }}>
-          {(['전체','AI 연구','AI 스타트업','테크 전반','윤리·정책','반도체'] as Filter[]).map(f => (
+          {(['전체','AI 연구','AI 심층','AI 스타트업','AI 비즈니스','AI 윤리','AI 커뮤니티','테크 전반'] as Filter[]).map(f => (
             <button key={f} onClick={() => setFilter(f)} style={{
               flexShrink: 0, fontSize: 12, fontWeight: filter === f ? 700 : 400,
               color: filter === f ? '#FFFFFF' : '#6B7684',
