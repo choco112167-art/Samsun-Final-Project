@@ -14,7 +14,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from supabase import create_client
 
-from backend.embedder import make_embedding
+from backend.embedder import make_embedding, expand_query
 from config import get_settings
 
 _settings = get_settings()
@@ -144,16 +144,29 @@ def save_articles_endpoint(req: ArticleRequest):
 
 
 @app.get("/search")
-def search(q: str, top_k: int = 10, threshold: float = 0.4):
+def search(q: str, top_k: int = 10, threshold: float = 0.3):
+    """
+    LLM 쿼리 확장 + 벡터 유사도 검색.
+    짧은 한국어 쿼리도 한/영 키워드로 확장해 관련 기사를 잘 찾아낸다.
+    """
     if not q.strip():
         return {"results": []}
-    query_vector = make_embedding(q)
+
+    # 1. LLM으로 쿼리 확장 (MODE=cloud일 때만, 실패 시 원본 사용)
+    expanded = expand_query(q)
+
+    # 2. 확장된 쿼리로 임베딩 → 벡터 검색 (더 많이 가져온 후 필터)
+    query_vector = make_embedding(expanded)
     result = sb.rpc("match_articles", {
         "query_vector": query_vector,
-        "top_k":        top_k,
+        "top_k":        top_k * 2,   # 넉넉하게 가져와서 threshold로 자름
     }).execute()
+
     filtered = [r for r in (result.data or []) if r.get("similarity", 0) >= threshold]
-    return {"results": filtered}
+    return {
+        "results":        filtered[:top_k],
+        "expanded_query": expanded,   # 디버그용 — 어떻게 확장됐는지 확인 가능
+    }
 
 
 @app.get("/health")

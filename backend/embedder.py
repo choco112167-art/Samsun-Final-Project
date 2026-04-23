@@ -63,6 +63,58 @@ def _embed_cloud(text: str) -> list[float]:
 
 
 # ════════════════════════════════════════════
+# QUERY EXPANSION — LLM으로 검색어 확장
+# 한국어 짧은 쿼리 → 한/영 풍부한 키워드로 변환
+# ════════════════════════════════════════════
+
+def expand_query(q: str) -> str:
+    """
+    LLM(OpenRouter)을 이용해 검색어를 확장한다.
+    예: "엔비디아" → "엔비디아 NVIDIA GPU 반도체 AI가속기 블랙웰 H100 데이터센터"
+
+    MODE=local이거나 실패하면 원본 쿼리를 그대로 반환.
+    """
+    if MODE != "cloud":
+        return q
+
+    import requests
+    api_key = os.getenv("OPENROUTER_API_KEY", "")
+    if not api_key:
+        return q
+
+    prompt = (
+        "You are a search query expander for an AI/tech news search engine.\n"
+        "Expand the user's Korean search query into a rich set of relevant keywords.\n"
+        "Include both Korean and English terms, related concepts, tech names, and company names.\n"
+        "Output ONLY the expanded keywords on a single line, space-separated. No explanation.\n\n"
+        f"Query: {q}"
+    )
+
+    try:
+        resp = requests.post(
+            "https://openrouter.ai/api/v1/chat/completions",
+            headers={
+                "Authorization": f"Bearer {api_key}",
+                "Content-Type":  "application/json",
+            },
+            json={
+                "model":      "qwen/qwen3-4b",
+                "messages":   [{"role": "user", "content": prompt}],
+                "max_tokens": 120,
+                "temperature": 0.2,
+            },
+            timeout=10,
+        )
+        body = resp.json()
+        expanded = body["choices"][0]["message"]["content"].strip()
+        # LLM이 원본 쿼리도 포함하도록 앞에 붙여줌
+        return f"{q} {expanded}"
+    except Exception:
+        # 실패하면 원본 쿼리 그대로 사용 (검색은 항상 동작해야 함)
+        return q
+
+
+# ════════════════════════════════════════════
 # 공개 인터페이스 — 이것만 import해서 쓰세요
 # ════════════════════════════════════════════
 
