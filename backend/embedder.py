@@ -83,10 +83,8 @@ def expand_query(q: str) -> str:
         return q
 
     prompt = (
-        "You are a search query expander for an AI/tech news search engine.\n"
-        "Expand the user's Korean search query into a rich set of relevant keywords.\n"
-        "Include both Korean and English terms, related concepts, tech names, and company names.\n"
-        "Output ONLY the expanded keywords on a single line, space-separated. No explanation.\n\n"
+        "Expand this search query for an AI/tech news engine.\n"
+        "Output ONLY 8-12 unique keywords (Korean + English), space-separated, one line, no repetition.\n\n"
         f"Query: {q}"
     )
 
