@@ -100,7 +100,7 @@ export default function HomePage({ bm, onNavigateToFeed, onArticleClick }: Props
   if (loading) return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden', background: 'var(--color-header-bg)' }}>
       <header style={{ padding: '22px 20px 20px', flexShrink: 0 }}>
-        <h1 style={{ fontSize: 26, fontWeight: 800, letterSpacing: '-0.04em', color: 'var(--color-header-text)' }}>일선뉴스</h1>
+        <h1 style={{ fontSize: 26, fontWeight: 800, letterSpacing: '-0.04em', color: 'var(--color-header-text)' }}>삼선뉴스</h1>
         <p style={{ fontSize: 12, color: 'var(--color-header-text-secondary)', marginTop: 3 }}>불러오는 중...</p>
       </header>
       <div style={{ flex: 1, overflowY: 'auto', background: 'var(--color-bg)', borderRadius: '32px 32px 0 0' }}>
@@ -112,7 +112,7 @@ export default function HomePage({ bm, onNavigateToFeed, onArticleClick }: Props
   if (error) return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden', background: 'var(--color-header-bg)' }}>
       <header style={{ padding: '22px 20px 20px', flexShrink: 0 }}>
-        <h1 style={{ fontSize: 26, fontWeight: 800, letterSpacing: '-0.04em', color: 'var(--color-header-text)' }}>일선뉴스</h1>
+        <h1 style={{ fontSize: 26, fontWeight: 800, letterSpacing: '-0.04em', color: 'var(--color-header-text)' }}>삼선뉴스</h1>
       </header>
       <div style={{ flex: 1, background: 'var(--color-bg)', borderRadius: '32px 32px 0 0', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 12 }}>
         <p style={{ fontSize: 15, color: 'var(--color-text-secondary)' }}>⚠️ {error}</p>
@@ -150,7 +150,7 @@ export default function HomePage({ bm, onNavigateToFeed, onArticleClick }: Props
       <header style={{ flexShrink: 0, padding: '22px 20px 0' }}>
         <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between' }}>
           <div>
-            <h1 style={{ fontSize: 26, fontWeight: 800, letterSpacing: '-0.04em', color: 'var(--color-header-text)' }}>일선뉴스</h1>
+            <h1 style={{ fontSize: 26, fontWeight: 800, letterSpacing: '-0.04em', color: 'var(--color-header-text)' }}>삼선뉴스</h1>
             <p style={{ fontSize: 12, color: 'var(--color-header-text-secondary)', marginTop: 3 }}>
               <span style={{ color: 'var(--color-primary)', fontWeight: 600 }}>{newCount}개의 새 기사</span>
             </p>
