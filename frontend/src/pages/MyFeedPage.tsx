@@ -1,19 +1,22 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
-import { fetchFeed, fetchFeedLlm, recordArticleView } from '../data/api';
+import { useState, useEffect, useCallback } from 'react';
+import { fetchFeed, postOnboarding } from '../data/api';
 import type { Article } from '../data/articles';
 import ArticleCard from '../components/ArticleCard';
 import DetailPage from './DetailPage';
 import type { BookmarkHook } from '../hooks/useBookmarks';
 import type { Interest } from './OnboardingPage';
 
+type FeedItem = Article & { similarity?: number };
+
 const ALL_INTERESTS: { id: Interest; emoji: string; desc: string }[] = [
-  { id: '신규 출시/제품', emoji: '🚀', desc: '스냅드래곤, 엑시노스 등 신제품 출시 소식' },
-  { id: '기술 이슈',     emoji: '⚡', desc: 'AI·반도체·소프트웨어 핵심 기술 동향' },
-  { id: '블록체인/양자', emoji: '🔬', desc: '블록체인, 양자컴퓨팅 관련 뉴스' },
-  { id: '대기업',        emoji: '🏢', desc: '구글·MS·애플·Meta·삼성 등 빅테크 동향' },
+  { id: 'AI 연구·심층', emoji: '🔬', desc: 'MIT TR · The Decoder — AI 최신 연구 및 심층 분석' },
+  { id: 'AI 스타트업',  emoji: '🚀', desc: 'TechCrunch · VentureBeat — AI 스타트업·투자 동향' },
+  { id: '테크 전반',    emoji: '💻', desc: 'The Verge — AI를 포함한 테크 업계 전반 소식' },
+  { id: 'AI 윤리·정책', emoji: '⚖️', desc: 'The Guardian — AI 윤리·규제·사회적 영향' },
+  { id: 'AI·반도체',   emoji: '🔧', desc: 'IEEE Spectrum — AI 칩·반도체 기술 동향' },
 ];
 
-type MyTab = 'feed' | 'llm' | 'bookmarks' | 'interests';
+type MyTab = 'feed' | 'bookmarks' | 'interests';
 
 interface Props {
   bm: BookmarkHook;
@@ -25,20 +28,11 @@ interface Props {
 export default function MyFeedPage({ bm, interests, onInterestsChange, userId }: Props) {
   const [tab, setTab]           = useState<MyTab>('feed');
   const [editMode, setEditMode] = useState(false);
-  const [detail, setDetail]     = useState<(Article & { similarity?: number }) | null>(null);
-  const [needsRefresh, setNeedsRefresh] = useState(false);
+  const [detail, setDetail]     = useState<FeedItem | null>(null);
 
-  const [feedArticles, setFeedArticles] = useState<(Article & { similarity?: number })[]>([]);
+  const [feedArticles, setFeedArticles] = useState<FeedItem[]>([]);
   const [feedLoading, setFeedLoading]   = useState(false);
   const [feedError, setFeedError]       = useState<string | null>(null);
-  const [visibleCount, setVisibleCount] = useState(20);
-  const [llmArticles, setLlmArticles]   = useState<(Article & { reason?: string })[]>([]);
-  const [llmLoading, setLlmLoading]     = useState(false);
-  const [llmError, setLlmError]         = useState<string | null>(null);
-  const [llmLoaded, setLlmLoaded]       = useState(false);
-
-  const mainRef    = useRef<HTMLDivElement>(null);
-  const scrollPos  = useRef(0);
 
   const bookmarkCount = bm.bookmarked.size;
 
@@ -46,111 +40,78 @@ export default function MyFeedPage({ bm, interests, onInterestsChange, userId }:
     if (!userId) return;
     setFeedLoading(true);
     setFeedError(null);
-    setVisibleCount(20);
-    fetchFeed(userId, 50)
-      .then(data => { setFeedArticles(data); setFeedLoading(false); })
+    fetchFeed(userId, 20)
+      .then(data => {
+        setFeedArticles(data);
+        setFeedLoading(false);
+      })
       .catch(() => { setFeedError('피드를 불러오지 못했어요'); setFeedLoading(false); });
   }, [userId]);
 
   useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- userId 변경 시 피드 재로드 (loadFeed는 버튼과 공유)
     loadFeed();
   }, [loadFeed]);
 
-  const loadLlmFeed = useCallback(() => {
-    if (!userId) return;
-    setLlmLoading(true);
-    setLlmError(null);
-    fetchFeedLlm(userId)
-      .then(data => { setLlmArticles(data); setLlmLoading(false); setLlmLoaded(true); })
-      .catch(() => { setLlmError('LLM 추천을 불러오지 못했어요'); setLlmLoading(false); });
-  }, [userId]);
-
-  // 스크롤 위치 저장
-  useEffect(() => {
-    const el = mainRef.current;
-    if (!el) return;
-    const onScroll = () => { scrollPos.current = el.scrollTop; };
-    el.addEventListener('scroll', onScroll, { passive: true });
-    return () => el.removeEventListener('scroll', onScroll);
-  }, []);
-
-  const handleArticleClick = async (article: Article & { similarity?: number }) => {
-    // 백엔드에 클릭 기록 → user_vector 업데이트 (0.6:0.4 비율)
-    if (userId) {
-      try { await recordArticleView(userId, article.urlHash); } catch { /* silent */ }
-    }
-    setNeedsRefresh(true); // 돌아올 때 피드 새로고침
-    setDetail(article);
-  };
-
   const toggleInterest = (id: Interest) => {
-    onInterestsChange(
-      interests.includes(id) ? interests.filter(i => i !== id) : [...interests, id]
-    );
+    const next = interests.includes(id)
+      ? interests.filter(i => i !== id)
+      : [...interests, id];
+    onInterestsChange(next);
+    if (userId) {
+      postOnboarding(userId, next).catch(() =>
+        console.warn('[MyFeed] 관심 주제 백엔드 동기화 실패 — 로컬 상태는 유지'),
+      );
+    }
   };
+
+  if (detail) return (
+    <DetailPage
+      article={detail}
+      bookmarked={bm.isBookmarked(detail.urlHash)}
+      onBookmark={bm.toggle}
+      onBack={() => setDetail(null)}
+    />
+  );
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden', position: 'relative' }}>
-      {detail && (
-        <div style={{ position: 'absolute', inset: 0, zIndex: 100, background: 'var(--color-bg)', overflow: 'hidden' }}>
-          <DetailPage
-            article={detail}
-            bookmarked={bm.isBookmarked(detail.urlHash)}
-            onBookmark={bm.toggle}
-            onBack={() => {
-              setDetail(null);
-              if (needsRefresh) {
-                setNeedsRefresh(false);
-                loadFeed();
-              }
-              // 스크롤 위치 복원
-              setTimeout(() => {
-                if (mainRef.current) mainRef.current.scrollTop = scrollPos.current;
-              }, 0);
-            }}
-          />
-        </div>
-      )}
+    <div style={{ display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden', background: 'var(--color-header-bg)' }}>
       <style>{`
         @keyframes fadeSlide { from{opacity:0;transform:translateY(6px)} to{opacity:1;transform:translateY(0)} }
         @keyframes spin { to{transform:rotate(360deg)} }
       `}</style>
 
-      {/* 헤더 */}
-      <header style={{ background: 'var(--color-surface)', borderBottom: '0.5px solid var(--color-border)', flexShrink: 0 }}>
-        <div style={{ padding: '18px 20px 0', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+      <header style={{ flexShrink: 0, padding: '22px 20px 0' }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 3 }}>
           <div>
-            <h1 style={{ fontSize: 20, fontWeight: 700, letterSpacing: '-0.03em', marginBottom: 2 }}>내 피드</h1>
-            <p style={{ fontSize: 12, color: 'var(--color-text-tertiary)' }}>
+            <h1 style={{ fontSize: 26, fontWeight: 800, letterSpacing: '-0.04em', color: 'var(--color-header-text)', marginBottom: 3 }}>내 피드</h1>
+            <p style={{ fontSize: 12, color: 'var(--color-header-text-secondary)' }}>
               관심 주제 {interests.length}개 · 북마크 {bookmarkCount}개
             </p>
           </div>
           <div style={{
             width: 40, height: 40, borderRadius: '50%',
-            background: 'linear-gradient(135deg,#4F46E5 0%,#7C3AED 100%)',
+            background: 'linear-gradient(135deg,#3081fb 0%,#1960ca 100%)',
             display: 'flex', alignItems: 'center', justifyContent: 'center',
             fontSize: 14, fontWeight: 700, color: '#fff',
           }}>AI</div>
         </div>
 
-        {/* 탭 */}
-        <div style={{ display: 'flex', marginTop: 12 }}>
-          {([['feed','추천 피드'], ['llm','AI 추천'], ['bookmarks','북마크'], ['interests','관심 주제']] as [MyTab, string][]).map(([id, label]) => (
-            <button key={id} onClick={() => { setTab(id); if (id === 'llm' && !llmLoaded) loadLlmFeed(); }} style={{
-              flex: 1, padding: '10px 0', fontSize: 13,
-              fontWeight: tab === id ? 600 : 400,
-              color: tab === id ? 'var(--color-primary)' : 'var(--color-text-tertiary)',
-              borderBottom: `2px solid ${tab === id ? 'var(--color-primary)' : 'transparent'}`,
-              transition: 'all 0.15s',
+        <div style={{ display: 'flex', gap: 7, marginTop: 14, paddingBottom: 16, overflowX: 'auto', scrollbarWidth: 'none' }}>
+          {([['feed','추천 피드'], ['bookmarks','북마크'], ['interests','관심 주제']] as [MyTab, string][]).map(([id, label]) => (
+            <button key={id} onClick={() => setTab(id)} style={{
+              flexShrink: 0, fontSize: 12,
+              fontWeight: tab === id ? 700 : 400,
+              color: tab === id ? '#FFFFFF' : '#6B7684',
+              background: tab === id ? '#111111' : '#F2F4F6',
+              border: 'none',
+              padding: '6px 16px', borderRadius: 20, transition: 'all 0.15s', whiteSpace: 'nowrap',
             }}>{label}</button>
           ))}
         </div>
       </header>
 
-      <main ref={mainRef} style={{ flex: 1, overflowY: 'auto', WebkitOverflowScrolling: 'touch' }}>
+      <main style={{ flex: 1, overflowY: 'auto', WebkitOverflowScrolling: 'touch', background: 'var(--color-bg)', borderRadius: '32px 32px 0 0' }}>
 
-        {/* ── 추천 피드 탭 */}
         {tab === 'feed' && (
           <div style={{ padding: '12px 16px 24px', display: 'flex', flexDirection: 'column', gap: 10 }}>
             {feedLoading && (
@@ -175,13 +136,13 @@ export default function MyFeedPage({ bm, interests, onInterestsChange, userId }:
                 </p>
               </div>
             )}
-            {!feedLoading && feedArticles.slice(0, visibleCount).map((article, i) => (
+            {!feedLoading && feedArticles.map((article, i) => (
               <div key={article.urlHash} style={{ position: 'relative', animation: `fadeSlide 0.25s ${i * 0.04}s ease both` }}>
                 <ArticleCard
                   article={article}
                   bookmarked={bm.isBookmarked(article.urlHash)}
                   onBookmark={bm.toggle}
-                  onClick={() => handleArticleClick(article)}
+                  onClick={() => setDetail(article)}
                 />
                 {article.similarity !== undefined && (
                   <div style={{
@@ -194,70 +155,11 @@ export default function MyFeedPage({ bm, interests, onInterestsChange, userId }:
                     {Math.round(article.similarity * 100)}% 매칭
                   </div>
                 )}
-                {(article as any).reason && (
-                  <div style={{
-                    marginTop: 6, fontSize: 11, color: 'var(--color-text-tertiary)',
-                    background: 'var(--color-surface-secondary)',
-                    padding: '5px 10px', borderRadius: 8,
-                    display: 'flex', alignItems: 'center', gap: 5,
-                  }}>
-                    <span>💡</span>
-                    <span>{(article as any).reason}</span>
-                  </div>
-                )}
               </div>
             ))}
-          {visibleCount < feedArticles.length && !feedLoading && (
-              <button onClick={() => setVisibleCount(v => v + 20)} style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '4px auto 8px', padding: '10px 24px', fontSize: 13, color: 'var(--color-primary)', background: 'var(--color-primary-light)', border: '1px solid var(--color-primary-mid)', borderRadius: 20, cursor: 'pointer' }}>
-                기사 더 보기
-              </button>
-            )}
           </div>
         )}
 
-        {/* ── AI 추천 탭 */}
-        {tab === 'llm' && (
-          <div style={{ padding: '12px 16px 24px', display: 'flex', flexDirection: 'column', gap: 10 }}>
-            <div style={{ background: 'linear-gradient(135deg,#4F46E5 0%,#7C3AED 100%)', borderRadius: 12, padding: '12px 16px', marginBottom: 4 }}>
-              <p style={{ fontSize: 13, fontWeight: 600, color: '#fff' }}>🤖 AI가 직접 고른 기사</p>
-              <p style={{ fontSize: 11, color: 'rgba(255,255,255,0.75)', marginTop: 2 }}>관심사와 읽기 패턴을 분석해 5개를 선별했어요</p>
-            </div>
-            {llmLoading && (
-              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', padding: '60px 0', gap: 12 }}>
-                <div style={{ width: 24, height: 24, border: '2.5px solid var(--color-border)', borderTopColor: 'var(--color-primary)', borderRadius: '50%', animation: 'spin 0.7s linear infinite' }} />
-                <span style={{ fontSize: 13, color: 'var(--color-text-tertiary)' }}>AI가 기사를 분석 중이에요...</span>
-              </div>
-            )}
-            {!llmLoading && llmError && (
-              <div style={{ textAlign: 'center', padding: '48px 0' }}>
-                <p style={{ fontSize: 14, color: 'var(--color-text-tertiary)', marginBottom: 12 }}>😢 {llmError}</p>
-                <button onClick={loadLlmFeed} style={{ fontSize: 13, color: 'var(--color-primary)', padding: '8px 18px', border: '1px solid var(--color-primary)', borderRadius: 20 }}>다시 시도</button>
-              </div>
-            )}
-            {!llmLoading && !llmError && llmArticles.map((article, i) => (
-              <div key={article.urlHash} style={{ position: 'relative', animation: `fadeSlide 0.25s ${i * 0.08}s ease both` }}>
-                <ArticleCard
-                  article={article}
-                  bookmarked={bm.isBookmarked(article.urlHash)}
-                  onBookmark={bm.toggle}
-                  onClick={() => handleArticleClick(article)}
-                />
-                <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 4, padding: '0 4px' }}>
-                  <span style={{ fontSize: 13 }}>💡</span>
-                  <span style={{ fontSize: 11, color: 'var(--color-text-tertiary)' }}>{article.reason ?? '회원님의 취향을 분석해 추천했어요'}</span>
-                </div>
-              </div>
-            ))}
-            {!llmLoading && llmLoaded && llmArticles.length === 0 && (
-              <div style={{ textAlign: 'center', padding: '60px 0' }}>
-                <div style={{ fontSize: 36, marginBottom: 12 }}>🤖</div>
-                <p style={{ fontSize: 14, color: 'var(--color-text-tertiary)' }}>추천할 기사가 없어요</p>
-              </div>
-            )}
-          </div>
-        )}
-
-        {/* ── 북마크 탭 */}
         {tab === 'bookmarks' && (
           <div style={{ padding: '12px 16px 24px', display: 'flex', flexDirection: 'column', gap: 10 }}>
             {bookmarkCount === 0 ? (
@@ -268,20 +170,17 @@ export default function MyFeedPage({ bm, interests, onInterestsChange, userId }:
                 </p>
               </div>
             ) : (
-              feedArticles
-                .filter(a => bm.isBookmarked(a.id))
-                .map((article, i) => (
-                  <ArticleCard key={article.urlHash} article={article}
-                    bookmarked={bm.isBookmarked(article.urlHash)} onBookmark={bm.toggle}
-                    onClick={() => handleArticleClick(article)}
-                    style={{ animation: `fadeSlide 0.25s ${i * 0.05}s ease both` }}
-                  />
-                ))
+              bm.bookmarkedList.map((article, i) => (
+                <ArticleCard key={article.urlHash} article={article}
+                  bookmarked={bm.isBookmarked(article.urlHash)} onBookmark={bm.toggle}
+                  onClick={() => setDetail(article)}
+                  style={{ animation: `fadeSlide 0.25s ${i * 0.05}s ease both` }}
+                />
+              ))
             )}
           </div>
         )}
 
-        {/* ── 관심 주제 탭 */}
         {tab === 'interests' && (
           <div style={{ padding: '16px 16px 24px' }}>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
