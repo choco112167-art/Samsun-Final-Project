@@ -82,10 +82,10 @@ export default function HotPage({ bm }: Props) {
   };
 
   const isFuture = (d: number) => {
+    // 날짜만 비교 (시간 제외) — YYYY-MM-DD 문자열 비교로 오늘 날짜 선택 가능하게
     const t = new Date();
-    const target = new Date(year, month - 1, d);
-    target.setHours(23, 59, 59);
-    return target > t;
+    const todayStr = `${t.getFullYear()}-${String(t.getMonth() + 1).padStart(2, '0')}-${String(t.getDate()).padStart(2, '0')}`;
+    return toYMD(year, month, d) > todayStr;
   };
 
   if (detail) return (
