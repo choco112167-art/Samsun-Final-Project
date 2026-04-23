@@ -144,28 +144,57 @@ def save_articles_endpoint(req: ArticleRequest):
 
 
 @app.get("/search")
-def search(q: str, top_k: int = 10, threshold: float = 0.3):
+def search(q: str, top_k: int = 10, threshold: float = 0.4):
     """
-    LLM 쿼리 확장 + 벡터 유사도 검색.
-    짧은 한국어 쿼리도 한/영 키워드로 확장해 관련 기사를 잘 찾아낸다.
+    하이브리드 검색: LLM 쿼리 확장 벡터 검색 + 키워드 폴백.
+
+    흐름:
+      1. LLM으로 쿼리를 한/영 키워드로 확장 (예: "엔비디아" → "엔비디아 NVIDIA GPU ...")
+      2. 확장 쿼리 임베딩 → pgvector 유사도 검색 (threshold 0.4 이상만)
+      3. 키워드 폴백: 제목(영문) 또는 번역(한국어)에 원본 검색어가 포함된 기사 추가
+         → 벡터 점수가 낮아도 직접 언급되면 결과에 포함
+      4. 중복 제거 후 유사도 내림차순 반환
     """
     if not q.strip():
         return {"results": []}
 
-    # 1. LLM으로 쿼리 확장 (MODE=cloud일 때만, 실패 시 원본 사용)
+    COLS = (
+        "url_hash, url, title, source, source_type, category, country, "
+        "keywords, published_at, credibility_score, fact_label, "
+        "translation, summary_formal, summary_casual"
+    )
+
+    # 1. LLM 쿼리 확장
     expanded = expand_query(q)
 
-    # 2. 확장된 쿼리로 임베딩 → 벡터 검색 (더 많이 가져온 후 필터)
+    # 2. 벡터 검색
     query_vector = make_embedding(expanded)
-    result = sb.rpc("match_articles", {
+    vec_result = sb.rpc("match_articles", {
         "query_vector": query_vector,
-        "top_k":        top_k * 2,   # 넉넉하게 가져와서 threshold로 자름
+        "top_k":        top_k * 2,
     }).execute()
 
-    filtered = [r for r in (result.data or []) if r.get("similarity", 0) >= threshold]
+    seen: dict = {}
+    for r in (vec_result.data or []):
+        if r.get("similarity", 0) >= threshold:
+            seen[r["url_hash"]] = r
+
+    # 3. 키워드 폴백: 제목(영문) 또는 한국어 번역에 검색어 포함 여부
+    try:
+        kw_result = sb.table("articles").select(COLS).or_(
+            f"title.ilike.%{q}%,translation.ilike.%{q}%"
+        ).limit(top_k).execute()
+        for r in (kw_result.data or []):
+            h = r["url_hash"]
+            if h not in seen:
+                seen[h] = {**r, "similarity": 0.65}  # 키워드 직접 매칭 = 신뢰도 0.65
+    except Exception:
+        pass  # 키워드 검색 실패해도 벡터 결과는 반환
+
+    results = sorted(seen.values(), key=lambda x: x.get("similarity", 0), reverse=True)
     return {
-        "results":        filtered[:top_k],
-        "expanded_query": expanded,   # 디버그용 — 어떻게 확장됐는지 확인 가능
+        "results":        results[:top_k],
+        "expanded_query": expanded,
     }
 
 

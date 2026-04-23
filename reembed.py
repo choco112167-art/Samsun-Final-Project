@@ -41,7 +41,7 @@ def reembed_all(dry_run: bool = False, limit: int | None = None):
         # title = 한국어 제목, translation = 한국어 번역 전문
         rows = (
             sb.table("articles")
-            .select("url_hash, title, translation")
+            .select("url_hash, title, translation, keywords, content")
             .range(offset, offset + PAGE_SIZE - 1)
             .execute()
             .data
