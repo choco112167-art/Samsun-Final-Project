@@ -199,3 +199,65 @@ def record_article_view(user_id: str, url_hash: str):
         "action": "view",
     }).execute()
     return {"message": "조회 기록 완료"}
+
+
+# ── 날짜별 핫이슈 ─────────────────────────────────────────────
+@app.get("/hot/{date}")
+def get_hot(date: str, top_k: int = 5):
+    """
+    date: YYYY-MM-DD 형식
+    해당 날짜의 조회수 TOP5 기사 반환.
+    조회 기록 없으면 해당 날짜 발행 기사 반환.
+    """
+    from collections import Counter
+    start = f"{date}T00:00:00+00:00"
+    end   = f"{date}T23:59:59+00:00"
+
+    cols = (
+        "url_hash, url, title, source, source_type, category, country, "
+        "keywords, published_at, credibility_score, fact_label, "
+        "translation, summary_formal, summary_casual"
+    )
+
+    # 해당 날짜 조회 기록 집계
+    logs = (
+        sb.table("user_logs")
+        .select("url_hash")
+        .eq("action", "view")
+        .gte("created_at", start)
+        .lte("created_at", end)
+        .execute()
+    )
+
+    if logs.data:
+        counts = Counter(r["url_hash"] for r in logs.data)
+        top_hashes = [h for h, _ in counts.most_common(top_k)]
+        result = []
+        for url_hash in top_hashes:
+            a = sb.table("articles").select(cols).eq("url_hash", url_hash).execute()
+            if a.data:
+                result.append({**a.data[0], "view_count": counts[url_hash]})
+        return result
+    else:
+        # 조회 기록 없으면 해당 날짜 발행 기사 반환
+        result = (
+            sb.table("articles")
+            .select(cols)
+            .gte("published_at", start)
+            .lte("published_at", end)
+            .order("credibility_score", desc=True)
+            .limit(top_k)
+            .execute()
+        )
+        return [{**a, "view_count": 0} for a in result.data]
+
+
+# ── 로그 직접 기록 (대안 엔드포인트) ────────────────────────
+@app.post("/logs/view")
+def log_view(user_id: str, url_hash: str):
+    sb.table("user_logs").insert({
+        "user_id": user_id,
+        "url_hash": url_hash,
+        "action": "view",
+    }).execute()
+    return {"message": "기록 완료"}

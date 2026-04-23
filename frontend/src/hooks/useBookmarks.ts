@@ -7,7 +7,9 @@ const ARTICLES_KEY = 'samsun_bookmarked_articles';
 /** localStorage에서 북마크 ID Set 불러오기 */
 function loadIds(): Set<string> {
   try {
-    return new Set(JSON.parse(localStorage.getItem(IDS_KEY) ?? '[]') as string[]);
+    const raw = JSON.parse(localStorage.getItem(IDS_KEY) ?? '[]') as string[];
+    // urlHash가 undefined·null·'undefined'로 저장된 오래된 데이터 제거
+    return new Set(raw.filter(id => id && id !== 'undefined'));
   } catch {
     return new Set();
   }
@@ -33,6 +35,8 @@ export function useBookmarks() {
    * @param article  (선택) 기사 전체 객체 — 북마크 탭 독립 동작을 위해 캐시에 저장됨
    */
   const toggle = useCallback((id: string, article?: Article) => {
+    // 유효하지 않은 id(undefined 문자열 등) 차단
+    if (!id || id === 'undefined') return;
     setIds(prev => {
       const next = new Set(prev);
       if (next.has(id)) {
