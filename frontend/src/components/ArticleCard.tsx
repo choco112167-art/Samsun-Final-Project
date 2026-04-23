@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Badge, Button } from '@toss/tds-mobile';
+import { Badge } from '@toss/tds-mobile';
 import type { Article } from '../data/articles';
 import type { ApiArticle } from '../data/api';
 
@@ -88,16 +88,16 @@ export default function ArticleCard({ article, bookmarked = false, onBookmark, o
           whiteSpace: 'nowrap', minWidth: 0,
         }}>{article.source}</span>
         {!!('isNew' in article ? article.isNew : article.is_new) && (
-          <Badge variant="fill" color="blue" size="xsmall">NEW</Badge>
+          <Badge badgeStyle="fill" type="blue" size="tiny">NEW</Badge>
         )}
         {!!('isBreaking' in article ? article.isBreaking : article.is_breaking) && (
-          <Badge variant="fill" color="red" size="xsmall">속보</Badge>
+          <Badge badgeStyle="fill" type="red" size="tiny">속보</Badge>
         )}
         {factLabel === 'FACT' && (
-          <Badge variant="fill" color="green" size="xsmall">FACT</Badge>
+          <Badge badgeStyle="fill" type="green" size="tiny">FACT</Badge>
         )}
         {factLabel === 'RUMOR' && (
-          <Badge variant="weak" color="red" size="xsmall">RUMOR</Badge>
+          <Badge badgeStyle="weak" type="red" size="tiny">RUMOR</Badge>
         )}
         <span style={{
           marginLeft: 'auto', fontSize: 11, color: 'var(--color-text-tertiary)',
@@ -146,14 +146,20 @@ export default function ArticleCard({ article, bookmarked = false, onBookmark, o
             </svg>
           </button>
 
-          <Button
-            size="small"
-            variant="weak"
-            color={copied ? 'primary' : 'dark'}
+          <button
             onClick={handleShare}
+            style={{
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              height: 28, padding: '0 10px', borderRadius: 6, fontSize: 12, fontWeight: 500,
+              background: copied ? 'var(--color-primary-light)' : 'var(--color-surface-secondary)',
+              color: copied ? 'var(--color-primary)' : 'var(--color-text-secondary)',
+              border: '1px solid',
+              borderColor: copied ? 'var(--color-primary-mid)' : 'var(--color-border)',
+              transition: 'all 0.15s',
+            }}
           >
             {copied ? '복사됨' : '공유'}
-          </Button>
+          </button>
         </div>
       </div>
     </article>

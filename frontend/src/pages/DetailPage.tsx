@@ -1,10 +1,11 @@
 import { useState, useRef } from 'react';
 import type { Article } from '../data/articles';
+import { translateArticle, summarizeArticle } from '../data/api';
 
 interface Props {
   article: Article;
   bookmarked: boolean;
-  onBookmark: (id: string) => void;
+  onBookmark: (id: string, article?: Article) => void;
   onBack: () => void;
 }
 
@@ -68,16 +69,52 @@ export default function DetailPage({ article, bookmarked, onBookmark, onBack }: 
   const [tooltip, setTooltip] = useState<{ word: string; top: number } | null>(null);
   const mainRef = useRef<HTMLDivElement>(null);
 
+  // 번역·요약 API 호출 상태
+  const [translation,   setTranslation]   = useState(article.translation);
+  const [summaryFormal, setSummaryFormal] = useState(article.summaryFormal);
+  const [summaryCasual, setSummaryCasual] = useState(article.summaryCasual);
+  const [loadingTranslate,  setLoadingTranslate]  = useState(false);
+  const [loadingSummarize,  setLoadingSummarize]  = useState(false);
+  const [translateError,    setTranslateError]    = useState<string | null>(null);
+  const [summarizeError,    setSummarizeError]    = useState<string | null>(null);
+
+  const handleTranslate = async () => {
+    setLoadingTranslate(true);
+    setTranslateError(null);
+    try {
+      const res = await translateArticle(article.content);
+      setTranslation(res.translation || translation);
+    } catch {
+      setTranslateError('번역 중 오류가 발생했어요. 잠시 후 다시 시도해주세요.');
+    } finally {
+      setLoadingTranslate(false);
+    }
+  };
+
+  const handleSummarize = async () => {
+    setLoadingSummarize(true);
+    setSummarizeError(null);
+    try {
+      const res = await summarizeArticle(article.content);
+      setSummaryFormal(res.summary_formal || summaryFormal);
+      setSummaryCasual(res.summary_casual || summaryCasual);
+    } catch {
+      setSummarizeError('요약 중 오류가 발생했어요. 잠시 후 다시 시도해주세요.');
+    } finally {
+      setLoadingSummarize(false);
+    }
+  };
+
   const handleShare = () => {
-    navigator.clipboard.writeText(`[${article.source}] ${article.title}\n\n${article.translation}\n\n요약: ${article.summaryFormal || article.summaryCasual}`).catch(() => {});
+    navigator.clipboard.writeText(`[${article.source}] ${article.title}\n\n格식체 요약: ${summaryFormal}\n\n일상체 요약: ${summaryCasual}`).catch(() => {});
     setCopiedShare(true); setTimeout(() => setCopiedShare(false), 2000);
   };
   const handleCopyFormal = () => {
-    navigator.clipboard.writeText(article.translation).catch(() => {});
+    navigator.clipboard.writeText(summaryFormal).catch(() => {});
     setCopiedFormal(true); setTimeout(() => setCopiedFormal(false), 2000);
   };
   const handleCopyCasual = () => {
-    navigator.clipboard.writeText(article.summaryCasual).catch(() => {});
+    navigator.clipboard.writeText(summaryCasual).catch(() => {});
     setCopiedCasual(true); setTimeout(() => setCopiedCasual(false), 2000);
   };
 
@@ -93,6 +130,7 @@ export default function DetailPage({ article, bookmarked, onBookmark, onBack }: 
       <style>{`
         @keyframes slideUp { from{transform:translateY(100%);opacity:0} to{transform:translateY(0);opacity:1} }
         @keyframes tipIn   { from{opacity:0;transform:translateY(-4px)} to{opacity:1;transform:translateY(0)} }
+        @keyframes spin    { from{transform:rotate(0deg)} to{transform:rotate(360deg)} }
       `}</style>
 
       {/* 헤더 */}
@@ -104,12 +142,12 @@ export default function DetailPage({ article, bookmarked, onBookmark, onBack }: 
         </button>
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
-            <div style={{ width: 5, height: 5, borderRadius: '50%', background: article.sourceColor ?? '#6B7280', flexShrink: 0 }} />
+            <div style={{ width: 5, height: 5, borderRadius: '50%', background: article.sourceColor, flexShrink: 0 }} />
             <span style={{ fontSize: 12, color: 'var(--color-text-secondary)', fontWeight: 500 }}>{article.source}</span>
-            <span style={{ fontSize: 11, color: 'var(--color-text-tertiary)' }}>{article.timeAgo ?? ''}</span>
+            <span style={{ fontSize: 11, color: 'var(--color-text-tertiary)' }}>{article.timeAgo}</span>
           </div>
         </div>
-        <button onClick={() => onBookmark(article.urlHash)} style={{ width: 36, height: 36, borderRadius: '50%', background: bookmarked ? '#FEF3C7' : 'var(--color-surface-secondary)', display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'all 0.15s' }}>
+        <button onClick={() => onBookmark(article.urlHash, article)} style={{ width: 36, height: 36, borderRadius: '50%', background: bookmarked ? '#FEF3C7' : 'var(--color-surface-secondary)', display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'all 0.15s' }}>
           <svg width="16" height="16" viewBox="0 0 24 24" fill={bookmarked ? '#D97706' : 'none'}>
             <path d="M19 21L12 16L5 21V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v16z" stroke={bookmarked ? '#D97706' : 'var(--color-text-secondary)'} strokeWidth="1.7" strokeLinejoin="round"/>
           </svg>
@@ -132,15 +170,36 @@ export default function DetailPage({ article, bookmarked, onBookmark, onBack }: 
           </h1>
         </div>
 
-        {/* 3줄 요약 */}
-        <div style={{ background: 'var(--color-surface)', padding: '16px 20px', marginBottom: 8 }}>
-          <p style={{ fontSize: 11, fontWeight: 600, color: 'var(--color-text-tertiary)', letterSpacing: '0.04em', textTransform: 'uppercase', marginBottom: 10 }}>3줄 요약</p>
-          <p style={{ fontSize: 14, color: 'var(--color-text-secondary)', lineHeight: 1.75 }}>{article.summaryFormal || article.summaryCasual}</p>
-        </div>
-
-        {/* 번역 — 격식체 + 일상체 동시 표시 */}
+        {/* 번역 전문 — 신조어 하이라이트 포함 */}
         <div style={{ background: 'var(--color-surface)', padding: '16px 20px', marginBottom: 8, position: 'relative' }}>
-          <p style={{ fontSize: 11, fontWeight: 600, color: 'var(--color-text-tertiary)', letterSpacing: '0.04em', textTransform: 'uppercase', marginBottom: 12 }}>번역</p>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
+            <p style={{ fontSize: 11, fontWeight: 600, color: 'var(--color-text-tertiary)', letterSpacing: '0.04em', textTransform: 'uppercase' }}>번역 전문</p>
+            <button
+              onClick={handleTranslate}
+              disabled={loadingTranslate}
+              style={{
+                display: 'flex', alignItems: 'center', gap: 4,
+                fontSize: 11, fontWeight: 500,
+                color: loadingTranslate ? 'var(--color-text-tertiary)' : 'var(--color-primary)',
+                background: 'var(--color-primary-light)',
+                padding: '4px 10px', borderRadius: 6,
+                border: '0.5px solid var(--color-border)',
+                opacity: loadingTranslate ? 0.6 : 1,
+                transition: 'all 0.18s',
+              }}
+            >
+              {loadingTranslate
+                ? <><span style={{ display: 'inline-block', animation: 'spin 1s linear infinite' }}>⟳</span> 번역 중…</>
+                : <>🔄 재번역</>
+              }
+            </button>
+          </div>
+
+          {translateError && (
+            <p style={{ fontSize: 12, color: '#DC2626', marginBottom: 10, padding: '8px 12px', background: '#FEF2F2', borderRadius: 8 }}>
+              {translateError}
+            </p>
+          )}
 
           {/* 신조어 툴팁 */}
           {tooltip && (
@@ -158,31 +217,69 @@ export default function DetailPage({ article, bookmarked, onBookmark, onBack }: 
             </div>
           )}
 
-          {/* 격식체 */}
           <div style={{ background: 'var(--color-surface-secondary)', borderRadius: 10, padding: '12px 14px', marginBottom: 10 }}>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
-              <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--color-text-tertiary)', letterSpacing: '0.04em' }}>격식체</span>
-              <CopyBtn copied={copiedFormal} onClick={handleCopyFormal} />
-            </div>
             <p style={{ fontSize: 14, lineHeight: 1.78, color: 'var(--color-text-primary)', letterSpacing: '-0.01em' }}>
-              <HighlightedText text={article.translation} onTap={handleJargon} />
-            </p>
-          </div>
-
-          {/* 일상체 */}
-          <div style={{ background: 'var(--color-surface-secondary)', borderRadius: 10, padding: '12px 14px', marginBottom: 10 }}>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
-              <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--color-text-tertiary)', letterSpacing: '0.04em' }}>일상체</span>
-              <CopyBtn copied={copiedCasual} onClick={handleCopyCasual} />
-            </div>
-            <p style={{ fontSize: 14, lineHeight: 1.78, color: 'var(--color-text-primary)', letterSpacing: '-0.01em' }}>
-              <HighlightedText text={article.summaryCasual} onTap={handleJargon} />
+              <HighlightedText text={translation} onTap={handleJargon} />
             </p>
           </div>
 
           <p style={{ fontSize: 11, color: 'var(--color-text-tertiary)' }}>
             💡 파란색 단어를 탭하면 설명을 볼 수 있어요
           </p>
+        </div>
+
+        {/* 3줄 요약 — 격식체 · 일상체 */}
+        <div style={{ background: 'var(--color-surface)', padding: '16px 20px', marginBottom: 8 }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
+            <p style={{ fontSize: 11, fontWeight: 600, color: 'var(--color-text-tertiary)', letterSpacing: '0.04em', textTransform: 'uppercase' }}>3줄 요약</p>
+            <button
+              onClick={handleSummarize}
+              disabled={loadingSummarize}
+              style={{
+                display: 'flex', alignItems: 'center', gap: 4,
+                fontSize: 11, fontWeight: 500,
+                color: loadingSummarize ? 'var(--color-text-tertiary)' : 'var(--color-primary)',
+                background: 'var(--color-primary-light)',
+                padding: '4px 10px', borderRadius: 6,
+                border: '0.5px solid var(--color-border)',
+                opacity: loadingSummarize ? 0.6 : 1,
+                transition: 'all 0.18s',
+              }}
+            >
+              {loadingSummarize
+                ? <><span style={{ display: 'inline-block', animation: 'spin 1s linear infinite' }}>⟳</span> 요약 중…</>
+                : <>✨ 재요약</>
+              }
+            </button>
+          </div>
+
+          {summarizeError && (
+            <p style={{ fontSize: 12, color: '#DC2626', marginBottom: 10, padding: '8px 12px', background: '#FEF2F2', borderRadius: 8 }}>
+              {summarizeError}
+            </p>
+          )}
+
+          {/* 격식체 요약 */}
+          <div style={{ background: 'var(--color-surface-secondary)', borderRadius: 10, padding: '12px 14px', marginBottom: 10 }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+              <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--color-text-tertiary)', letterSpacing: '0.04em' }}>격식체</span>
+              <CopyBtn copied={copiedFormal} onClick={handleCopyFormal} />
+            </div>
+            <p style={{ fontSize: 14, lineHeight: 1.78, color: 'var(--color-text-primary)', letterSpacing: '-0.01em' }}>
+              {summaryFormal}
+            </p>
+          </div>
+
+          {/* 일상체 요약 */}
+          <div style={{ background: 'var(--color-surface-secondary)', borderRadius: 10, padding: '12px 14px', marginBottom: 10 }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+              <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--color-text-tertiary)', letterSpacing: '0.04em' }}>일상체</span>
+              <CopyBtn copied={copiedCasual} onClick={handleCopyCasual} />
+            </div>
+            <p style={{ fontSize: 14, lineHeight: 1.78, color: 'var(--color-text-primary)', letterSpacing: '-0.01em' }}>
+              {summaryCasual}
+            </p>
+          </div>
         </div>
 
         {/* 원문 링크 */}
