@@ -5,6 +5,7 @@ import { FeedSkeleton } from '../components/Skeleton';
 import { fetchArticles } from '../data/api';
 import type { Article, Category } from '../data/articles';
 import type { AbsenceSummaryResponse, AbsenceArticle } from '../data/api';
+import type { Interest } from './OnboardingPage';
 import DetailPage from './DetailPage';
 import type { BookmarkHook } from '../hooks/useBookmarks';
 
@@ -15,13 +16,14 @@ type Filter = '전체' | Category;
 interface Props {
   bm: BookmarkHook;
   userId?: string;
+  interests?: Interest[];
   onNavigateToFeed?: () => void;
   onArticleClick?: (urlHash: string) => void;
   absenceData?: AbsenceSummaryResponse | null;
   onAbsenceDismiss?: () => void;
 }
 
-export default function HomePage({ bm, onNavigateToFeed, onArticleClick, absenceData, onAbsenceDismiss }: Props) {
+export default function HomePage({ bm, onNavigateToFeed, onArticleClick, absenceData, onAbsenceDismiss, interests = [] }: Props) {
   const [articles, setArticles]       = useState<Article[]>([]);
   const [loading, setLoading]         = useState(true);
   const [error, setError]             = useState<string | null>(null);
@@ -122,9 +124,16 @@ export default function HomePage({ bm, onNavigateToFeed, onArticleClick, absence
   }, [detail]);
 
   // toArticle()에서 이미 정규화 — CATEGORY_MAP 불필요
-  const breaking = articles.filter(a => a.isBreaking);
-  const filtered  = filter === '전체' ? articles : articles.filter(a => a.category === filter);
-  const newCount  = articles.filter(a => a.isNew).length;
+  // 온보딩에서 관심사를 선택했으면 그 카테고리만 기본으로 보여줌
+  // 매칭 결과가 없으면(구버전 관심사 등) 전체 기사 폴백
+  const interestFiltered = interests.length > 0
+    ? articles.filter(a => interests.includes(a.category as Interest))
+    : articles;
+  const baseArticles = interestFiltered.length > 0 ? interestFiltered : articles;
+
+  const breaking = baseArticles.filter(a => a.isBreaking);
+  const filtered  = filter === '전체' ? baseArticles : baseArticles.filter(a => a.category === filter);
+  const newCount  = baseArticles.filter(a => a.isNew).length;
 
   if (detail) return (
     <DetailPage
@@ -182,6 +191,11 @@ export default function HomePage({ bm, onNavigateToFeed, onArticleClick, absence
         }
       >
         <div style={{ display: 'flex', flexDirection: 'column', gap: 10, padding: '0 20px 8px' }}>
+          {absenceData?.sub_message && (
+            <p style={{ fontSize: 13, color: 'var(--color-text-secondary)', fontWeight: 500, marginBottom: 2 }}>
+              {absenceData.sub_message}
+            </p>
+          )}
           {(absenceData?.articles as AbsenceArticle[] | undefined ?? []).map(article => (
             <div key={article.url_hash} style={{
               background: 'var(--color-surface)', borderRadius: 12,
@@ -242,7 +256,7 @@ export default function HomePage({ bm, onNavigateToFeed, onArticleClick, absence
 
         {/* 카테고리 필터 — 8개 */}
         <div style={{ display: 'flex', gap: 7, marginTop: 16, paddingBottom: 16, overflowX: 'auto', scrollbarWidth: 'none' }}>
-          {(['전체','AI 모델','LLM','스타트업','빅테크','반도체','윤리/정책','AI 제품'] as Filter[]).map(f => (
+          {(['전체','AI 연구','AI 심층','AI 스타트업','AI 비즈니스','AI 윤리','AI 커뮤니티','테크 전반'] as Filter[]).map(f => (
             <button key={f} onClick={() => setFilter(f)} style={{
               flexShrink: 0, fontSize: 12, fontWeight: filter === f ? 700 : 400,
               color: filter === f ? '#FFFFFF' : '#6B7684',

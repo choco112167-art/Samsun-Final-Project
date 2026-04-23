@@ -7,7 +7,7 @@ import HotPage from './pages/HotPage';
 import SearchPage from './pages/SearchPage';
 import MyFeedPage from './pages/MyFeedPage';
 import { useBookmarks } from './hooks/useBookmarks';
-import { recordArticleView, fetchAbsenceSummary, markUserSeen, type AbsenceSummaryResponse } from './data/api';
+import { recordArticleView, logArticleView, fetchAbsenceSummary, markUserSeen, type AbsenceSummaryResponse } from './data/api';
 
 const LS_ONBOARDED = 'samsun_onboarded';
 const LS_INTERESTS = 'samsun_interests';
@@ -45,10 +45,11 @@ export default function App() {
     localStorage.setItem(LS_INTERESTS, JSON.stringify(next));
   };
 
-  // 모든 탭에서 기사 클릭 시 호출 — user_vector 업데이트
+  // 모든 탭에서 기사 클릭 시 호출 — user_vector 업데이트 + 조회수 기록
   const handleArticleClick = (urlHash: string) => {
     if (userId) {
       recordArticleView(userId, urlHash).catch(() => {});
+      logArticleView(userId, urlHash).catch(() => {});
     }
   };
 
@@ -74,6 +75,7 @@ export default function App() {
           <HomePage
             bm={bm}
             userId={userId}
+            interests={interests}
             onNavigateToFeed={() => setActiveTab('my')}
             onArticleClick={handleArticleClick}
             absenceData={absenceData}

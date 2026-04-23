@@ -155,13 +155,15 @@ export interface AbsenceArticle {
   published_at:   string;
   summary_formal: string;
   similarity:     number;
+  view_count?:    number;
 }
 
 export interface AbsenceSummaryResponse {
-  show:      boolean;
-  message?:  string;
-  days_away?: number;
-  articles?: AbsenceArticle[];
+  show:         boolean;
+  message?:     string;
+  sub_message?: string;
+  days_away?:   number;
+  articles?:    AbsenceArticle[];
 }
 
 export async function fetchAbsenceSummary(userId: string): Promise<AbsenceSummaryResponse> {
@@ -170,6 +172,19 @@ export async function fetchAbsenceSummary(userId: string): Promise<AbsenceSummar
 
 export async function markUserSeen(userId: string): Promise<void> {
   await request<{ message: string }>(`/user-seen/${encodeURIComponent(userId)}`, { method: 'POST' });
+}
+
+export async function logArticleView(userId: string, urlHash: string): Promise<void> {
+  if (!userId?.trim() || !urlHash) return;
+  await request<{ message?: string }>(
+    `/logs/view?user_id=${encodeURIComponent(userId)}&url_hash=${encodeURIComponent(urlHash)}`,
+    { method: 'POST' },
+  );
+}
+
+export async function fetchHot(date: string): Promise<(Article & { view_count: number })[]> {
+  const list = await request<(ApiArticle & { view_count: number })[]>(`/hot/${date}`);
+  return list.map(a => ({ ...toArticle(a), view_count: a.view_count ?? 0 }));
 }
 
 /**
