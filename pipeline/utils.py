@@ -9,7 +9,7 @@ LLM 출력 또는 학습 데이터의 노이즈를 제거하고 JSON 파싱을 �
 import json
 import re
 
-_FIELDS = ["title", "translation", "summary_formal", "summary_casual"]
+_FIELDS = ["translation", "summary_formal", "summary_casual"]
 
 
 def preprocess_text(text: str) -> str:

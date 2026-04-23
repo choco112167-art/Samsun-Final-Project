@@ -17,6 +17,7 @@ import type { Article } from './articles';
 
 // 백엔드 서버 주소를 환경변수에서 읽는다
 // .env 파일의 VITE_API_BASE_URL 값을 사용하고, 없으면 로컬호스트를 기본값으로
+
 const BASE_URL = (import.meta.env.VITE_API_BASE_URL as string | undefined)
   ?? 'http://localhost:8000';
 
@@ -198,7 +199,7 @@ export async function fetchFeedLlm(userId: string): Promise<(Article & { reason?
   //   `/feed-llm/${encodeURIComponent(userId)}`,
   // );
   const res = await fetch(`${COLAB_URL}/feed-llm/${encodeURIComponent(userId)}`, {
-    headers: { 'ngrok-skip-browser-warning': 'true' }
+  headers: { 'ngrok-skip-browser-warning': 'true' }
   }).then(r => r.json()) as { feed: FeedArticle[] };
 
   const list = res.feed ?? [];
@@ -230,103 +231,4 @@ export async function recordArticleView(userId: string, urlHash: string): Promis
  */
 export async function healthCheck(): Promise<{ status: string }> {
   return request<{ status: string }>('/health');
-}
-
-
-// ─────────────────────────────────────────────
-// 부재중 요약 알림
-// ─────────────────────────────────────────────
-
-/** /absence-summary 응답 내 기사 요약 */
-export interface AbsenceArticle {
-  url_hash:       string;
-  title:          string;
-  source:         string;
-  category:       string;
-  published_at:   string;
-  summary_formal: string;
-  similarity:     number;
-}
-
-/** /absence-summary 응답 — 사용자가 오랫동안 안 들어왔을 때 놓친 기사 요약 */
-export interface AbsenceSummaryResponse {
-  show:       boolean;
-  message?:   string;
-  days_away?: number;
-  articles?:  AbsenceArticle[];
-}
-
-/**
- * 유저의 부재 기간에 따라 놓친 기사 요약을 가져온다.
- * App.tsx 진입 시 한 번 호출 → show=true면 BottomSheet로 노출.
- */
-export async function fetchAbsenceSummary(userId: string): Promise<AbsenceSummaryResponse> {
-  return request<AbsenceSummaryResponse>(`/absence-summary/${encodeURIComponent(userId)}`);
-}
-
-/**
- * 부재중 알림 '확인했어요' 버튼 클릭 시 호출 — last_seen_at 갱신.
- */
-export async function markUserSeen(userId: string): Promise<void> {
-  await request<{ message: string }>(
-    `/user-seen/${encodeURIComponent(userId)}`,
-    { method: 'POST' },
-  );
-}
-
-
-// ─────────────────────────────────────────────
-// Hot 페이지 — 일자별 조회수 집계
-// ─────────────────────────────────────────────
-
-/**
- * 기사 조회 로그 적재 (Hot 페이지 조회수 집계용).
- * /article-view와 별개 엔드포인트로, 일간 카운트를 위해 사용.
- */
-export async function logArticleView(userId: string, urlHash: string): Promise<void> {
-  if (!userId?.trim() || !urlHash) return;
-  await request<{ message?: string }>(
-    `/logs/view?user_id=${encodeURIComponent(userId)}&url_hash=${encodeURIComponent(urlHash)}`,
-    { method: 'POST' },
-  );
-}
-
-/**
- * 특정 일자의 Hot 기사 목록 (조회수 내림차순).
- * HotPage에서 사용.
- * @param date YYYY-MM-DD 형식의 날짜 문자열
- */
-export async function fetchHot(date: string): Promise<(Article & { view_count: number })[]> {
-  const list = await request<(ApiArticle & { view_count: number })[]>(`/hot/${date}`);
-  return list.map(a => ({ ...toArticle(a), view_count: a.view_count ?? 0 }));
-}
-
-
-// ─────────────────────────────────────────────
-// 온디맨드 번역·요약 (DetailPage "번역하기" / "요약하기" 버튼용)
-// ─────────────────────────────────────────────
-
-
-/**
- * 영문 원문을 한국어로 번역 (Ollama qwen3.5:4b).
- * DetailPage의 "번역하기" 버튼에서 호출.
- */
-export async function translateArticle(text: string): Promise<{ translation: string }> {
-  return request<{ translation: string }>('/translate', {
-    method: 'POST',
-    body: JSON.stringify({ text }),
-  });
-}
-
-/**
- * 영문 원문에 대한 격식체·일상체 3줄 요약을 생성 (Ollama qwen3.5:4b).
- * DetailPage의 "요약하기" 버튼에서 호출.
- */
-export async function summarizeArticle(
-  text: string,
-): Promise<{ summary_formal: string; summary_casual: string }> {
-  return request<{ summary_formal: string; summary_casual: string }>('/summarize', {
-    method: 'POST',
-    body: JSON.stringify({ text }),
-  });
 }

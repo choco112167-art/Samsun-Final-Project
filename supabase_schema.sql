@@ -17,8 +17,7 @@ CREATE TABLE IF NOT EXISTS articles (
     url               TEXT NOT NULL,         -- 원문 URL
 
     -- 기사 메타데이터 (RSS 수집 · 이상준)
-    title             TEXT,                  -- 기사 제목 (한국어, LLM 번역)
-    title_en          TEXT,                  -- 기사 제목 (영문 원제)
+    title             TEXT,                  -- 기사 제목 (영문)
     source            VARCHAR,               -- 언론사명 (TechCrunch, MIT TR 등)
     source_type       VARCHAR,               -- 'media' | 'community'
     category          VARCHAR,               -- 'AI' | 'Tech' 등. Hybrid Search 필터
@@ -43,7 +42,7 @@ CREATE TABLE IF NOT EXISTS articles (
     summary_casual    TEXT,                  -- 일상체 3줄 요약 (~해요)
 
     -- RAG (강주찬)
-    embedding         VECTOR(1024)           -- title(한국어) + translation 합산 임베딩
+    embedding         VECTOR(1024)           -- translation 임베딩. mxbai-embed-large
 );
 
 -- 인덱스
@@ -125,23 +124,7 @@ CREATE INDEX IF NOT EXISTS idx_eval_results_model    ON eval_results (model_vers
 
 
 -- ============================================================
--- 5. pg_trgm  (오타 허용 퍼지 검색용)
--- ============================================================
-
--- pg_trgm 확장 (최초 1회)
-CREATE EXTENSION IF NOT EXISTS pg_trgm;
-
--- 제목·번역문 트라이그램 GIN 인덱스
--- hybrid_search_articles의 word_similarity() 쿼리를 인덱스로 가속
-CREATE INDEX IF NOT EXISTS idx_articles_title_trgm
-    ON articles USING gin (title gin_trgm_ops);
-
-CREATE INDEX IF NOT EXISTS idx_articles_translation_trgm
-    ON articles USING gin (translation gin_trgm_ops);
-
-
--- ============================================================
--- 6. match_articles  (RAG 벡터 검색 RPC · 강주찬)
+-- 5. match_articles  (RAG 벡터 검색 RPC · 강주찬)
 -- ============================================================
 CREATE OR REPLACE FUNCTION match_articles(
     query_vector VECTOR(1024),
@@ -182,162 +165,6 @@ LANGUAGE sql STABLE AS $$
     WHERE
         (filter_category IS NULL OR a.category = filter_category)
         AND a.embedding IS NOT NULL
-    ORDER BY a.embedding <=> query_vector
-    LIMIT top_k;
-$$;
-
-
--- ============================================================
--- 7. hybrid_search_articles  (벡터 + 퍼지 키워드 하이브리드 검색)
---
--- 동작 방식:
---   1) vec_ranked  : pgvector 코사인 유사도로 후보 60개 추출
---   2) kw_ranked   : pg_trgm word_similarity + ILIKE 로 후보 60개 추출
---                    → 오타·부분 일치 모두 포괄
---   3) fused       : Reciprocal Rank Fusion(RRF, k=60) 으로 두 순위 결합
---   최종 top_k 개를 RRF 점수 내림차순으로 반환
--- ============================================================
-CREATE OR REPLACE FUNCTION hybrid_search_articles(
-    query_text      TEXT,
-    query_vector    VECTOR(1024),
-    top_k           INT DEFAULT 15,
-    filter_category VARCHAR DEFAULT NULL
-)
-RETURNS TABLE (
-    url_hash          VARCHAR,
-    url               TEXT,
-    title             TEXT,
-    title_en          TEXT,
-    source            VARCHAR,
-    source_type       VARCHAR,
-    category          VARCHAR,
-    keywords          TEXT[],
-    published_at      TIMESTAMPTZ,
-    translation       TEXT,
-    summary_formal    TEXT,
-    summary_casual    TEXT,
-    credibility_score FLOAT,
-    fact_label        VARCHAR,
-    similarity        FLOAT
-)
-LANGUAGE sql STABLE AS $$
-    WITH
-    -- ── 1. 벡터 검색 (의미 유사도) ───────────────────────────────
-    vec_ranked AS (
-        SELECT
-            a.url_hash,
-            ROW_NUMBER() OVER (ORDER BY a.embedding <=> query_vector) AS rnk,
-            (1 - (a.embedding <=> query_vector))::FLOAT AS vec_sim
-        FROM articles a
-        WHERE
-            (filter_category IS NULL OR a.category = filter_category)
-            AND a.embedding IS NOT NULL
-        ORDER BY a.embedding <=> query_vector
-        LIMIT 60
-    ),
-    -- ── 2. 퍼지 키워드 검색 (오타 허용) ──────────────────────────
-    -- word_similarity: 쿼리 단어가 긴 텍스트 안에 얼마나 유사하게 존재하는지
-    -- ILIKE: 정확한 부분 문자열 매칭 (짧은 쿼리·키워드 검색 보완)
-    kw_ranked AS (
-        SELECT
-            a.url_hash,
-            ROW_NUMBER() OVER (
-                ORDER BY GREATEST(
-                    word_similarity(query_text, a.title),
-                    word_similarity(query_text, COALESCE(a.translation, '')),
-                    similarity(query_text, a.title)
-                ) DESC
-            ) AS rnk
-        FROM articles a
-        WHERE
-            (filter_category IS NULL OR a.category = filter_category)
-            AND (
-                a.title          ILIKE '%' || query_text || '%'
-                OR a.title_en     ILIKE '%' || query_text || '%'
-                OR a.translation  ILIKE '%' || query_text || '%'
-                OR word_similarity(query_text, a.title)                          > 0.15
-                OR word_similarity(query_text, COALESCE(a.title_en, ''))         > 0.15
-                OR word_similarity(query_text, COALESCE(a.translation, ''))      > 0.15
-                OR similarity(query_text, a.title)                               > 0.10
-            )
-        LIMIT 60
-    ),
-    -- ── 3. Reciprocal Rank Fusion (RRF, k=60) ────────────────────
-    -- 두 순위를 1/(k+rank) 점수로 변환 후 합산
-    -- 어느 한쪽에만 있어도 FULL OUTER JOIN 으로 포함
-    fused AS (
-        SELECT
-            COALESCE(v.url_hash, k.url_hash)                          AS url_hash,
-            COALESCE(1.0 / (60 + v.rnk), 0.0)
-                + COALESCE(1.0 / (60 + k.rnk), 0.0)                  AS rrf_score,
-            COALESCE(v.vec_sim, 0.0)                                  AS vec_sim
-        FROM vec_ranked v
-        FULL OUTER JOIN kw_ranked k ON v.url_hash = k.url_hash
-    )
-    SELECT
-        a.url_hash,
-        a.url,
-        a.title,
-        a.title_en,
-        a.source,
-        a.source_type,
-        a.category,
-        a.keywords,
-        a.published_at,
-        a.translation,
-        a.summary_formal,
-        a.summary_casual,
-        a.credibility_score,
-        a.fact_label,
-        f.vec_sim AS similarity
-    FROM fused f
-    JOIN articles a ON a.url_hash = f.url_hash
-    ORDER BY f.rrf_score DESC
-    LIMIT top_k;
-$$;
-
-
--- ============================================================
--- 8. users 테이블 last_seen_at 컬럼 (부재중 알림용)
---    이 컬럼은 users 테이블에 존재해야 하며,
---    없다면 아래 ALTER로 추가.
--- ============================================================
-ALTER TABLE IF EXISTS users
-    ADD COLUMN IF NOT EXISTS last_seen_at TIMESTAMPTZ DEFAULT NOW();
-
-
--- ============================================================
--- 9. match_articles_since  (부재 기간 내 RAG 벡터 검색 · 강수민)
---    /absence-summary 엔드포인트에서 since_date 이후 발행된
---    기사 중에서 유사도 상위 top_k 개를 반환.
--- ============================================================
-CREATE OR REPLACE FUNCTION match_articles_since(
-    query_vector VECTOR(1024),
-    since_date   TIMESTAMPTZ,
-    top_k        INT DEFAULT 5
-)
-RETURNS TABLE (
-    url_hash          VARCHAR,
-    title             TEXT,
-    source            VARCHAR,
-    category          VARCHAR,
-    published_at      TIMESTAMPTZ,
-    summary_formal    TEXT,
-    similarity        FLOAT
-)
-LANGUAGE sql STABLE AS $$
-    SELECT
-        a.url_hash,
-        a.title,
-        a.source,
-        a.category,
-        a.published_at,
-        a.summary_formal,
-        1 - (a.embedding <=> query_vector) AS similarity
-    FROM articles a
-    WHERE
-        a.embedding IS NOT NULL
-        AND a.published_at >= since_date
     ORDER BY a.embedding <=> query_vector
     LIMIT top_k;
 $$;

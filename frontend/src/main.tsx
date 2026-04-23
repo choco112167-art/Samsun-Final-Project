@@ -1,17 +1,13 @@
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
-import { ThemeProvider } from '@toss/tds-mobile';
-import App from './App';
+import { TDSMobileAITProvider } from '@toss/tds-mobile-ait';
+import './styles/global.css';
+import App from './App.tsx';
 
-const rootEl = document.getElementById('root');
-if (!rootEl) {
-  throw new Error('Root element #root not found in index.html');
-}
-
-createRoot(rootEl).render(
+createRoot(document.getElementById('root')!).render(
   <StrictMode>
-    <ThemeProvider>
+    <TDSMobileAITProvider>
       <App />
-    </ThemeProvider>
-  </StrictMode>
+    </TDSMobileAITProvider>
+  </StrictMode>,
 );

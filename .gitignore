@@ -1,34 +1,16 @@
 .env
-apps-in-toss-examples-main/
-../unzip/
 venv/
 .venv/
 __pycache__/
 *.pyc
 *.pyo
-.DS_Store
+.txt
 CLAUDE.md
-
-# 로컬 데이터
-data/
-logs/
-poc_dummy.py
-articles_raw.jsonl
-articles_translated.jsonl
-*.jsonl
 eval/data/
+*.json
 token.json
 
-# diff 임시파일
-diff_*.txt
-
-# JS / build — any depth
-**/node_modules/
+# JS / build
+node_modules/
 dist/
 frontend/dist/
-
-# 커서 설정
-.cursor/
-
-# Claude Code
-.claude/

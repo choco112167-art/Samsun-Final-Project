@@ -1,0 +1,6 @@
+[tool.pyright]
+include = ["main.py", "poc_cycle.py", "backend", "collect", "pipeline"]
+exclude = ["**/node_modules", "frontend", "dist", "apps-in-toss-examples-main"]
+extraPaths = ["collect", "."]
+pythonVersion = "3.11"
+typeCheckingMode = "basic"

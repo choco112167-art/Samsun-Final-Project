@@ -1,95 +1,118 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
-import { SegmentedControl } from '@toss/tds-mobile';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { fetchArticles } from '../data/api';
-import type { Article, Category } from '../data/articles';
+import type { Article } from '../data/articles';
 import DetailPage from './DetailPage';
 import type { BookmarkHook } from '../hooks/useBookmarks';
 
-const PAGE_SIZE = 50;
+type SubTab = '전체' | 'AI 모델' | '스타트업' | '빅테크' | '윤리/정책' | '반도체';
+const SUBTABS: SubTab[] = ['전체', 'AI 모델', '스타트업', '빅테크', '윤리/정책', '반도체'];
 
-type SubTab = '전체' | Category;
-const CATEGORY_TABS: SubTab[] = ['전체', 'AI 연구', 'AI 심층', 'AI 스타트업', 'AI 비즈니스', 'AI 윤리', 'AI 커뮤니티', '테크 전반'];
+const CATEGORY_MAP: Record<string, SubTab> = {
+  'AI/스타트업':  'AI 모델',
+  'AI 심층':     'AI 모델',
+  'AI 비즈니스': '빅테크',
+  '테크 전반':   '빅테크',
+  'AI 윤리':     '윤리/정책',
+  'AI 일반':     'AI 모델',
+  'AI/반도체':   '반도체',
+  'AI 커뮤니티': 'AI 모델',
+  'AI 연구':     'AI 모델',
+  'LLM 커뮤니티':'AI 모델',
+  'AI 제품':     '스타트업',
+};
 
 interface Props { bm: BookmarkHook; onArticleClick?: (urlHash: string) => void; }
 
 export default function CategoryPage({ bm, onArticleClick }: Props) {
   const [tab, setTab]       = useState<SubTab>('전체');
-  const [detail, setDetail] = useState<Article | null>(null);
+  const [detail, setDetail]   = useState<Article | null>(null);
   const [articles, setArticles] = useState<Article[]>([]);
-  const [hasMore, setHasMore] = useState(true);
+  const [hasMore, setHasMore]   = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
+  const mainRef        = useRef<HTMLDivElement>(null);
+  const scrollPos      = useRef(0);
+  const offsetRef      = useRef(0);
   const loadingMoreRef = useRef(false);
+  const hasMoreRef     = useRef(true);
+  const initDone       = useRef(false);
+  const LIMIT = 20;
 
-  const loadInitial = useCallback(() => {
-    fetchArticles({ limit: PAGE_SIZE, offset: 0 })
-      .then(data => {
-        setArticles(data);
-        setHasMore(data.length >= PAGE_SIZE);
-      })
-      .catch(() => {});
+  useEffect(() => {
+    offsetRef.current = 0;
+    hasMoreRef.current = true;
+    initDone.current = false;
+    fetchArticles({ limit: LIMIT, offset: 0 }).then(data => {
+      setArticles(data);
+      const more = data.length >= LIMIT;
+      hasMoreRef.current = more;
+      setHasMore(more);
+      initDone.current = true;
+    }).catch(() => {});
   }, []);
 
   const loadMore = useCallback(() => {
-    if (loadingMoreRef.current || !hasMore) return;
+    if (!initDone.current || loadingMoreRef.current || !hasMoreRef.current) return;
     loadingMoreRef.current = true;
     setLoadingMore(true);
-    fetchArticles({ limit: PAGE_SIZE, offset: articles.length })
-      .then(data => {
-        setArticles(prev => [...prev, ...data]);
-        setHasMore(data.length >= PAGE_SIZE);
-      })
-      .catch(() => { setHasMore(false); })
-      .finally(() => {
-        loadingMoreRef.current = false;
-        setLoadingMore(false);
-      });
-  }, [articles.length, hasMore]);
+    const newOffset = offsetRef.current + LIMIT;
+    fetchArticles({ limit: LIMIT, offset: newOffset }).then(data => {
+      setArticles(prev => [...prev, ...data]);
+      offsetRef.current = newOffset;
+      const more = data.length >= LIMIT;
+      hasMoreRef.current = more;
+      setHasMore(more);
+      loadingMoreRef.current = false;
+      setLoadingMore(false);
+    }).catch(() => { loadingMoreRef.current = false; setLoadingMore(false); });
+  }, []);
 
+  // 스크롤 위치 저장
   useEffect(() => {
-    loadInitial();
-  }, [loadInitial]);
+    const el = mainRef.current;
+    if (!el) return;
+    const onScroll = () => { scrollPos.current = el.scrollTop; };
+    el.addEventListener('scroll', onScroll, { passive: true });
+    return () => el.removeEventListener('scroll', onScroll);
+  }, []);
 
-  const handleScroll = useCallback((e: React.UIEvent<HTMLElement>) => {
-    const el = e.currentTarget;
-    if (el.scrollHeight - el.scrollTop - el.clientHeight < 160) {
-      loadMore();
-    }
-  }, [loadMore]);
 
-  const filtered = tab === '전체' ? articles : articles.filter(a => a.category === tab);
+
+  const mapped = articles.map(a => ({
+    ...a,
+    _sub: CATEGORY_MAP[a.category] ?? '빅테크',
+  }));
+
+  const filtered = tab === '전체' ? mapped : mapped.filter(a => a._sub === tab);
   const sorted   = [...filtered].sort((a, b) => (b.credibilityScore ?? 0) - (a.credibilityScore ?? 0));
 
-  if (detail) return (
-    <DetailPage article={detail} bookmarked={bm.isBookmarked(detail.urlHash)} onBookmark={bm.toggle} onBack={() => setDetail(null)} />
-  );
-
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden', background: 'var(--color-header-bg)' }}>
-      <style>{`
-        @keyframes rankIn { from{opacity:0;transform:translateX(-8px)} to{opacity:1;transform:translateX(0)} }
-      `}</style>
+    <div style={{ display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden', position: 'relative' }}>
+      {detail && (
+        <div style={{ position: 'absolute', inset: 0, zIndex: 100, background: 'var(--color-bg)', overflow: 'hidden' }}>
+          <DetailPage article={detail} bookmarked={bm.isBookmarked(detail.urlHash)} onBookmark={bm.toggle} onBack={() => { setDetail(null); setTimeout(() => { if (mainRef.current) mainRef.current.scrollTop = scrollPos.current; }, 0); }} />
+        </div>
+      )}
+      <style>{`@keyframes rankIn { from{opacity:0;transform:translateX(-8px)} to{opacity:1;transform:translateX(0)} } @keyframes spin { to{transform:rotate(360deg)} }`}</style>
 
-      <header style={{ background: 'var(--color-header-bg)', flexShrink: 0, padding: '22px 20px 0' }}>
-        <h1 style={{ fontSize: 26, fontWeight: 800, letterSpacing: '-0.04em', color: 'var(--color-header-text)', marginBottom: 3 }}>카테고리</h1>
-        <p style={{ fontSize: 12, color: 'var(--color-header-text-secondary)', marginBottom: 10 }}>분야별 기사 모아보기</p>
-        <div style={{ paddingBottom: 14, borderRadius: 0, minHeight: 44 }}>
-          <SegmentedControl
-            alignment="fluid"
-            size="small"
-            value={tab}
-            onChange={(v) => setTab(v as SubTab)}
-          >
-            {CATEGORY_TABS.map(t => (
-              <SegmentedControl.Item key={t} value={t}>{t}</SegmentedControl.Item>
-            ))}
-          </SegmentedControl>
+      <header style={{ background: 'var(--color-surface)', borderBottom: '0.5px solid var(--color-border)', flexShrink: 0 }}>
+        <div style={{ padding: '18px 20px 0' }}>
+          <h1 style={{ fontSize: 20, fontWeight: 700, letterSpacing: '-0.03em', marginBottom: 2 }}>카테고리</h1>
+          <p style={{ fontSize: 12, color: 'var(--color-text-tertiary)', paddingBottom: 10 }}>분야별 기사 모아보기</p>
+        </div>
+        <div style={{ display: 'flex', overflowX: 'auto', scrollbarWidth: 'none', paddingLeft: 16 }}>
+          {SUBTABS.map(t => (
+            <button key={t} onClick={() => setTab(t)} style={{
+              flexShrink: 0, padding: '10px 14px', fontSize: 13,
+              fontWeight: tab === t ? 600 : 400,
+              color: tab === t ? 'var(--color-primary)' : 'var(--color-text-tertiary)',
+              borderBottom: `2px solid ${tab === t ? 'var(--color-primary)' : 'transparent'}`,
+              whiteSpace: 'nowrap', transition: 'all 0.15s',
+            }}>{t}</button>
+          ))}
         </div>
       </header>
 
-      <main
-        onScroll={handleScroll}
-        style={{ flex: 1, overflowY: 'auto', WebkitOverflowScrolling: 'touch', background: 'var(--color-bg)', borderRadius: '32px 32px 0 0', padding: '16px 16px 24px', display: 'flex', flexDirection: 'column', gap: 8 }}
-      >
+      <main ref={mainRef} style={{ flex: 1, overflowY: 'auto', WebkitOverflowScrolling: 'touch', padding: '12px 16px 24px', display: 'flex', flexDirection: 'column', gap: 8 }}>
         {sorted.map((article, i) => {
           const rankColor = i === 0 ? '#B45309' : i === 1 ? '#6B7280' : i === 2 ? '#92400E' : 'var(--color-text-tertiary)';
           const maxScore  = sorted[0]?.credibilityScore ?? 1;
@@ -106,10 +129,10 @@ export default function CategoryPage({ bm, onArticleClick }: Props) {
               <span style={{ fontSize: 16, fontWeight: 700, color: rankColor, minWidth: 24, paddingTop: 2, fontVariantNumeric: 'tabular-nums' }}>{i + 1}</span>
               <div style={{ flex: 1, minWidth: 0 }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 5, marginBottom: 5 }}>
-                  <div style={{ width: 5, height: 5, borderRadius: '50%', background: article.sourceColor ?? '#6B7280', flexShrink: 0 }} />
+                  <div style={{ width: 5, height: 5, borderRadius: '50%', background: article.sourceColor, flexShrink: 0 }} />
                   <span style={{ fontSize: 11, color: 'var(--color-text-secondary)' }}>{article.source}</span>
                   {article.isBreaking && <span style={{ fontSize: 10, fontWeight: 600, color: '#EF4444' }}>속보</span>}
-                  <span style={{ fontSize: 11, color: 'var(--color-text-tertiary)', marginLeft: 'auto' }}>{article.timeAgo ?? ''}</span>
+                  <span style={{ fontSize: 11, color: 'var(--color-text-tertiary)', marginLeft: 'auto' }}>{article.timeAgo}</span>
                 </div>
                 <p style={{ fontSize: 13, fontWeight: 600, color: 'var(--color-text-primary)', lineHeight: 1.4, marginBottom: 8 }}>{article.title}</p>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
@@ -119,30 +142,35 @@ export default function CategoryPage({ bm, onArticleClick }: Props) {
                   <span style={{ fontSize: 11, color: 'var(--color-text-tertiary)', whiteSpace: 'nowrap' }}>신뢰도 {Math.round((article.credibilityScore ?? 0) * 100)}%</span>
                 </div>
               </div>
-              <div
-                role="button"
-                onClick={e => { e.stopPropagation(); bm.toggle(article.urlHash, article); }}
-                style={{
-                  width: 30, height: 30, borderRadius: 8, flexShrink: 0, marginTop: -2,
-                  background: bm.isBookmarked(article.urlHash) ? '#FEF3C7' : 'var(--color-surface-secondary)',
-                  display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'all 0.15s',
-                  cursor: 'pointer',
-                }}
-              >
+              <button onClick={e => { e.stopPropagation(); bm.toggle(article.urlHash); }} style={{
+                width: 30, height: 30, borderRadius: 8, flexShrink: 0, marginTop: -2,
+                background: bm.isBookmarked(article.urlHash) ? '#FEF3C7' : 'var(--color-surface-secondary)',
+                display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'all 0.15s',
+              }}>
                 <svg width="13" height="13" viewBox="0 0 24 24" fill={bm.isBookmarked(article.urlHash) ? '#D97706' : 'none'}>
                   <path d="M19 21L12 16L5 21V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v16z" stroke={bm.isBookmarked(article.urlHash) ? '#D97706' : 'var(--color-text-tertiary)'} strokeWidth="1.7" strokeLinejoin="round"/>
                 </svg>
-              </div>
+              </button>
             </button>
           );
         })}
-        {loadingMore && (
-          <p style={{ textAlign: 'center', fontSize: 12, color: 'var(--color-text-tertiary)', padding: '8px 0' }}>더 불러오는 중…</p>
-        )}
         {sorted.length === 0 && (
           <div style={{ textAlign: 'center', padding: '60px 0', color: 'var(--color-text-tertiary)', fontSize: 14 }}>
             해당 카테고리의 기사가 없습니다
           </div>
+        )}
+        {loadingMore && (
+          <div style={{ display: 'flex', justifyContent: 'center', padding: '20px 0' }}>
+            <div style={{ width: 22, height: 22, border: '2.5px solid var(--color-border)', borderTopColor: 'var(--color-primary)', borderRadius: '50%', animation: 'spin 0.7s linear infinite' }} />
+          </div>
+        )}
+        {hasMore && !loadingMore && articles.length > 0 && (
+          <button onClick={loadMore} style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '4px auto 8px', padding: '10px 24px', fontSize: 13, color: 'var(--color-primary)', background: 'var(--color-primary-light)', border: '1px solid var(--color-primary-mid)', borderRadius: 20, cursor: 'pointer' }}>
+            기사 더 보기
+          </button>
+        )}
+        {!hasMore && articles.length > 0 && (
+          <div style={{ textAlign: 'center', padding: '20px 0', color: 'var(--color-text-tertiary)', fontSize: 13 }}>모든 기사를 불러왔어요 🎉</div>
         )}
       </main>
     </div>
