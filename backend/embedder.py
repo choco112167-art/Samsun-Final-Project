@@ -98,7 +98,7 @@ def expand_query(q: str) -> str:
                 "Content-Type":  "application/json",
             },
             json={
-                "model":      "qwen/qwen3-4b",
+                "model":      "meta-llama/llama-3.1-8b-instruct",
                 "messages":   [{"role": "user", "content": prompt}],
                 "max_tokens": 120,
                 "temperature": 0.2,
