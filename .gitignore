@@ -11,5 +11,6 @@ token.json
 
 # JS / build
 node_modules/
-dist/
+# 저장소 루트 dist만 무시 (frontend/dist 는 커밋)
+/dist/
 
