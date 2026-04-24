@@ -206,6 +206,32 @@ def health():
     return {"status": "ok"}
 
 
+@app.get("/debug")
+def debug():
+    """Supabase 연결 및 환경변수 확인용 (임시)"""
+    supabase_url = _settings.supabase_url or os.getenv("SUPABASE_URL", "")
+    sb_key = os.getenv("SUPABASE_KEY", "") or _settings.supabase_anon_key
+    try:
+        result = sb.table("articles").select("url_hash").limit(1).execute()
+        return {
+            "supabase_url_set": bool(supabase_url),
+            "supabase_url_prefix": supabase_url[:30] if supabase_url else "",
+            "key_set": bool(sb_key),
+            "key_prefix": sb_key[:10] if sb_key else "",
+            "db_ok": True,
+            "row_count": len(result.data),
+        }
+    except Exception as e:
+        return {
+            "supabase_url_set": bool(supabase_url),
+            "supabase_url_prefix": supabase_url[:30] if supabase_url else "",
+            "key_set": bool(sb_key),
+            "key_prefix": sb_key[:10] if sb_key else "",
+            "db_ok": False,
+            "error": str(e),
+        }
+
+
 @app.post("/translate")
 def translate(req: LlmTextRequest):
     """
