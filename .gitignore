@@ -11,4 +11,6 @@ token.json
 
 # JS / build
 node_modules/
+dist/
+frontend/dist/
 
