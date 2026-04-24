@@ -1,0 +1,14 @@
+.env
+.DS_Store
+venv/
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+CLAUDE.md
+eval/data/
+token.json
+
+# JS / build
+node_modules/
+
