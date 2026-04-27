@@ -11,6 +11,8 @@ import os
 
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 from supabase import create_client
 
@@ -352,3 +354,15 @@ def log_view(user_id: str, url_hash: str):
         "action": "view",
     }).execute()
     return {"message": "기록 완료"}
+
+
+# ── 프론트엔드 정적 파일 서빙 (SPA) ────────────────────────
+# API 라우트 정의 후 맨 마지막에 마운트해야 API가 우선됨
+_DIST = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "frontend", "dist")
+if os.path.isdir(_DIST):
+    app.mount("/assets", StaticFiles(directory=os.path.join(_DIST, "assets")), name="assets")
+
+    @app.get("/{full_path:path}", include_in_schema=False)
+    def serve_spa(full_path: str = ""):
+        """React SPA — 모든 미매칭 경로를 index.html로 돌려줌"""
+        return FileResponse(os.path.join(_DIST, "index.html"))
