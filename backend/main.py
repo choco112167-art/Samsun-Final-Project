@@ -209,27 +209,50 @@ def health():
 @app.get("/debug")
 def debug():
     """Supabase 연결 및 환경변수 확인용 (임시)"""
-    supabase_url = _settings.supabase_url or os.getenv("SUPABASE_URL", "")
+    import requests as _req
+    supabase_url = (_settings.supabase_url or os.getenv("SUPABASE_URL", "")).rstrip("/")
     sb_key = os.getenv("SUPABASE_KEY", "") or _settings.supabase_anon_key
+
+    # URL 형식 진단
+    url_issues = []
+    if "/rest/v1" in supabase_url:
+        url_issues.append("URL에 /rest/v1 포함됨 — 제거 필요")
+    if supabase_url.count("supabase.co") == 0 and supabase_url:
+        url_issues.append("supabase.co 도메인 아님")
+
+    # supabase-py 없이 직접 REST 호출 테스트
+    direct_ok = False
+    direct_error = ""
+    try:
+        r = _req.get(
+            f"{supabase_url}/rest/v1/articles?select=url_hash&limit=1",
+            headers={"apikey": sb_key, "Authorization": f"Bearer {sb_key}"},
+            timeout=5,
+        )
+        direct_ok = r.status_code == 200
+        direct_error = "" if direct_ok else f"HTTP {r.status_code}: {r.text[:200]}"
+    except Exception as e:
+        direct_error = str(e)
+
+    # supabase-py 테스트
+    sdk_ok = False
+    sdk_error = ""
     try:
         result = sb.table("articles").select("url_hash").limit(1).execute()
-        return {
-            "supabase_url_set": bool(supabase_url),
-            "supabase_url_prefix": supabase_url[:30] if supabase_url else "",
-            "key_set": bool(sb_key),
-            "key_prefix": sb_key[:10] if sb_key else "",
-            "db_ok": True,
-            "row_count": len(result.data),
-        }
+        sdk_ok = True
     except Exception as e:
-        return {
-            "supabase_url_set": bool(supabase_url),
-            "supabase_url_prefix": supabase_url[:30] if supabase_url else "",
-            "key_set": bool(sb_key),
-            "key_prefix": sb_key[:10] if sb_key else "",
-            "db_ok": False,
-            "error": str(e),
-        }
+        sdk_error = str(e)[:300]
+
+    return {
+        "supabase_url": supabase_url[:60],
+        "url_issues": url_issues,
+        "key_prefix": sb_key[:15] if sb_key else "",
+        "key_length": len(sb_key),
+        "direct_rest_ok": direct_ok,
+        "direct_rest_error": direct_error,
+        "sdk_ok": sdk_ok,
+        "sdk_error": sdk_error,
+    }
 
 
 @app.post("/translate")
