@@ -245,6 +245,10 @@ def debug():
     except Exception as e:
         sdk_error = str(e)[:300]
 
+    dist_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "frontend", "dist")
+    dist_abs = os.path.abspath(dist_path)
+    index_exists = os.path.isfile(os.path.join(dist_abs, "index.html"))
+
     return {
         "supabase_url": supabase_url[:60],
         "url_issues": url_issues,
@@ -254,6 +258,10 @@ def debug():
         "direct_rest_error": direct_error,
         "sdk_ok": sdk_ok,
         "sdk_error": sdk_error,
+        "dist_path": dist_abs,
+        "dist_exists": os.path.isdir(dist_abs),
+        "index_html_exists": index_exists,
+        "app_dir": os.path.abspath(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..")),
     }
 
 
