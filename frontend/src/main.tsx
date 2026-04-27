@@ -1,5 +1,6 @@
 import React, { Component, type PropsWithChildren } from 'react';
 import { createRoot } from 'react-dom/client';
+import { TDSMobileProvider } from '@toss/tds-mobile';
 import './styles/global.css';
 import App from './App';
 
@@ -22,10 +23,14 @@ class ErrorBoundary extends Component<PropsWithChildren, { error: Error | null }
   }
 }
 
-// CSS 변수(--color-*, --radius-*, 등)는 global.css :root에 직접 정의돼 있어서
-// TDSMobileAITProvider 없이도 정상 렌더링된다.
+// TDSMobileProvider: 일반 브라우저용 TDS 컨텍스트 (Overlay/Portal/Theme 등).
+// TDSMobileAITProvider(=AppsInToss WebView용)와 달리 토스 앱 외부에서도 정상 렌더링됨.
+// CSS 변수는 global.css :root에 별도로 정의돼 있고, Provider는 useOverlay/BottomSheet/
+// useToast 등 TDS 컴포넌트가 요구하는 React 컨텍스트만 제공한다.
 createRoot(document.getElementById('root')!).render(
   <ErrorBoundary>
-    <App />
+    <TDSMobileProvider>
+      <App />
+    </TDSMobileProvider>
   </ErrorBoundary>,
 );
