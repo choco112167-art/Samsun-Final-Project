@@ -3,18 +3,6 @@ import { createRoot } from 'react-dom/client';
 import './styles/global.css';
 import App from './App';
 
-// TDSMobileAITProvider는 토스 앱 WebView 환경에서만 정상 동작.
-// 일반 브라우저(Railway 배포 등)에서는 Provider 없이 렌더링.
-function AppContainer({ children }: PropsWithChildren) {
-  try {
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const { TDSMobileAITProvider } = require('@toss/tds-mobile-ait');
-    return <TDSMobileAITProvider>{children}</TDSMobileAITProvider>;
-  } catch {
-    return <>{children}</>;
-  }
-}
-
 // 전체 앱 에러 바운더리 — 흰 화면 대신 에러 내용을 표시
 class ErrorBoundary extends Component<PropsWithChildren, { error: Error | null }> {
   state = { error: null };
@@ -34,10 +22,10 @@ class ErrorBoundary extends Component<PropsWithChildren, { error: Error | null }
   }
 }
 
+// CSS 변수(--color-*, --radius-*, 등)는 global.css :root에 직접 정의돼 있어서
+// TDSMobileAITProvider 없이도 정상 렌더링된다.
 createRoot(document.getElementById('root')!).render(
   <ErrorBoundary>
-    <AppContainer>
-      <App />
-    </AppContainer>
+    <App />
   </ErrorBoundary>,
 );
