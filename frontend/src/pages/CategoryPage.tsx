@@ -1,11 +1,12 @@
 import { useState, useEffect } from 'react';
 import { fetchArticles } from '../data/api';
+import { CATEGORIES, filterByCategory } from '../data/articles';
 import type { Article, Category } from '../data/articles';
 import DetailPage from './DetailPage';
 import type { BookmarkHook } from '../hooks/useBookmarks';
 
 type SubTab = '전체' | Category;
-const CATEGORY_TABS: SubTab[] = ['전체', 'AI 연구', 'AI 심층', 'AI 스타트업', 'AI 비즈니스', 'AI 윤리', 'AI 커뮤니티', '테크 전반'];
+const CATEGORY_TABS: SubTab[] = ['전체', ...CATEGORIES];
 
 interface Props {
   bm: BookmarkHook;
@@ -21,8 +22,9 @@ export default function CategoryPage({ bm, onArticleClick }: Props) {
     fetchArticles({ limit: 100 }).then(setArticles).catch(() => {});
   }, []);
 
-  // Article.category는 toArticle()에서 이미 Category 타입으로 정규화되어 있음
-  const filtered = tab === '전체' ? articles : articles.filter(a => a.category === tab);
+  // Article.category는 toArticle()에서 이미 normalizeCategory() 가 적용된 UI 카테고리.
+  // HomePage 와 동일한 공유 유틸을 통해 두 화면의 결과가 완전히 일치하도록 보장한다.
+  const filtered = filterByCategory(articles, tab);
   const sorted   = [...filtered].sort((a, b) => (b.credibilityScore ?? 0) - (a.credibilityScore ?? 0));
 
   if (detail) return (

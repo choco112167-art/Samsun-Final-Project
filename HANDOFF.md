@@ -16,7 +16,7 @@
 - AI/테크 영문 뉴스를 수집 → 한국어 번역·요약 → 사용자 관심사 기반 추천
 
 ### 기술 스택
-- **Frontend**: React + TypeScript + Vite, Toss Design System (`@toss/tds-mobile`, `@toss/tds-mobile-ait`)
+- **Frontend**: React + TypeScript + Vite, **순수 React 컴포넌트** (TDS 의존 제거 — 이슈 #13 참조)
 - **Backend**: FastAPI (Python)
 - **DB**: Supabase + pgvector (RAG 추천)
 - **LLM**: OpenRouter 또는 로컬 Ollama (`qwen3.5:4b`)
@@ -216,7 +216,47 @@ git push team main:feat/joochan
   - 비활성 톤을 `--adaptiveGrey500` (Toss 표준 비활성 회색) 으로 상향 → 가독성 확보
   - SVG 사이즈 22, 버튼 height 56 으로 미세 조정 (아이콘+라벨 모두 들어가도록)
 
-### ✅ 11. `@toss/tds-mobile은 앱인토스 개발에만 사용할 수 있어요.` — TDS 환경 차단 우회
+### ✅ 13. **TDS 의존 100% 제거 — `@toss/tds-mobile` 우회 실패로 인한 정공법 전환**
+- 배경: 이슈 #11 에서 `tds-bypass.ts` 로 `Location.prototype.hostname`, `Document.prototype.domain` 게터를 게터 오버라이드 + `window.location` 인스턴스 데코이로 우회 시도. 로컬에선 통했으나 **Railway 운영(`samsun-production.up.railway.app`) 에서 모더 브라우저의 `[LegacyUnforgeable]` 정책에 막혀 게터 교체가 거부됨** → 여전히 `Uncaught Error: @toss/tds-mobile은 앱인토스 개발에만 사용할 수 있어요.` + 흰 화면.
+- 결론: 브라우저 보안 정책상 이 IIFE 는 **합법적으로 우회 불가**. `@toss/tds-mobile` 자체를 import 하는 순간 IIFE 가 실행돼 throw 되므로 `TDSMobileProvider` 만 빼는 부분적 제거로도 해결 안 됨. 의존을 100% 제거해야 함.
+
+#### 1) 제거 범위
+- `frontend/src/lib/tds-bypass.ts` — 삭제 (쓸모없는 우회 코드)
+- `frontend/src/main.tsx` — `TDSMobileProvider`, `useColorPreference` 제거
+- `frontend/src/pages/HomePage.tsx` — `BottomSheet`, `useToast` 자체 구현으로 교체
+- `frontend/src/components/ArticleCard.tsx` — `Badge` 자체 구현으로 교체
+- `frontend/src/components/Skeleton.tsx` — `Skeleton.Wrapper`/`Item` 자체 구현으로 교체
+- `frontend/package.json` — `@toss/tds-mobile`, `@toss/tds-mobile-ait`, `@apps-in-toss/web-framework`, `@emotion/react` 의존 제거. `build` 스크립트도 `ait build` → `vite build` 로 변경. `deploy: ait deploy` 스크립트 제거.
+
+#### 2) 신규 컴포넌트 (web-safe, TDS API 호환)
+| 파일 | 제공 export | 대체 대상 |
+|---|---|---|
+| `frontend/src/components/Overlay.tsx` | `OverlayProvider`, `useToast()`, `useOverlay()`, `BottomSheet`(`.Header`/`.CTA`), `ErrorBoundary` | `TDSMobileProvider`, TDS `useToast`, TDS `useOverlay`, TDS `BottomSheet` |
+| `frontend/src/components/Badge.tsx` | `Badge` (`badgeStyle`/`type`/`size` 동일 시그니처) | TDS `Badge` |
+| `frontend/src/components/SkeletonPrimitive.tsx` | `Skeleton.Wrapper`, `Skeleton.Item` (`play="show"` 호환) | TDS `Skeleton` |
+
+설계 원칙:
+- TDS 의 props 시그니처를 동일하게 맞춰 호출처(HomePage/ArticleCard/Skeleton) 는 **import 경로만 바뀜**, 마크업 그대로
+- 외부 라이브러리 의존 0 — `react`, `react-dom` 만 사용
+- BottomSheet 는 portal + 슬라이드/페이드 transition + ESC 키 닫기 + body scroll-lock + safe-area 대응
+- Toast 는 fixed 뷰포트 + 자동 dismiss 타이머 + 큐잉
+- BottomSheet.CTA 는 context 로 시트의 `onClose` 를 자동 주입 → `<BottomSheet.CTA>확인했어요</BottomSheet.CTA>` 처럼 onClick 없이 써도 닫힘 (TDS 동등 동작)
+- `useToast`/`useOverlay` 는 Provider 외부에서 호출되더라도 throw 하지 않고 noop 반환 → SSR/StoryBook/단위테스트 친화
+
+#### 3) 검증
+- 번들 분석:
+  - Before(이슈 #11 시점): `index--HLgMsMQ.js` = **1,140 kB** (gzip 359 kB), 모듈 56개
+  - After: `index-Dsqnh6Xs.js` = **219 kB** (gzip 64 kB), 모듈 32개 — **80% 감소**
+- 번들 grep: `@toss/tds-mobile`, `TDSMobileProvider`, `tds-mobile은`(unicode-escape 형태 포함), `apps-in-toss`, `samsunTdsBypassed`(이전 우회 코드 흔적), `TossApp/` — **모두 0건**
+- `node_modules`: `npm prune` 으로 `@toss/*`, `@apps-in-toss/*`, `@emotion/*` 디렉터리 제거 확인
+- 모든 src/ 파일 lint: 에러 0
+- 가상 검증:
+  - 운영 도메인 진입 시 IIFE 자체가 번들에 없음 → throw 발생할 코드 자체 부재 → 흰 화면 원인 제거 ✓
+  - HomePage 의 `useToast`, `BottomSheet` 호출은 `OverlayProvider` 가 main.tsx 에서 감싸므로 컨텍스트 정상 ✓
+  - TabBar 는 이미 이슈 #12 에서 var() 의존 제거하고 직접 hex 로 교체된 상태라 그대로 동작 ✓
+  - `colorPreference` 등 TDS 컨텍스트 의존 코드 없음 → 다크모드 자동 전환은 일단 비활성(필요 시 향후 직접 `prefers-color-scheme` 미디어쿼리로 재구현 가능) ✓
+
+### ✅ 11. `@toss/tds-mobile은 앱인토스 개발에만 사용할 수 있어요.` — TDS 환경 차단 우회 (실패 — 이슈 #13 으로 대체됨)
 - 증상: 운영 도메인 (`samsun-production.up.railway.app`) 접속 시 콘솔에 위 에러 + 흰 화면. localhost 에선 정상.
 - 진원지: `@toss/tds-mobile/dist/esm/index.js` 최상단 obfuscated IIFE.
   - 디코드해보면 `for..in` 으로 globalThis 에서 `'location'` (length 8, `l-o-?-?-t-i-?-n` 패턴) 을 찾고, 다시 그 객체에서 `'hostname'` (length 8, `h-o-?-t-?-a-?-e` 패턴) 을 찾아 값을 읽음. 실패 시 `document.domain` 으로 폴백.
@@ -260,13 +300,194 @@ git push team main:feat/joochan
   - **`window` 크래시**: `main.tsx` 의 `useColorPreference` / `subscribeColorPreference` / `getColorPreference` 모두 `typeof window` 가드와 `matchMedia` 존재 확인 후 접근. `useSyncExternalStore` 의 third arg(`getServerSnapshot`)도 `'light'` 로 SSR-safe ✓
   - `data/api.ts` 는 fetch만 사용하며 SSR-위험 없음 ✓
 
-## 5. 현재 `main.tsx` 상태
+### ✅ 14. 메인 화면 카테고리 누락 + Railway 데이터 증발 — 데이터 매핑 정합성 복구
+
+#### 증상
+1. 로컬: CategoryPage 의 'AI 연구' 탭에서는 기사가 정상 노출되지만, HomePage 메인 피드(필터칩 '전체' 또는 'AI 연구')에는 같은 카테고리 기사가 한 건도 안 뜸.
+2. Railway: 운영 사이트(`samsun-production.up.railway.app`) 에서 기사 0건. fetch 자체가 실패하거나 결과가 비어 들어옴.
+
+#### 원인 — 두 개의 독립 버그가 동시 발현
+
+**Bug A — HomePage 의 관심사+카테고리 필터 교집합 오류**
+
+기존 로직(`pages/HomePage.tsx`):
+```tsx
+const interestFiltered = interests.length > 0
+  ? articles.filter(a => interests.includes(a.category as Interest))
+  : articles;
+const baseArticles = interestFiltered.length > 0 ? interestFiltered : articles;
+const filtered = filter === '전체' ? baseArticles : baseArticles.filter(a => a.category === filter);
+```
+
+- 온보딩에서 'AI 비즈니스' 만 골랐다고 하면 `baseArticles` 에는 AI 비즈니스 기사만 들어감.
+- 사용자가 'AI 연구' 칩을 누르면 `baseArticles.filter(a => a.category === 'AI 연구')` → 항상 빈 배열.
+- CategoryPage 는 관심사 필터 자체가 없어서 이 버그가 안 나타나 두 화면 결과가 어긋남.
+
+**Bug B — `VITE_API_BASE_URL` 미설정 시 fallback 이 `http://localhost:8000`**
+
+`data/api.ts`:
+```ts
+const BASE_URL = (import.meta.env.VITE_API_BASE_URL as string | undefined)
+  ?? 'http://localhost:8000';
+```
+
+- `frontend/.env` 는 git 추적에서 제외 상태(루트 `.gitignore` 의 `.env` 규칙).
+- Railway 빌드는 레포 클론 후 `npx vite build` 를 돌리지만 `.env` 가 없음 → `VITE_API_BASE_URL` 미정의 → fallback 인 `localhost:8000` 이 번들에 박힘.
+- 운영 페이지가 `localhost:8000/articles` 로 fetch → 외부에서 도달 불가 → 데이터 0건.
+
+#### 해결
+
+1. **카테고리 enum 단일 진실 소스화** (`data/articles.ts`):
+   ```ts
+   export const CATEGORIES = [
+     'AI 연구', 'AI 심층', 'AI 스타트업', 'AI 비즈니스',
+     'AI 윤리', 'AI 커뮤니티', '테크 전반',
+   ] as const;
+   export type Interest = (typeof CATEGORIES)[number];
+   export type Category = Interest | '기타';
+   ```
+   `HomePage`, `CategoryPage`, `OnboardingPage` 모두 이 상수를 import 해서 하드코딩 4중 분산 제거.
+
+2. **HomePage 필터 분리 적용**:
+   ```tsx
+   const interestFiltered = interests.length > 0
+     ? articles.filter(a => interests.includes(a.category as Interest))
+     : articles;
+   const baseArticles = filter === '전체'
+     ? (interestFiltered.length > 0 ? interestFiltered : articles)  // 개인화 피드
+     : articles;                                                     // 카테고리 칩은 전체 풀
+   const filtered = filter === '전체' ? baseArticles : baseArticles.filter(a => a.category === filter);
+   ```
+   - '전체' 칩 → 관심사 우선 (기존 개인화 유지)
+   - 명시적 카테고리 칩 → 관심사 무시, 전체 풀에서 매칭 (CategoryPage 와 동일 동작)
+
+3. **API BASE_URL 동적 라우팅** (`data/api.ts`):
+   ```ts
+   const RAW_BASE = (import.meta.env.VITE_API_BASE_URL as string | undefined) ?? '';
+   const BASE_URL = RAW_BASE.replace(/\/+$/, '');  // trailing slash 제거
+   const url = `${BASE_URL}${path.startsWith('/') ? path : `/${path}`}`;
+   ```
+   - 환경 변수 미정의 → 빈 문자열 → `${''}/articles` = `/articles` 상대 경로 → 동일 origin 으로 라우팅
+   - dev 에서는 `frontend/.env.development` (신규) 가 `VITE_API_BASE_URL=http://localhost:8000` 을 주입
+
+4. **환경 파일 분리**:
+   - `frontend/.env` — `VITE_API_BASE_URL=` 로 비워둠 (production 빌드 기본값 = 상대 경로)
+   - `frontend/.env.development` — `VITE_API_BASE_URL=http://localhost:8000` (npm run dev 전용, vite build 시 미로드)
+   - 두 파일 모두 git 무시 상태이므로 Railway 빌드는 자연히 `BASE_URL = ''` 로 빌드되어 동일 origin fetch.
+
+#### 검증
+
+- Vite production 빌드 결과: `dist/assets/index-mQTzQ7kK.js`
+- `grep -oE "https?://[^\"']+" dist/assets/*.js`
+  - 결과: w3.org/reactjs.org 네임스페이스만. `samsun-production` / `localhost` 0건 ✓
+- `grep "/articles" dist/assets/*.js` → 상대 경로 `/articles` 만 검출 ✓
+- Trailing slash 안전성: api.ts 의 path normalization 로 `${BASE_URL}//articles` 같은 더블 슬래시 방어. FastAPI 의 redirect_slashes 와도 호환.
+- CORS: 운영에선 동일 origin → preflight 미발동. dev 에선 `localhost:5173 → localhost:8000` 다른 origin 이지만 백엔드 CORS 미들웨어가 이미 `allow_origins` 처리 중이라 변경 없음.
+
+---
+
+### ✅ 15. 카테고리 Taxonomy 단일화 — 페이지 간 필터 결과 불일치 정공 해결
+
+#### 증상
+- **로컬**: HomePage / CategoryPage 둘 다 'AI 심층', 'AI 비즈니스', 'AI 윤리', 'AI 커뮤니티', '테크 전반' 탭이 빈 화면.
+- **Railway**: HomePage 는 '전체' / '테크 전반' 만 작동, 다른 칩은 빈 화면. 반면 CategoryPage 는 모든 탭 정상.
+
+#### 원인 — 세 갈래
+
+**Bug A — DB raw 라벨 `AI 심층/기술` 매핑 누락**
+
+`collect/crawler/rss_crawler.py` 의 The Decoder 피드는 `category="AI 심층/기술"` 으로 적재되지만, 기존 `articles.ts` 의 `CATEGORY_MAP` 에는 이 키가 없어 모든 The Decoder 기사가 `'기타'` 로 정규화 → 어떤 UI 칩과도 매칭 불가능. 사일런트 데이터 누락의 직접적 원인.
+
+DB 라벨 ↔ 매핑 상태 (이슈 발견 시점):
+```
+AI/스타트업    → AI 스타트업    ✓
+AI 심층        → AI 심층        ✓
+AI 심층/기술   → ???            ❌  (The Decoder 전체가 누락)
+AI 비즈니스    → AI 비즈니스    ✓
+AI 윤리        → AI 윤리        ✓
+AI 커뮤니티    → AI 커뮤니티    ✓
+LLM 커뮤니티   → AI 커뮤니티    ✓
+AI 연구        → AI 연구        ✓
+AI/반도체      → AI 연구        ✓
+AI 제품        → AI 비즈니스    ✓
+테크 전반      → 테크 전반      ✓
+```
+
+**Bug B — 데이터 풀 크기 비대칭 (HomePage LIMIT=20 vs CategoryPage limit=100)**
+
+HomePage 는 초기 20건만 fetch 하고 무한 스크롤로 추가 로드. 사용자가 스크롤 전에 카테고리 칩을 누르면 20건 윈도우 안에 해당 카테고리가 0건일 때 빈 화면. Railway 의 최신 20건이 The Verge(테크 전반) 위주로 채워지면 다른 칩은 모두 텅 빈 결과 — 정확히 사용자가 보고한 양상과 일치.
+
+CategoryPage 는 limit=100 으로 충분한 풀을 가져와 동일 버그가 표면화되지 않음.
+
+**Bug C — 카테고리 분류 체계 4중 분산**
+
+`articles.ts`, `HomePage.tsx`, `CategoryPage.tsx`, `OnboardingPage.tsx` 네 곳에 카테고리 배열·필터 로직이 따로 정의되어 있어 추가/변경 시 동기화 누락이 빈발. 페이지 간 결과가 어긋나는 구조적 원인.
+
+#### 해결
+
+**1) `frontend/src/data/categories.ts` — 단일 진실 소스 신설**
+
+- `CATEGORIES` (UI 카테고리 7종) — `Interest = (typeof CATEGORIES)[number]`, `Category = Interest | '기타'` 로 타입을 자동 파생
+- `EXACT_MAP` — 현재 RSS 크롤러가 생성하는 모든 raw 라벨 1:1 매핑 (누락이었던 `'AI 심층/기술' → 'AI 심층'` 추가)
+- `normalizeCategory(raw)` — 3단계 폴백:
+  1. 정확 매칭 (`EXACT_MAP`)
+  2. 정규화 키 매칭 — `canonical()` 으로 NFKC + lowercase + 공백/`·`/`/` 등 구분자 제거 후 비교 (`AI연구`, `AI·연구`, `AI/연구` 모두 동일 키)
+  3. 키워드 부분 매칭 — `'스타트업', 'startup', '윤리', '정책', ...` 등으로 처음 보는 라벨도 합리적으로 분류
+- `filterByCategory(articles, target)` — '전체' / 카테고리 칩 / 탭에서 모두 사용하는 공통 필터 헬퍼
+- `getRawCategoriesFor(ui)` — UI 카테고리 → DB raw 라벨 역인덱스 (백엔드 측 카테고리 필터를 추후 도입할 때 사용)
+
+**2) `articles.ts` 의 구버전 `CATEGORY_MAP` / `normalizeCategory` 제거** — `categories.ts` 에서 재내보내기로 import 호환만 유지.
+
+**3) HomePage / CategoryPage 동기화**
+
+| | Before | After |
+|---|---|---|
+| HomePage `LIMIT` | 20 | **100** (CategoryPage 와 동일) |
+| HomePage 카테고리 필터 | 인라인 `articles.filter(a => a.category === filter)` | `filterByCategory(...)` 공유 유틸 |
+| CategoryPage 카테고리 필터 | 인라인 `articles.filter(a => a.category === tab)` | `filterByCategory(...)` 공유 유틸 |
+| 카테고리 배열 정의 위치 | 두 페이지에 각각 하드코딩 | `['전체', ...CATEGORIES]` |
+
+**4) 엣지 케이스 보강**
+
+- 입력 trim, null/undefined/빈문자 → `'기타'` 로 안전 처리
+- NFKC 정규화로 한자/전각/반각 변종 흡수
+- `·` (U+00B7), `‧` (U+2027), `/`, `-`, `_`, 공백 차이 모두 동일 키로 매핑
+
+#### 환경 분기 점검 (Step 4)
+
+- 프론트는 `data/api.ts` 단일 모듈을 통해 동일한 `BASE_URL` 로 양 페이지 모두 fetch (이슈 #14에서 정리된 상태)
+- HomePage / CategoryPage / OnboardingPage 모두 `fetchArticles()` → `toArticle()` → `normalizeCategory()` 동일 파이프라인
+- 로컬 vs Railway 의 데이터 양상 차이는 (a) 실제 Supabase 의 시점별 적재 분포, (b) 매핑 누락 라벨 비율 차이로 설명 가능. 두 환경이 다른 DB 를 보거나 별도 mock 을 거치는 분기는 코드상 존재하지 않음 — 검증 완료.
+
+#### 검증 결과 (production 빌드)
+
+- `dist/assets/index-DepXLLBq.js` (219.77 kB / gzip 64.46 kB) — 모듈 33개
+- 외부 URL 하드코딩: w3.org / reactjs.org 네임스페이스 외 0건
+- localhost / samsun-production 하드코딩: 0건
+- 모든 DB raw 라벨이 번들 내 `EXACT_MAP` 데이터에 포함됨 (`AI 심층/기술` 까지 신규 포함 ✓)
+
+---
+
+## 5. 현재 `main.tsx` 상태 (이슈 #13 이후)
 
 ```tsx
-// ⚠️ 반드시 첫 번째 import — `@toss/tds-mobile` 의 IIFE 가
-//    실행되기 전에 location.hostname / navigator.userAgent 를 모킹해야 한다.
-import './lib/tds-bypass';
+import { createRoot } from 'react-dom/client';
+import './styles/global.css';
+import App from './App';
+import { OverlayProvider, ErrorBoundary } from './components/Overlay';
 
+createRoot(document.getElementById('root')!).render(
+  <ErrorBoundary>
+    <OverlayProvider>
+      <App />
+    </OverlayProvider>
+  </ErrorBoundary>,
+);
+```
+
+(이전 TDS 기반 main.tsx — 참고용으로 보존)
+
+```tsx
 import React, { Component, useMemo, useSyncExternalStore, type PropsWithChildren } from 'react';
 import { createRoot } from 'react-dom/client';
 import { TDSMobileProvider } from '@toss/tds-mobile';
@@ -443,27 +664,55 @@ git fetch team && git log --oneline team/feat/joochan..HEAD
 
 마지막 커밋: `2956eded fix: TDSMobileProvider 도입 — useOverlay 컨텍스트 누락 해결`
 
-다음 커밋 예정: `fix(frontend): TDS 환경 차단 우회(tds-bypass) + TabBar 활성색 직접 hex 값으로 교체`
-- 신규 파일: `frontend/src/lib/tds-bypass.ts`
-- 변경 파일: `frontend/src/main.tsx`, `frontend/src/components/TabBar.tsx`, `frontend/dist/`, `HANDOFF.md`
-- 새 빌드 산출물: `frontend/dist/assets/index--HLgMsMQ.js`
-- 로컬에서 운영 동등 검증 (반드시 push 전 한 번 확인):
-  ```bash
-  cd /Users/aiagent/Desktop/test/SamSun_final
-  uvicorn backend.main:app --port 8000
-  # 다른 터미널에서:
-  open http://localhost:8000
-  # → 백엔드가 dist/index.html + /assets 를 서빙하므로 Railway 와 동일한 환경
-  # 콘솔에 "@toss/tds-mobile은 앱인토스..." 에러가 안 떠야 정상
-  ```
-- Railway 배포:
-  ```bash
-  cd /Users/aiagent/Desktop/test/SamSun_final
-  git add frontend/src/lib/tds-bypass.ts \
-          frontend/src/main.tsx \
-          frontend/src/components/TabBar.tsx \
-          frontend/dist/ \
-          HANDOFF.md
-  git commit -m "fix(frontend): TDS 환경 차단 우회(tds-bypass) + TabBar 활성색 직접 hex 값으로 교체"
-  git push team main:feat/joochan        # ← Railway 자동 재배포 트리거
-  ```
+다음 커밋 예정: `feat(frontend): @toss/tds-mobile 의존 100% 제거 + 자체 OverlayProvider/Badge/Skeleton 도입`
+- 삭제 파일: `frontend/src/lib/tds-bypass.ts`
+- 신규 파일:
+  - `frontend/src/components/Overlay.tsx` — OverlayProvider, useToast, useOverlay, BottomSheet, ErrorBoundary
+  - `frontend/src/components/Badge.tsx`
+  - `frontend/src/components/SkeletonPrimitive.tsx`
+- 변경 파일:
+  - `frontend/src/main.tsx` (TDSMobileProvider 제거 → OverlayProvider)
+  - `frontend/src/pages/HomePage.tsx` (import 경로만 변경)
+  - `frontend/src/components/ArticleCard.tsx` (import 경로만 변경)
+  - `frontend/src/components/Skeleton.tsx` (import 경로만 변경)
+  - `frontend/package.json` (TDS·AIT·emotion 의존 제거, build 스크립트 vite build 로 단순화)
+  - `frontend/package-lock.json` (npm prune 결과 반영)
+  - `frontend/dist/` (재빌드 산출물 — `index-Dsqnh6Xs.js`)
+  - `HANDOFF.md`
+- 번들 사이즈: 1,140 kB → 219 kB (gzip 359 → 64 kB), 모듈 56 → 32
+
+### 로컬에서 운영 동등 검증 (반드시 push 전 한 번 확인)
+```bash
+cd /Users/aiagent/Desktop/test/SamSun_final
+uvicorn backend.main:app --port 8000
+# 다른 터미널에서:
+open http://localhost:8000
+```
+체크리스트:
+- 콘솔에 `@toss/tds-mobile은 앱인토스...` 에러가 **사라졌는지** (이젠 발생할 코드 자체 부재)
+- 하단 TabBar 의 활성 탭만 진하게(검정) / 비활성은 옅은 회색
+- `홈` 우상단 종 아이콘 클릭 시 토스트(또는 부재 알림이 있으면 BottomSheet) 가 정상 표시
+- BottomSheet 의 "확인했어요" 버튼 클릭 시 시트가 닫히고 onAbsenceDismiss 가 트리거되는지
+
+### Railway 배포
+```bash
+cd /Users/aiagent/Desktop/test/SamSun_final
+
+git add frontend/src/components/Overlay.tsx \
+        frontend/src/components/Badge.tsx \
+        frontend/src/components/SkeletonPrimitive.tsx \
+        frontend/src/main.tsx \
+        frontend/src/pages/HomePage.tsx \
+        frontend/src/components/ArticleCard.tsx \
+        frontend/src/components/Skeleton.tsx \
+        frontend/package.json \
+        frontend/package-lock.json \
+        frontend/dist/ \
+        HANDOFF.md
+
+# 삭제된 파일
+git rm -f frontend/src/lib/tds-bypass.ts 2>/dev/null || true
+
+git commit -m "feat(frontend): @toss/tds-mobile 의존 제거 + 자체 OverlayProvider/Badge/Skeleton 도입"
+git push team main:feat/joochan        # ← Railway 자동 재배포 트리거
+```

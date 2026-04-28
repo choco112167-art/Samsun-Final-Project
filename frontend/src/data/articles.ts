@@ -12,21 +12,17 @@
  */
 
 import type { ApiArticle } from './api';
+import { normalizeCategory } from './categories';
 
-// ─────────────────────────────────────────────
-// 카테고리 타입
-// CategoryPage, HomePage 필터에서 사용하는 고정된 카테고리 목록
-// ─────────────────────────────────────────────
-
-export type Category =
-  | 'AI 연구'
-  | 'AI 심층'
-  | 'AI 스타트업'
-  | 'AI 비즈니스'
-  | 'AI 윤리'
-  | 'AI 커뮤니티'
-  | '테크 전반'
-  | '기타';
+// 카테고리 분류 체계는 ./categories.ts 가 단일 진실 소스다.
+// 기존 import 호환을 위해 여기서도 재내보낸다.
+export {
+  CATEGORIES,
+  normalizeCategory,
+  filterByCategory,
+  getRawCategoriesFor,
+} from './categories';
+export type { Interest, Category } from './categories';
 
 
 // ─────────────────────────────────────────────
@@ -94,38 +90,7 @@ const SOURCE_COLORS: Record<string, string> = {
 const DEFAULT_COLOR = '#6B7280';
 
 
-// ─────────────────────────────────────────────
-// 카테고리 정규화 맵
-// 백엔드 DB의 category 값을 UI의 Category 타입으로 변환한다
-// DB에는 'AI/스타트업' 같은 값이 들어있지만,
-// UI 필터는 'AI 모델' 같은 더 간결한 이름을 사용
-// ─────────────────────────────────────────────
-
-const CATEGORY_MAP: Record<string, Category> = {
-  // DB 실제 카테고리
-  'AI 연구':      'AI 연구',
-  'AI 심층':      'AI 심층',
-  'AI/스타트업':  'AI 스타트업',
-  'AI 비즈니스':  'AI 비즈니스',
-  'AI 윤리':      'AI 윤리',
-  'AI 커뮤니티':  'AI 커뮤니티',
-  '테크 전반':    '테크 전반',
-  // 구버전 호환
-  'AI 스타트업':  'AI 스타트업',
-  'AI 연구·심층': 'AI 심층',
-  'AI 윤리·정책': 'AI 윤리',
-  'LLM':          'AI 연구',
-  'LLM 커뮤니티': 'AI 커뮤니티',
-  'AI/반도체':    'AI 연구',
-  'AI 일반':      'AI 연구',
-  'AI 제품':      'AI 비즈니스',
-};
-
-// 맵에 없는 카테고리는 '기타'로 처리
-function normalizeCategory(raw: string): Category {
-  return CATEGORY_MAP[raw] ?? '기타';
-}
-
+// 카테고리 정규화는 ./categories.ts 의 normalizeCategory 가 담당한다.
 
 // ─────────────────────────────────────────────
 // timeAgo 포맷터
