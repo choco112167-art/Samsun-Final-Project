@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Badge } from '@toss/tds-mobile';
+import { Badge } from './Badge';
 import type { Article } from '../data/articles';
 import type { ApiArticle } from '../data/api';
 

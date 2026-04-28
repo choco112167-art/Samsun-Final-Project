@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { BottomSheet, useToast } from '@toss/tds-mobile';
+import { BottomSheet, useToast } from '../components/Overlay';
 import ArticleCard from '../components/ArticleCard';
 import { FeedSkeleton } from '../components/Skeleton';
 import { fetchArticles } from '../data/api';
