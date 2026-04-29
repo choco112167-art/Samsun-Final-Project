@@ -4,19 +4,21 @@ import type { Article } from '../data/articles';
 import DetailPage from './DetailPage';
 import type { BookmarkHook } from '../hooks/useBookmarks';
 
+type HotArticle = Article & { view_count?: number };
+
 interface Props {
   bm: BookmarkHook;
   userId?: string;
   onArticleClick?: (urlHash: string) => void;
 }
 
-export default function HotPage({ bm, userId, onArticleClick }: Props) {
+export default function HotPage({ bm, userId: _userId, onArticleClick }: Props) {
   const today = new Date();
   const [year, setYear]   = useState(today.getFullYear());
   const [month, setMonth] = useState(today.getMonth());
   const [day, setDay]     = useState(today.getDate());
   const [detail, setDetail] = useState<Article | null>(null);
-  const [tops, setTops]     = useState<Article[]>([]);
+  const [tops, setTops]     = useState<HotArticle[]>([]);
   const [loading, setLoading] = useState(false);
 
   const daysInMonth = new Date(year, month + 1, 0).getDate();
@@ -122,8 +124,8 @@ export default function HotPage({ bm, userId, onArticleClick }: Props) {
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
             {tops.map((article, i) => {
               const rankColor = i === 0 ? '#B45309' : i === 1 ? '#6B7280' : i === 2 ? '#92400E' : 'var(--color-text-tertiary)';
-              const viewCount = (article as any).view_count ?? 0;
-              const maxV = ((tops[0] as any).view_count ?? 1) || 1;
+              const viewCount = article.view_count ?? 0;
+              const maxV = (tops[0]?.view_count ?? 1) || 1;
               return (
                 <button
                   key={article.urlHash}

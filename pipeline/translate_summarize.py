@@ -10,17 +10,26 @@ Usage:
   python pipeline/translate_summarize.py
 """
 
+import logging
+import os
 import re
 import sys
+
 import ollama
 from dotenv import load_dotenv
-import os
-from pipeline.utils import preprocess_text, extract_json as _extract_json_util
+
+from pipeline.utils import extract_json as _extract_json_util
+
+_REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+if _REPO_ROOT not in sys.path:
+    sys.path.insert(0, _REPO_ROOT)
 
 if sys.stdout.encoding != "utf-8":
     sys.stdout.reconfigure(encoding="utf-8")
 
 load_dotenv()
+
+logger = logging.getLogger(__name__)
 
 MODEL = os.getenv("MODEL_NAME", "qwen3.5:4b")
 
@@ -157,7 +166,17 @@ def translate_and_summarize(
         }
     """
     system = SYSTEM_PROMPT.format(n=summary_sentences)
-    user_content = f"[TITLE]\n{title}\n\n[BODY]\n{text}" if title else text
+
+    neo_block = ""
+    try:
+        from backend.neologism_rag import build_neologism_glossary_prompt_section
+
+        neo_block = build_neologism_glossary_prompt_section(title or "", text or "")
+    except Exception as exc:
+        logger.debug("신조어 용어집 생략: %s", exc)
+
+    base_user = f"[TITLE]\n{title}\n\n[BODY]\n{text}" if title else text
+    user_content = f"{neo_block}\n\n{base_user}" if neo_block else base_user
 
     for attempt in range(3):   # 최대 3회 시도
         response = ollama.chat(

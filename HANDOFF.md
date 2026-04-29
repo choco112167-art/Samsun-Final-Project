@@ -468,6 +468,431 @@ CategoryPage 는 limit=100 으로 충분한 풀을 가져와 동일 버그가 �
 
 ---
 
+### ✅ 15. 실제 `generate_dummy.py` 데이터 팩트체크 — 카테고리 매핑 로직 전면 재작성
+
+**작성일: 2026-04-28**
+
+#### 증상
+
+이슈 #14 의 매핑 수정 이후에도 여전히 다음 양상이 지속:
+- 로컬 메인/카테고리 모두에서 `AI 심층`, `AI 비즈니스`, `AI 윤리`, `AI 커뮤니티`, `테크 전반` 탭이 0건
+- Railway 메인은 `전체`/`테크전반` 만 나오고 나머지는 0건
+
+#### 원인 — 잘못된 가정으로 만든 매핑 표
+
+이슈 #14 의 `categories.ts` 는 **운영 RSS 크롤러(`collect/crawler/rss_crawler.py`) 의 라벨만 보고** 작성됐다. 그러나 실제 로컬 Supabase 에 데이터를 적재하는 스크립트는 별도로 `generate_dummy.py` 가 있고, 이 스크립트가 사용하는 라벨은 RSS 크롤러와 **완전히 다른 변종** 이었다.
+
+DB 상태를 가정하지 말고 **실제 데이터 출처 파일을 직접 grep** 했어야 했다.
+
+#### 데이터 전수 조사 결과 (`grep -n '"category"' generate_dummy.py`)
+
+```
+generate_dummy.py — 로컬 Supabase 적재 더미 (총 27건)
+  'AI 연구'        × 6
+  'AI 스타트업'    × 5
+  '테크전반'       × 5    ← 공백 없음 (RSS 의 '테크 전반' 과 다름)
+  '윤리-정책'      × 5    ← 대시 + AI 접두어 없음
+  '반도체'         × 6    ← 접두어 없음. 내용은 모두 HBM/2nm/수출통제 등 심층 분석
+
+collect/crawler/rss_crawler.py — 운영 크롤링 (11종)
+  'AI/스타트업', 'AI 심층', '테크 전반', 'AI 비즈니스', 'AI 윤리',
+  'AI/반도체', 'AI 심층/기술', 'AI 커뮤니티', 'LLM 커뮤니티',
+  'AI 연구', 'AI 제품'
+
+poc_cycle.py
+  'AI'  (legacy shorthand)
+```
+
+이슈 #14 매핑은 위 16종 중 **`'테크전반'`, `'윤리-정책'`, `'반도체'`** 3종을 인지하지 못했다. canonical 정규화로 `'테크전반' → '테크 전반'` 만 우연히 매칭됐고, `'윤리-정책'` 은 키워드 폴백으로 `AI 윤리` 에 우회 매칭, **`'반도체'` 는 키워드 폴백마저 통과하지 못해 `'기타'` 로 사일런트 누락**.
+
+#### 해결 — 실제 데이터 기반 1:1 explicit 매핑 전면 재작성
+
+`frontend/src/data/categories.ts` `EXACT_MAP` 을 **실측 16종 라벨 전체** 로 다시 작성:
+
+| Raw 라벨 | UI 카테고리 | 출처 |
+|---|---|---|
+| `AI 연구` | `AI 연구` | dummy + RSS |
+| `AI 스타트업` | `AI 스타트업` | dummy |
+| `테크전반` | `테크 전반` | dummy (공백 누락 변종) |
+| `윤리-정책` | `AI 윤리` | dummy (대시 변종) |
+| `반도체` | `AI 심층` | dummy — 6건 모두 반도체 심층 분석 → `AI 심층` |
+| `AI/스타트업` | `AI 스타트업` | RSS (TechCrunch) |
+| `AI 심층` | `AI 심층` | RSS (MIT TR) |
+| `테크 전반` | `테크 전반` | RSS (The Verge) |
+| `AI 비즈니스` | `AI 비즈니스` | RSS (VentureBeat) |
+| `AI 윤리` | `AI 윤리` | RSS (The Guardian) |
+| `AI/반도체` | `AI 심층` | RSS (IEEE Spectrum) — `반도체` 와 일관성 |
+| `AI 심층/기술` | `AI 심층` | RSS (The Decoder) |
+| `AI 커뮤니티` | `AI 커뮤니티` | RSS (HN AI) |
+| `LLM 커뮤니티` | `AI 커뮤니티` | RSS (HN LLM) |
+| `AI 제품` | `AI 비즈니스` | RSS (Product Hunt) |
+| `AI` | `AI 연구` | poc_cycle.py |
+
+추가 안전장치:
+- 위험한 부분 키워드 폴백을 제거 — 등록되지 않은 라벨은 `'기타'` 로 떨어지면서 콘솔에 경고를 남기도록 변경 (사일런트 누락 → 즉시 발견)
+- `import.meta.env.DEV` 가드로 묶인 **자가 검증 블록** 삽입 — 16개 등록 라벨이 하나라도 `'기타'` 로 떨어지면 dev 부팅 시 즉시 throw. production 빌드에서는 자동 tree-shake.
+- canonical 정규화는 보조 폴백으로만 유지 (공백/구분자 변종 안전망)
+
+#### 자가 검증 결과
+
+`node` 로 매핑 함수를 16개 라벨 전수에 대해 시뮬레이션:
+```
+[generate_dummy.py]   AI 연구 / AI 스타트업 / 테크전반 / 윤리-정책 / 반도체  → 5/5 통과
+[rss_crawler.py]      AI/스타트업 / AI 심층 / 테크 전반 / AI 비즈니스 / AI 윤리
+                      / AI/반도체 / AI 심층/기술 / AI 커뮤니티 / LLM 커뮤니티 / AI 제품  → 10/10 통과
+[poc_cycle.py]        AI  → 1/1 통과
+총 16개 라벨 — 통과 16 / 누락 0
+```
+
+production 빌드(`dist/assets/index-Bwe8IwIZ.js`, 219.45 kB / gzip 64.38 kB) 안에 매핑 표가 그대로 박힘:
+```
+"테크 전반","윤리-정책":"AI 윤리",반도체:"AI 심층","AI/스타트업":"AI 스타트업",
+"AI 비즈니스":"AI 비즈니스","AI 윤리":"AI 윤리","AI/반도체":"AI 심층","AI 심층/기술":"AI 심층"
+```
+
+#### 페이지 측 점검 (Step 3)
+
+`HomePage.tsx`, `CategoryPage.tsx` 모두 `import { CATEGORIES, filterByCategory } from '../data/articles'` 경유로 동일 매핑 사용. `articles.ts` 는 이슈 #14 시점부터 `categories.ts` 로 재내보내기만 수행. ✓
+
+#### 잠재적 후속 이슈 (별도 작업 필요)
+
+- `frontend/src/pages/MyFeedPage.tsx:16` 에 `id: 'AI·반도체'` 라는 Interest 가 정의돼 있는데, 이 값은 `Interest` 타입(`CATEGORIES` 의 7종) 에 없는 라벨. vite 가 type-check 를 안 해서 빌드는 통과하나 사용자가 이 옵션을 고르면 어떤 기사와도 매칭되지 않는다. 추후 `'AI 심층'` 등으로 통합하거나 옵션 자체 제거 권장.
+
+---
+
+### ✅ 16. 로컬 개발 환경 mock 폴백 — 백엔드 없이도 7개 카테고리 탭 동작
+
+**작성일: 2026-04-28**
+
+#### 증상
+
+이슈 #15 의 매핑 정합성 작업 이후에도, 로컬 환경에서는 여전히 `AI 비즈니스` / `AI 커뮤니티` 탭이 0건. 운영(Railway) 에서는 모든 탭 정상 렌더링.
+
+#### 원인 — 매핑 버그가 아니라 **로컬 DB 데이터 부재**
+
+확인 사항:
+- `frontend/src/data/articles.ts`: 더미 기사 배열이 일체 없음 (타입 + 어댑터 + 카테고리 재내보내기뿐).
+- `frontend/src/data/api.ts` `request()`: fetch 실패 시 `ApiError` 를 throw 할 뿐 mock 으로 폴백하지 않음.
+
+따라서 로컬에서도 결국 backend → Supabase 를 거쳐 데이터를 가져옴. 그런데 로컬 DB 를 채우는 `generate_dummy.py` 는 5종 카테고리 (`AI 연구 / AI 스타트업 / 테크전반 / 윤리-정책 / 반도체`) 만 적재하므로 raw 라벨로 보면 **`AI 비즈니스` 와 `AI 커뮤니티` 가 0건**. 매핑 버그가 아니라 데이터 부재.
+
+운영 DB 는 RSS 크롤러가 `AI 비즈니스`(VentureBeat), `AI 커뮤니티`(Hacker News) 등을 모두 적재하므로 정상.
+
+#### 해결 — DEV 전용 mock 폴백 신설
+
+운영 동작은 그대로 두되, 로컬 `npm run dev` 중 백엔드(`localhost:8000`) 가 떠있지 않거나 fetch 가 실패할 때 7개 UI 카테고리 전부 채워지는 가짜 응답을 돌려준다.
+
+**1) `frontend/src/data/mock-articles.ts` 신설**
+
+- 10건 `ApiArticle` mock 정의. 각 mock 의 raw `category` 값은 운영 RSS 크롤러와 로컬 dummy 양쪽에 등장하는 **실제 라벨 그대로** 사용 → `categories.ts` 의 정규화 파이프라인을 우회하지 않고 매핑까지 함께 검증.
+- 7개 UI 탭 분포:
+
+| UI 탭 | mock 수 | raw 라벨 (변종 검증) |
+|---|---|---|
+| AI 연구 | 1 | `AI 연구` |
+| AI 심층 | 2 | `AI 심층/기술`, `AI/반도체` |
+| AI 스타트업 | 1 | `AI/스타트업` |
+| AI 비즈니스 | 2 | `AI 비즈니스`, `AI 제품` |
+| AI 윤리 | 1 | `AI 윤리` |
+| AI 커뮤니티 | 2 | `AI 커뮤니티`, `LLM 커뮤니티` |
+| 테크 전반 | 1 | `테크 전반` |
+
+- `getMockFallback(path, method)` — `/articles`, `/article/:hash`, `/hot/:date`, `/feed/:userId`, `/search`, `/health`, `/onboarding`, `/absence-summary/:userId`, `/article-view`, `/user-seen`, `/logs/view`, `/translate`, `/summarize` 까지 폴백 매처 제공.
+
+**2) `frontend/src/data/api.ts` `request()` 에 폴백 주입**
+
+```ts
+try {
+  const res = await fetch(...);
+  if (!res.ok) throw new ApiError(...);
+  return await res.json();
+} catch (err) {
+  if (import.meta.env.DEV) {
+    const mod = await import('./mock-articles');
+    const fallback = mod.getMockFallback<T>(path, method);
+    if (fallback !== undefined) {
+      console.warn(`[api] dev mock fallback for ${method} ${path} (...)`);
+      return fallback;
+    }
+  }
+  throw err;
+}
+```
+
+- `import.meta.env.DEV` 가드 + **동적** `import('./mock-articles')` → vite 가 production 빌드에서 dead branch 로 인식해 mock 모듈/데이터 모두 자동 tree-shake.
+- 운영(`samsun-production.up.railway.app`) 의 fetch 실패는 종전대로 그대로 throw → 가짜 데이터로 가리지 않음.
+
+#### 검증 결과
+
+production 빌드 (`dist/assets/index-DC9w794w.js`, 219.52 kB / gzip 64.40 kB):
+- mock 식별자 (`MOCK_API_ARTICLES`, `getMockFallback`, `mock-articles`, `mock0001…`, `mock-dev`, `technologyreview.com/mock`) → **0건** ✓ tree-shake 정상.
+- 번들 크기 변동 없음 (이슈 #15 시점 219.45 kB → 219.52 kB, 7B 차이는 변수 이름 hash 변동).
+
+dev 모드 시뮬레이션 (`node` 로 매핑 + 분포 재현):
+```
+mock 10건 → 7개 UI 탭 분포
+  ✓ AI 연구 1 / AI 심층 2 / AI 스타트업 1 / AI 비즈니스 2 / AI 윤리 1 / AI 커뮤니티 2 / 테크 전반 1
+'기타' 누락: 0건
+```
+
+#### 사용 시나리오
+
+```bash
+# 백엔드 없이 프론트엔드만 띄워서 UI 확인
+cd frontend
+npm run dev
+# → http://localhost:5173 접속
+# → 콘솔에 "[api] dev mock fallback for GET /articles?limit=100 (Failed to fetch)" 경고 표시
+# → 7개 카테고리 탭 모두 mock 기사로 채워짐 (AI 비즈니스 2건, AI 커뮤니티 2건 포함)
+```
+
+백엔드를 켜면(`uvicorn backend.main:app`) 자동으로 실제 Supabase 응답을 사용하고 폴백은 비활성.
+
+---
+
+### ✅ 17. 로컬 백엔드를 운영 Supabase 와 동일 인스턴스로 정렬 — Dev/Prod DB 일치화
+
+#### 증상
+
+이슈 #15 ~ #16 작업 완료 후에도 **로컬에서 `AI 비즈니스` / `AI 커뮤니티` 탭이 0건**. 운영(Railway) 은 모든 탭 정상.
+
+#### 진단 — 추측이 아닌 직접 비교
+
+`curl` 로 두 백엔드의 실제 응답을 같은 쿼리로 떠서 비교:
+
+```bash
+curl -s 'https://samsun-production.up.railway.app/articles?limit=200' \
+  | python3 -c "import sys,json,collections; data=json.load(sys.stdin); \
+    print(collections.Counter(a['category'] for a in data))"
+# Counter({'AI 심층': 33, 'AI 스타트업': 28, 'AI 비즈니스': 24, 'AI 커뮤니티': 22, ...})
+
+curl -s 'http://localhost:8000/articles?limit=200' | python3 -c "..."
+# Counter({'AI 연구': 6, '반도체': 6, 'AI 스타트업': 5, '테크전반': 4, '윤리-정책': 5})
+```
+
+→ 라벨이 다른 게 아니라 **연결된 Supabase 인스턴스 자체가 다름**. `/debug` 응답으로 확정:
+
+```jsonc
+// Railway 운영
+{ "supabase_url": "https://srdvlalyucbokdwfkmcf.supabase.co/rest/v1", "sdk_ok": true }
+// 로컬 (이전)
+{ "supabase_url": "https://bqndyrrufvzvkwyjajaf.supabase.co/rest/v1", "sdk_ok": true }
+```
+
+로컬은 개인 dev DB(`bqndyrrufvzvkwyjajaf`) 를 보고 있었고, 이 DB 는 `generate_dummy.py` 가 적재한 5개 카테고리 26건만 보유 → `AI 비즈니스` / `AI 커뮤니티` 가 데이터 자체 부재. 운영 RSS 크롤러가 적재한 `srdvlalyucbokdwfkmcf` 와는 별개 인스턴스.
+
+#### 해결책 — 로컬도 팀 공용 Supabase 만 바라보게 통합
+
+운영 DB 를 그대로 보면 라벨/스키마/데이터 분포가 자동으로 맞춰지므로 **mock 보다 fix 비용이 압도적으로 낮음**. dev DB 는 점진 폐기.
+
+**(1) 백엔드 클라이언트 초기화 — 하드코딩 0건 재확인**
+
+`backend/main.py:35-36`, `backend/save_articles.py:26-29`, `backend/rag.py:8-11` 모두 이미 `os.getenv()` / `pydantic-settings` 만 사용. URL/KEY 가 코드에 박혀있는 곳 **없음** → 추가 수정 불필요.
+
+```python
+# backend/main.py
+_sb_key = os.getenv("SUPABASE_KEY") or _settings.supabase_anon_key
+sb = create_client(_settings.supabase_url, _sb_key)   # 둘 다 .env 출신
+```
+
+**(2) `backend/.env` 갱신** — URL 을 운영과 동일하게, KEY 는 placeholder 로 안전 전환
+
+```env
+SUPABASE_URL=https://srdvlalyucbokdwfkmcf.supabase.co
+SUPABASE_KEY=<PASTE_TEAM_ANON_KEY_HERE>
+```
+
+> 이전 dev DB anon key 는 JWT payload `ref=bqndyrrufvzvkwyjajaf` 로 운영 인스턴스에 통하지 않으므로 placeholder 로 명시 교체. 옛 값은 같은 파일 하단에 주석으로 보존(rollback 용이성).
+
+**(3) 단일 `.env` 운영 정책**
+
+`.env.example` 은 두지 않고 `backend/.env` 하나만 유지한다 (사용자 결정, 2026-04-28). `.gitignore` 의 `.env` 패턴이 매칭하여 커밋에서 제외되므로 키 노출 위험 없음. 신규 머신 셋업 시 본 HANDOFF §9 의 템플릿을 그대로 작성하면 된다.
+
+---
+
+### ✅ 18. 프로젝트 대청소 (Tech Debt Cleanup) + 팀원 온보딩 README
+
+이슈 #17 로 로컬·운영 DB 가 일치한 직후, 팀원 온보딩 비용을 낮추기 위해 **데드 코드와 미사용 의존성을 일괄 제거**하고 README 최상단에 1분 셋업 가이드를 신설했다.
+
+#### 18-A. 삭제 대상 — import 그래프 전수 추적 결과
+
+| 경로 | 카테고리 | 삭제 사유 |
+|------|---------|----------|
+| `frontend/src/lib/` | 빈 디렉토리 | 이슈 #11 의 `tds-bypass.ts` 제거 후 잔재 |
+| `frontend/src/assets/samsun_dark.png` | 미사용 자산 | grep 결과 import 0건 (`samsun_blue.png` 만 OnboardingPage 가 사용) |
+| `backend/rag.py` | 데드 코드 | 어디서도 import 안 됨. `sentence_transformers` 의존(미설치). `embedder.py` + `main.py` 의 `/onboarding` `/feed` 가 동일 책임을 이미 수행 |
+| `generate_dummy.py` | 폐기됨 | 이슈 #17 에서 dev DB 인스턴스(`bqndyrrufvzvkwyjajaf`) 을 운영(`srdvlalyucbokdwfkmcf`) 으로 흡수하면서 사용처 사라짐 |
+| `poc_cycle.py` | 데드 POC | 1-cycle 검증용. Windows venv 경로 주석(`C:/tmp/venv312/...`) 흔적. 운영 흐름 외 |
+| `reembed.py` | 1회성 마이그레이션 | title+translation 합산 임베딩 적용 시 1회 실행 후 폐기. 필요 시 git history 에서 복원 가능 |
+| `pipeline/summarizer.py` | 통합으로 대체 | `translate_summarize.py` 가 단일 LLM 호출로 번역+요약 동시 수행하므로 분리 호출 불필요 |
+| `pipeline/translator.py` | 통합으로 대체 | 동일 |
+| `requirements.txt` 의 `httpx>=0.25.0` | 미사용 deps | 코드베이스 전체 `httpx` 매칭 0건 |
+| `__pycache__/` 전체 | 캐시 | gitignore 등재. 로컬 디스크에서만 정리 |
+| `.DS_Store` (root + backend) | macOS 잡파일 | gitignore 등재. 로컬 디스크에서만 정리 |
+| `node_modules/.vite/` (root) | 잘못된 위치 캐시 | 한 번 root 에서 `npx vite` 실행한 흔적. frontend/node_modules 와 별개 |
+
+총 **9개 파일 + 1 디렉토리 + 1 deps 라인** 제거. 약 70 KB 소스 + 13 KB 자산 절약.
+
+#### 18-B. 보존 결정 — `eval/` 디렉토리
+
+`eval/run_eval.py`, `run_eval_base.py`, `select_testset.py` 는 `eval.metrics.bleu_comet`, `term_preservation`, `geval` 을 import 하나 해당 `eval/metrics/` 서브 디렉토리는 현재 레포에 부재(이동우/김민규 작업 영역, `_zip_mingyu` 에는 존재). 즉 현재로선 **import 가 깨진 상태**. 그러나:
+
+- mingyu 의 통합 작업물에서 metrics 서브 디렉토리가 추후 머지될 예정
+- joochan 브랜치에서 임의 삭제 시 머지 충돌 위험
+
+따라서 **삭제하지 않고 보존**. 추후 통합 시점에 metrics 디렉토리를 함께 가져오면 자연 복구.
+
+#### 18-C. 프론트엔드 회귀 검증
+
+```
+$ npx vite build
+✓ 34 modules transformed.
+dist/index.html                         0.46 kB │ gzip:  0.31 kB
+dist/assets/samsun_blue-MJU1RrsD.png   11.59 kB
+dist/assets/index-DzXTPHLn.css          1.22 kB │ gzip:  0.57 kB
+dist/assets/index-DC9w794w.js         219.52 kB │ gzip: 64.40 kB
+✓ built in 87ms
+```
+
+→ 모듈 수, 번들 크기 모두 청소 직전과 **동일** (이슈 #16 이후 219.52 kB / 64.40 kB gzip). 삭제된 파일이 실제로 어떤 모듈도 참조하지 않았음을 빌드 결과가 확증. `samsun_dark.png` 도 dist 에 미포함 ✓
+
+#### 18-D. README 1분 셋업 가이드 신설
+
+루트 `README.md` 최상단(team 소개 직전)에 **`🚀 팀원용 1분 로컬 셋팅 가이드`** 섹션 추가. 6 단계 체크리스트:
+
+1. `git clone` + `git switch feat/joochan`
+2. `cd frontend && npm install`
+3. `python3.11 -m venv .venv && pip install -r requirements.txt`
+4. **🔑 `backend/.env` 의 `<PASTE_TEAM_ANON_KEY_HERE>` placeholder 만 치환**
+5. 터미널 2개 실행 (`uvicorn` + `npm run dev`)
+6. 첫 검증 체크리스트 (탭 7개 모두 데이터 채워지는지 확인)
+
+신규 합류자가 README 만 따라가면 운영 DB 와 동일한 데이터로 5분 내 로컬 셋업 완료.
+
+#### 18-E. `pipeline/README.md` 개정
+
+`translator.py`/`summarizer.py` 행 제거. 대신 "둘 중 한 단계만 호출하고 싶다면 `translate_and_summarize(...)` 의 출력 필드 중 필요한 것만 사용" 문구 추가.
+
+> **이슈 #19 후속 정정**: `summarizer.py` 는 향후 부재중 요약 알림 파이프라인 백본으로 사용 예정이라 복구. 본 README 도 해당 행 다시 추가.
+
+---
+
+### ✅ 19. 오삭제된 향후-피처 뼈대 복구 (RAG · 요약 알림 · 다크모드)
+
+이슈 #18 의 청소 작업이 **현재 import 그래프** 만 보고 진행되었기 때문에, 코드는 지금 끊어져 있지만 **로드맵 상 뼈대**로 의도적으로 보존되던 파일들이 휩쓸려 삭제됐다. 사용자 지적으로 곧바로 git checkout 으로 복원.
+
+#### 19-A. 복구 대상 (3 파일 + 1 deps)
+
+| 경로 | 복구 사유 | 향후 용도 |
+|------|----------|----------|
+| `backend/rag.py` | RAG 추천 기능의 뼈대 | `save_user(user_id, interest_tags)` / `get_feed(user_id)` 는 sentence-transformers + pgvector RPC `match_articles` 기반 추천 진입점. `embedder.py` (cloud Ollama) 와 모델/실행 환경이 달라 별도 보존 필요. 추후 로컬 GPU 환경에서 sentence-transformers 모드로 토글할 때 그대로 사용. |
+| `pipeline/summarizer.py` | 부재중 요약 알림 파이프라인 백본 | `/feed` 의 `AbsenceSummaryResponse` 가 가리키는 "오랜만에 접속 시 부재 중 기사 요약" 기능에서 **번역은 이미 끝났고 요약만 새로 뽑는 케이스** 가 발생. `translate_and_summarize` 는 번역 단계까지 다시 돌리므로 비용/지연 측면에서 분리된 `summarize(text)` 가 필요. |
+| `frontend/src/assets/samsun_dark.png` | 다크모드 전용 로고 | 향후 `prefers-color-scheme: dark` 시점에 라이트 로고(`samsun_blue.png`) 와 교체. |
+| `requirements.txt` 의 `httpx>=0.25.0` | RSS 비동기/병렬 fetch | `feedparser` 는 동기 호출만 지원. RSS 소스 십수 개를 병렬로 긁을 때 `httpx.AsyncClient` 가 필수. 향후 `collect/crawler/rss_crawler.py` 비동기 리팩토링 예정. |
+
+`pipeline/translator.py` 는 사용자 명시적으로 복구 대상에서 제외 → 영구 삭제 유지(`translate_and_summarize` 의 번역 출력으로 100% 대체 가능).
+
+#### 19-B. 다크모드 로고 와이어업
+
+복구된 `samsun_dark.png` 가 그냥 디스크에만 있으면 또 의미 없는 파일이 되므로 **즉시 컴포넌트 트리에 연결**.
+
+**신규 훅 — `frontend/src/hooks/useColorScheme.ts`**
+
+`useSyncExternalStore` 로 `window.matchMedia('(prefers-color-scheme: dark)')` 를 구독해 `'light' | 'dark'` 를 반환. SSR-safe (`window` 부재 시 `'light'` 폴백), Safari < 14 fallback (`addListener`/`removeListener`) 까지 처리.
+
+```ts
+export function useColorScheme(): ColorScheme {
+  return useSyncExternalStore(subscribe, getSnapshot, getServerSnapshot);
+}
+```
+
+**`OnboardingPage.tsx` 변경**
+
+```diff
+- import logoImg from '../assets/samsun_blue.png';
++ import logoLight from '../assets/samsun_blue.png';
++ import logoDark  from '../assets/samsun_dark.png';
++ import { useColorScheme } from '../hooks/useColorScheme';
+
+  export default function OnboardingPage({ onDone }: Props) {
++   const colorScheme = useColorScheme();
++   const logoImg     = colorScheme === 'dark' ? logoDark : logoLight;
+```
+
+OS/브라우저 설정 변경 시(System Preferences → Appearance → Dark) 즉시 리렌더되어 로고가 바뀐다. 글로벌 토글 UI 가 추후 도입돼도 동일 훅을 사용해 일관 동작.
+
+> 현재 프로젝트 CSS 는 라이트 단일 테마(`global.css` `:root` 에 `--color-*` 정의) 라서 로고만 다크로 바뀌고 배경은 그대로다. 풀 다크모드 전환은 `:root[data-theme=dark]` 변수 세트 추가 시점에 한 번에.
+
+#### 19-C. 빌드 회귀 검증
+
+```
+$ npx vite build
+✓ 36 modules transformed.
+dist/assets/samsun_blue-MJU1RrsD.png   11.59 kB
+dist/assets/samsun_dark-np9JJz7C.png   13.15 kB
+dist/assets/index-40w0uAmp.js         220.05 kB │ gzip: 64.58 kB
+✓ built in 77ms
+```
+
+- 모듈 수: 34 → **36** (+`useColorScheme.ts`, `samsun_dark.png` 자산 모듈)
+- JS 번들: 219.52 kB → **220.05 kB** (+530 B, 훅 + 조건부 분기)
+- gzip: 64.40 kB → **64.58 kB** (+180 B)
+- `samsun_dark.png` dist 포함 ✓ (13.15 kB)
+- ESLint/TypeScript 0 에러
+
+#### 19-D. 교훈 — Cleanup 의 안전 기준 갱신
+
+이슈 #18 시점 기준 ("import 그래프 추적해서 미사용이면 삭제") 는 **로드맵 의도** 를 반영하지 못해 위험. 향후 청소 시 다음 체크리스트 추가:
+
+1. 파일 헤더 주석에 `"향후 X 기능을 위한 뼈대"` 같은 의도 표기 있는지
+2. `HANDOFF.md` 의 "남은 작업/TODO" 섹션이 해당 파일을 참조하는지
+3. 팀원에게 1회 확인 (특히 mingyu/sangjoon 작업 영역)
+
+위 3 중 하나라도 yes 면 **삭제 보류** + HANDOFF 에 "현재 미사용이지만 X 용 뼈대" 명시.
+
+#### 운용 노트
+
+- **`generate_dummy.py` 는 더 이상 호출하지 않는다.** 이번 작업에서 임시로 추가했던 'AI 비즈니스' / 'AI 커뮤니티' 더미 항목들은 모두 원복(이슈 #15 시점 형태로 복구). 추후 dev DB 분기를 살리려면 별도 워크플로 필요.
+- 로컬 mock 폴백(이슈 #16) 은 **여전히 유효**. 백엔드를 끄고 프론트만 띄우면 `getMockFallback` 이 동작.
+- `/debug` 엔드포인트는 운영에서 supabase URL 60자까지 노출 → 임시 도구이므로 다음 푸시 사이클에 제거 예정 (남은 작업 §6 으로 이관).
+
+#### 적용 절차 (사용자 측에서 1회 수행)
+
+```bash
+# 1. Railway 대시보드에서 SUPABASE_KEY value 복사
+#    https://railway.app/project/<id>/service/<id>/variables
+
+# 2. 로컬 .env 의 placeholder 를 실제 값으로 치환
+sed -i '' 's|<PASTE_TEAM_ANON_KEY_HERE>|<여기에_복사한_KEY>|' backend/.env
+
+# 3. 백엔드 기동 후 /debug 로 검증
+uvicorn backend.main:app --reload --port 8000
+curl -s http://localhost:8000/debug | python3 -m json.tool
+# → "supabase_url": "https://srdvlalyucbokdwfkmcf.supabase.co...", "sdk_ok": true 확인
+
+# 4. 카테고리 분포 비교
+curl -s 'http://localhost:8000/articles?limit=200' \
+  | python3 -c "import sys,json,collections;print(collections.Counter(a['category'] for a in json.load(sys.stdin)))"
+# → Railway 와 동일 분포면 OK
+```
+
+---
+
+### ✅ 20. feat/leesangjun RSS 파이프라인 + user_logs 기반 RAG 통합 (2026-04-29)
+
+소스 ZIP: `temp_features/sangjun/Samsun-Final-Project-feat-leesangjun.zip` — **`collect/`·`backend/` 만 분석** (내장 `apps-in-toss-examples-main/` 등 대용량 예제는 이식 제외).
+
+| 영역 | 내용 |
+|------|------|
+| RSS | `collect/crawler/rss_crawler.py` 에 **Lemmy Technology** 피드 추가 (`title_only=True`). 문서 주석에 Reddit 정책·hnrss 반영. |
+| RAG | `backend/rag.py` 재작성: sangjun 의 **user_logs → 최근 카테고리/키워드 → 각 기사 `reason`** 로직 이식. 임베딩은 Ollama `mxbai` 등 **별도 모델이 아니라** 기사 DB와 차원을 맞추기 위해 **`backend.embedder.make_embedding` 단일 경로**. Supabase 는 `main.py` 와 동일하게 `Settings` + `SUPABASE_URL` / `SUPABASE_KEY`. |
+| API | `POST /onboarding` → `rag.upsert_user_profile`; `GET /feed/{user_id}` → `rag.build_personalized_feed`. 피드 JSON 기사 객체에 `reason` 필드 포함. |
+| 프론트 | `api.ts` 의 `FeedArticle` / `fetchFeed` 반환 타입에 `reason?: string` (UI 노출은 후속 가능). |
+
+검증: `set -a && . backend/.env && set +a && PYTHONPATH=. uvicorn backend.main:app` → `/health` 200, 미등록 유저 `GET /feed/...` 404.
+
+---
+
 ## 5. 현재 `main.tsx` 상태 (이슈 #13 이후)
 
 ```tsx
@@ -649,6 +1074,13 @@ git fetch team && git log --oneline team/feat/joochan..HEAD
 
 ### `frontend/.env` (빌드 시 baked-in)
 - `VITE_API_BASE_URL=https://samsun-production.up.railway.app`
+
+### `backend/.env` (로컬 개발용 — 운영 Railway 와 동일 인스턴스)
+- `.gitignore` 등재 → **커밋되지 않음**. 새 머신에 클론 시 직접 작성해야 함.
+- `SUPABASE_URL=https://srdvlalyucbokdwfkmcf.supabase.co`  ← Railway 와 동일
+- `SUPABASE_KEY=<팀_anon_key>`  ← Railway 대시보드 → Variables 에서 복사
+- `MODE=cloud` / `OPENROUTER_API_KEY=sk-or-...`
+- 자세한 운영은 §4 이슈 #17 참조
 
 ---
 

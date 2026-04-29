@@ -34,3 +34,6 @@ dist/
 
 # Claude Code
 .claude/
+
+# MCP 개인 설정 (각자 로컬 머신 경로 포함)
+.mcp.json

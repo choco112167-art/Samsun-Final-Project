@@ -8,3 +8,7 @@ requests>=2.32.0
 httpx>=0.25.0
 feedparser>=6.0.11
 ollama>=0.3.0
+
+# 팩트체크 파이프라인 (fact_checker/) — Gemini + OpenRouter fallback
+google-genai>=1.0.0
+openai>=1.0.0

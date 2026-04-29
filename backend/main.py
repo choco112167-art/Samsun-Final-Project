@@ -4,12 +4,17 @@ backend/main.py — 삼선뉴스 FastAPI 서버
 프론트(토스 미니앱)에서 오는 모든 HTTP 요청을 받아서
 Supabase DB 조회, pgvector RAG 추천, 검색 결과를 돌려주는 백엔드 서버.
 Railway에 배포되어 24시간 돌아간다.
+
+API 응답 형식 (안정성):
+  프론트엔드·클라이언트가 필드별로 파싱하므로 엔드포인트마다 바디 형태가 다릅니다.
+  (예: GET /articles → 배열 직접, GET /feed → {"feed": [...]}, POST 성공 → {"message": ...})
+  호환성 유지를 위해 일괄 {"status","data"} 래핑은 하지 않습니다.
 """
 
 import logging
 import os
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
@@ -17,6 +22,7 @@ from pydantic import BaseModel
 from supabase import create_client
 
 from backend.embedder import make_embedding, expand_query
+from backend.rag import build_personalized_feed, upsert_user_profile
 from config import get_settings
 
 _settings = get_settings()
@@ -58,15 +64,7 @@ def onboarding(req: OnboardingRequest):
     관심 주제를 벡터로 변환해서 users 테이블에 저장한다.
     이 벡터가 나중에 /feed에서 기사 추천의 기준이 된다.
     """
-    combined = " ".join(req.interest_tags)
-    user_vector = make_embedding(combined)
-
-    sb.table("users").upsert({
-        "user_id": req.user_id,
-        "interest_tags": req.interest_tags,
-        "user_vector": user_vector,
-    }).execute()
-
+    upsert_user_profile(sb, req.user_id, req.interest_tags)
     return {"message": "온보딩 완료!"}
 
 
@@ -74,20 +72,15 @@ def onboarding(req: OnboardingRequest):
 def get_feed(user_id: str, top_k: int = 10):
     """
     유저 맞춤 기사 피드를 돌려준다. RAG 추천의 핵심 엔드포인트.
+
+    feat/leesangjun: user_logs 기반 최근 읽기 패턴으로 각 기사에 `reason`(추천 이유) 추가.
     """
-    result = sb.table("users").select("user_vector").eq("user_id", user_id).execute()
+    try:
+        articles, _interest_tags = build_personalized_feed(sb, user_id, top_k=top_k)
+    except LookupError:
+        raise HTTPException(status_code=404, detail="유저 없음") from None
 
-    if not result.data:
-        raise HTTPException(status_code=404, detail="유저 없음")
-
-    user_vector = result.data[0]["user_vector"]
-
-    result = sb.rpc("match_articles", {
-        "query_vector": user_vector,
-        "top_k": top_k,
-    }).execute()
-
-    return {"feed": result.data}
+    return {"feed": articles}
 
 
 @app.get("/articles")
@@ -240,7 +233,7 @@ def debug():
     sdk_ok = False
     sdk_error = ""
     try:
-        result = sb.table("articles").select("url_hash").limit(1).execute()
+        sb.table("articles").select("url_hash").limit(1).execute()
         sdk_ok = True
     except Exception as e:
         sdk_error = str(e)[:300]
@@ -302,6 +295,26 @@ def record_article_view(user_id: str, url_hash: str):
     return {"message": "조회 기록 완료"}
 
 
+# ── 부재 기간 놓친 기사 요약 알림 (feat/soomin) ─────────────────
+@app.get("/absence-summary/{user_id}")
+@app.get("/api/users/{user_id}/absence-summary")
+def absence_summary(user_id: str, top_k: int = 5):
+    """마지막 접속 이후 맞춤 유사 기사 목록 (경로 두 종류 동일 처리)."""
+    from backend.absence_summary import compute_absence_summary
+
+    return compute_absence_summary(sb, user_id, top_k=top_k)
+
+
+@app.post("/user-seen/{user_id}")
+@app.post("/api/users/{user_id}/seen")
+def user_seen(user_id: str):
+    """부재 알림 확인 시 last_seen_at 갱신."""
+    from backend.absence_summary import mark_user_seen
+
+    mark_user_seen(sb, user_id)
+    return {"message": "last_seen_at 업데이트 완료"}
+
+
 # ── 날짜별 핫이슈 ─────────────────────────────────────────────
 @app.get("/hot/{date}")
 def get_hot(date: str, top_k: int = 5):
@@ -355,7 +368,10 @@ def get_hot(date: str, top_k: int = 5):
 
 # ── 로그 직접 기록 (대안 엔드포인트) ────────────────────────
 @app.post("/logs/view")
-def log_view(user_id: str, url_hash: str):
+def log_view(
+    user_id: str = Query(..., description="유저 ID"),
+    url_hash: str = Query(..., description="기사 url_hash"),
+):
     sb.table("user_logs").insert({
         "user_id": user_id,
         "url_hash": url_hash,

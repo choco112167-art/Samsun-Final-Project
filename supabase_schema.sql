@@ -295,3 +295,22 @@ LANGUAGE sql STABLE AS $$
     ORDER BY f.rrf_score DESC
     LIMIT top_k;
 $$;
+
+
+-- ============================================================
+-- user_logs  (조회 기록 테이블 — HotPage 조회수 집계용)
+-- ============================================================
+CREATE TABLE IF NOT EXISTS user_logs (
+    id          BIGSERIAL PRIMARY KEY,
+    user_id     TEXT        NOT NULL,
+    url_hash    TEXT        NOT NULL REFERENCES articles(url_hash) ON DELETE CASCADE,
+    action      TEXT        NOT NULL DEFAULT 'view',
+    created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_user_logs_url_hash   ON user_logs(url_hash);
+CREATE INDEX IF NOT EXISTS idx_user_logs_user_id    ON user_logs(user_id);
+CREATE INDEX IF NOT EXISTS idx_user_logs_created_at ON user_logs(created_at);
+
+-- RLS 비활성화 (백엔드 서버에서만 INSERT/SELECT)
+ALTER TABLE user_logs DISABLE ROW LEVEL SECURITY;

@@ -9,8 +9,14 @@ Supabase에 저장하는 모든 함수를 담당한다.
   neologisms   — AI 신조어 캐시 + 파인튜닝 말뭉치
   fact_checks  — 팩트체크 세부 기록 (MVP 이후)
   eval_results — 파인튜닝 전/후 평가 지표 (4주차~)
+
+팩트체크 (feat/dongwoo `fact_checker/` 통합):
+  - 저장 직전 `fact_checker.pipeline.run_fact_check` 로 라벨·신뢰도 산출
+  - `pipeline.translate_summarize`(Ollama qwen3.5:4b)와 별도 경로 — 충돌 없음
+  - 비활성: 환경변수 FACTCHECK_ENABLED=0
 """
 
+import logging
 import os
 import hashlib   # URL을 MD5 해시로 변환할 때 사용
 from datetime import datetime, timezone   # 수집 시각 자동 기록에 사용
@@ -21,6 +27,47 @@ from supabase import create_client
 from backend.embedder import make_embedding
 
 load_dotenv()
+
+logger = logging.getLogger(__name__)
+
+
+def _truthy_env(name: str, default: str = "1") -> bool:
+    return os.getenv(name, default).strip().lower() not in ("0", "false", "no", "off")
+
+
+FACTCHECK_ENABLED = _truthy_env("FACTCHECK_ENABLED", "1")
+
+
+def _factcheck_skip_flags() -> tuple[bool, bool]:
+    """(skip_fc_api, skip_llm) — 키가 없으면 해당 단계 생략."""
+    skip_fc = not (os.getenv("GOOGLE_FC_API_KEY") or "").strip()
+    has_llm = bool(
+        (os.getenv("GEMINI_API_KEY") or "").strip()
+        or (os.getenv("GOOGLE_API_KEY") or "").strip()
+        or (os.getenv("OPENROUTER_API_KEY") or "").strip(),
+    )
+    return skip_fc, not has_llm
+
+
+def normalize_fact_label(label: str | None) -> str:
+    """articles.fact_checks.verdict 및 articles.fact_label 용 (FACT|RUMOR|UNVERIFIED|DROP)."""
+    u = (label or "").strip().upper().replace(" ", "_")
+    if u == "FACT":
+        return "FACT"
+    if u == "RUMOR":
+        return "RUMOR"
+    if u == "DROP":
+        return "DROP"
+    # NEEDS_VERIFICATION 등 중간 상태 → DB 스키마에 맞춤
+    return "UNVERIFIED"
+
+
+def infer_fact_label_from_fc(score: float, fc_label: str) -> str:
+    """팩트체크 파이프라인 라벨 우선, 없으면 점수 기반 infer_fact_label 과 동일 규칙."""
+    normalized = normalize_fact_label(fc_label)
+    if normalized in ("FACT", "RUMOR", "UNVERIFIED"):
+        return normalized
+    return infer_fact_label(score)
 
 # Supabase 클라이언트 생성
 sb = create_client(
@@ -78,46 +125,107 @@ def save_articles(articles: list[dict]) -> int:
                   translation, summary_formal, summary_casual
 
     Returns:
-        저장된 기사 건수
+        저장된 기사 건수 (팩트체크 결과 DROP 인 기사는 건너뜀)
+
+    팩트체크:
+        FACTCHECK_ENABLED=1 (기본) 일 때 `fact_checker.pipeline.run_fact_check` 실행.
+        번역 파이프라인(Ollama qwen3.5:4b)과는 별도 프로세스이며 모델 충돌 없음.
     """
-    batch = []   # 한 번에 저장할 데이터를 모아두는 리스트
+    run_fact_check = None
+    skip_fc: bool = True
+    skip_llm: bool = True
+    if FACTCHECK_ENABLED:
+        skip_fc, skip_llm = _factcheck_skip_flags()
+        try:
+            from fact_checker.pipeline import run_fact_check as _rfc
+
+            run_fact_check = _rfc
+        except ImportError as err:
+            logger.warning("FACTCHECK_ENABLED 이지만 fact_checker 로드 실패: %s", err)
+
+    batch: list[dict] = []
+    pending_fact_checks: list[tuple[str, list[dict]]] = []
 
     for a in articles:
-        url   = a.get("url", "")
-        score = a.get("credibility_score") or 0.5   # 신뢰도가 없으면 기본값 0.5
-
-        # 한국어 제목 + 한국어 번역 합산 임베딩
+        url = a.get("url", "") or ""
         title_en = a.get("title_en", "") or ""
-        combined = f"{a.get('title', '')}\n{a.get('translation', '')}"
+        title_fc = (title_en or a.get("title") or "").strip()
+        content_fc = (a.get("content") or "")[:120000]
+        source = a.get("source") or ""
+        source_type = (a.get("source_type") or "media")
+
+        score_out = float(a.get("credibility_score") or 0.5)
+        label_out = infer_fact_label(score_out)
+        claims_payload: list[dict] = []
+
+        if FACTCHECK_ENABLED and run_fact_check is not None:
+            try:
+                fc = run_fact_check(
+                    title_fc,
+                    content_fc,
+                    source,
+                    source_type,
+                    skip_fc_api=skip_fc,
+                    skip_llm=skip_llm,
+                )
+                if fc.fact_label == "DROP":
+                    logger.info("[FactCheck] DROP 스킵: source=%s title=%s...", source, title_fc[:72])
+                    continue
+
+                score_out = float(fc.confidence)
+                label_out = infer_fact_label_from_fc(score_out, fc.fact_label)
+                raw = fc.to_claim_dict(title_fc)
+                claims_payload.append({
+                    "claim": raw.get("claim"),
+                    "verdict": normalize_fact_label(raw.get("verdict")),
+                    "confidence": raw.get("confidence"),
+                    "evidence_url": raw.get("evidence_url"),
+                    "reasoning_trace": raw.get("reasoning_trace"),
+                    "verification_method": raw.get("verification_method"),
+                })
+            except Exception:
+                logger.exception("[FactCheck] 예외 — 크롤러 신뢰도(contradiction_score) 유지")
+
+        title_ko = a.get("title") or title_en
+        combined = f"{title_ko}\n{a.get('translation', '')}"
         embedding = make_embedding(combined)
 
-        # DB에 저장할 한 기사의 데이터를 딕셔너리로 조립
+        uh = make_url_hash(url)
+
         batch.append({
-            "url_hash":          make_url_hash(url),     # PK: URL의 MD5 해시
-            "url":               url,                    # 원문 URL
-            "title":             a.get("title") or title_en,  # 한국어 제목, 없으면 영어 fallback
+            "url_hash":          uh,
+            "url":               url,
+            "title":             title_ko or title_en,
             "title_en":          title_en,
-            "source":            a.get("source"),        # 언론사명
-            "source_type":       a.get("source_type"),   # 'media' | 'community'
-            "category":          a.get("category"),      # 카테고리
-            "country":           a.get("country"),       # 발행 국가
-            "keywords":          a.get("keywords") or [], # 키워드 배열
-            "published_at":      a.get("published_at"),  # 기사 발행 시각 (ISO 8601)
-            "collected_at":      datetime.now(timezone.utc).isoformat(),  # 수집 시각 자동 기록
-            "content":           a.get("content"),       # 영문 원문 본문
-            "credibility_score": score,                  # 신뢰도 점수
-            "fact_label":        infer_fact_label(score),# 자동 분류된 팩트 라벨
-            "translation":       a.get("translation"),   # 한국어 번역 전문
-            "summary_formal":    a.get("summary_formal"),# 격식체 3줄 요약
-            "summary_casual":    a.get("summary_casual"),# 일상체 3줄 요약
-            "embedding":         embedding,              # 임베딩 벡터 (RAG에 사용)
+            "source":            a.get("source"),
+            "source_type":       a.get("source_type"),
+            "category":          a.get("category"),
+            "country":           a.get("country"),
+            "keywords":          a.get("keywords") or [],
+            "published_at":      a.get("published_at"),
+            "collected_at":      datetime.now(timezone.utc).isoformat(),
+            "content":           a.get("content"),
+            "credibility_score": score_out,
+            "fact_label":        label_out,
+            "translation":       a.get("translation"),
+            "summary_formal":    a.get("summary_formal"),
+            "summary_casual":    a.get("summary_casual"),
+            "embedding":         embedding,
         })
 
-    # upsert: url_hash가 이미 있으면 업데이트, 없으면 새로 추가
-    # on_conflict="url_hash": PK 충돌 시 기존 행을 덮어쓴다
-    # 크론탭이 1시간마다 같은 기사를 수집해도 중복 저장되지 않음
+        if claims_payload:
+            pending_fact_checks.append((uh, claims_payload))
+
+    if not batch:
+        print("[DB] articles 저장 0건 (전부 DROP 또는 입력 없음)")
+        return 0
+
     sb.table("articles").upsert(batch, on_conflict="url_hash").execute()
     print(f"[DB] articles {len(batch)}건 저장 완료")
+
+    for url_hash, claims in pending_fact_checks:
+        save_fact_checks(url_hash, claims)
+
     return len(batch)
 
 
@@ -173,29 +281,48 @@ def save_fact_checks(url_hash: str, claims: list[dict]) -> None:
     어떤 주장이 왜 RUMOR인지 상세 내용은 이 테이블에 저장된다.
     기사 1개에 여러 주장이 있을 수 있어서 1:N 구조.
 
+    동일 기사 재저장 시 기존 팩트체크 행을 삭제한 뒤 다시 삽입한다.
+
     Args:
         url_hash: 해당 기사의 url_hash
         claims:   팩트체크 결과 리스트
                   각 항목: {"claim": "...", "verdict": "FACT", "confidence": 0.92}
     """
     if not claims:
-        return   # 검증할 주장이 없으면 바로 종료
+        return
 
-    # 각 주장을 DB에 저장할 형식으로 변환
-    rows = [
-        {
-            "article_url_hash": url_hash,                    # 어느 기사의 팩트체크인지
-            "claim":            c.get("claim"),              # 검증 대상 주장 원문
-            "verdict":          c.get("verdict", "UNVERIFIED"), # 팩트체크 결과
-            "confidence":       c.get("confidence"),         # AI 확신도 (0.0~1.0)
-            "evidence_url":     c.get("evidence_url"),       # 근거 URL (MVP: None)
-            "checker_type":     "ai",                        # MVP에서는 항상 AI 검증
+    sb.table("fact_checks").delete().eq("article_url_hash", url_hash).execute()
+
+    rows: list[dict] = []
+    for c in claims:
+        verdict = normalize_fact_label(c.get("verdict", "UNVERIFIED"))
+        if verdict == "DROP":
+            continue
+
+        claim_body = (c.get("claim") or "").strip()
+        rt = c.get("reasoning_trace")
+        vm = c.get("verification_method")
+        extras: list[str] = []
+        if vm:
+            extras.append(f"[{vm}]")
+        if rt:
+            extras.append(str(rt)[:2000])
+        if extras:
+            claim_body = (claim_body + "\n\n" + "\n".join(extras)).strip()[:14000]
+
+        rows.append({
+            "article_url_hash": url_hash,
+            "claim":            claim_body,
+            "verdict":          verdict,
+            "confidence":       float(c.get("confidence") if c.get("confidence") is not None else 0.5),
+            "evidence_url":     c.get("evidence_url"),
+            "checker_type":     "ai",
             "checked_at":       datetime.now(timezone.utc).isoformat(),
-        }
-        for c in claims
-    ]
-    sb.table("fact_checks").insert(rows).execute()
-    print(f"[DB] fact_checks {len(rows)}건 저장 완료")
+        })
+
+    if rows:
+        sb.table("fact_checks").insert(rows).execute()
+        print(f"[DB] fact_checks {len(rows)}건 저장 완료")
 
 
 # ── eval_results 테이블 저장 ──────────────────────────────────

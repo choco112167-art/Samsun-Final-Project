@@ -28,10 +28,11 @@
 
 | 파일 | 설명 |
 |------|------|
-| **`translate_summarize.py`** | **권장 메인**: 위 네 필드를 단일 호출로 생성. 문장 수 추정(`estimate_sentences`)·재시도·배치 헬퍼·CLI 샘플 포함. |
-| `translator.py` | 번역만 필요할 때 (격식체/일상체 `style` 선택). |
-| `summarizer.py` | 한국어 3줄 불릿 요약(별도 프롬프트). |
+| **`translate_summarize.py`** | **권장 메인**: 번역 + 격식체/일상체 요약 + (선택) 한국어 제목을 단일 LLM 호출로 생성. 문장 수 추정(`estimate_sentences`)·재시도·배치 헬퍼·CLI 샘플 포함. |
+| `summarizer.py` | 한국어 3줄 불릿 요약(별도 프롬프트). 향후 **부재중 요약 알림 파이프라인** 등 요약 단독 호출이 필요할 때 사용. |
 | `utils.py` | 전처리·JSON 필드 추출 등 공통 유틸. |
+
+> 과거에 함께 있던 `translator.py` 는 `translate_summarize.py` 의 번역 출력으로 완전 대체되어 2026-04-28 청소(이슈 #18) 때 삭제했습니다. `summarizer.py` 는 향후 알림 파이프라인 백본으로 보존(이슈 #19 복구).
 
 운영 API(`backend/main.py`의 `/translate`, `/summarize`)는 `backend/llm_dispatch.py`를 통해 `translate_summarize.translate_and_summarize`를 호출합니다.
 

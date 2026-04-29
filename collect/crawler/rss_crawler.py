@@ -12,15 +12,20 @@
 - 날짜 형식: strftime으로 마이크로초 제거
 - 필터링된 기사 수 로그 출력
 - source_type 필드 추가: 'media' | 'community'
-- 커뮤니티 피드 추가: Reddit, Product Hunt
+- 커뮤니티 피드: Lemmy / Hacker News(hnrss) / Product Hunt — Reddit 제거 (feat/leesangjun)
+- Hacker News RSS: hnrss.org 키워드 필터 활용
+- Lemmy 링크 포스트: 외부 URL의 og:description 으로 본문 보완 (feat/leesangjun)
 """
 
 import feedparser
-import time
+import html
 import logging
 import re
+import time
 from html.parser import HTMLParser
 from datetime import datetime
+
+import requests
 
 from models.article import Article
 from models.credibility import is_ai_related, score_article
@@ -30,6 +35,7 @@ logger = logging.getLogger(__name__)
 
 class _HTMLStripper(HTMLParser):
     """HTML 태그 제거용 파서."""
+
     def __init__(self):
         super().__init__()
         self.reset()
@@ -45,50 +51,69 @@ class _HTMLStripper(HTMLParser):
 def clean_html(text: str) -> str:
     """
     HTML 태그 / 엔티티 제거 후 순수 텍스트 반환.
-    Reddit의 <div class="md">, <table> 등 모두 처리.
     외부 라이브러리 불필요 (표준 html.parser 사용).
     """
     if not text:
         return ""
-    # HTML 태그 파싱으로 텍스트 추출
     stripper = _HTMLStripper()
     try:
         stripper.feed(text)
         text = stripper.get_data()
     except Exception:
-        # 파싱 실패 시 정규식으로 폴백
         text = re.sub(r"<[^>]+>", " ", text)
 
-    # HTML 엔티티 처리 (&#32; &amp; &lt; 등)
-    import html
     text = html.unescape(text)
-
-    # 연속 공백 / 줄바꿈 정리
     text = re.sub(r"\s+", " ", text).strip()
     return text
 
 
-def clean_reddit_content(text: str) -> str:
+# ──────────────────────────────────────────
+# Lemmy 링크 포스트 Open Graph 미리보기
+# - Lemmy RSS summary 의 외부 URL 에서 og:description 추출
+# ──────────────────────────────────────────
+
+
+def _extract_lemmy_external_url(rss_summary: str) -> str | None:
     """
-    Reddit RSS 메타 텍스트 / 이미지 URL 제거.
-    - preview.redd.it 이미지 URL 제거 (앞/중간 모두)
-    - 'submitted by /u/...' 이후 전부 제거
-    - [link], [comments] 잔여 제거
-    - 정리 후 50자 미만이면 본문 없는 게시글로 판단 → 빈 문자열
+    Lemmy RSS summary 에서 외부 링크 URL 추출.
+    Lemmy 도메인 / 유저 / 커뮤니티 URL 은 제외.
     """
-    if not text:
+    clean = clean_html(rss_summary)
+    matches = re.findall(r"https?://\S+", clean)
+    for url in matches:
+        if not re.search(r"lemmy|/u/|/c/", url):
+            return url.rstrip(").,]}\"'")
+    return None
+
+
+def fetch_og_description(external_url: str) -> str:
+    """외부 URL 의 Open Graph og:description 추출."""
+    try:
+        resp = requests.get(
+            external_url,
+            timeout=5,
+            headers={"User-Agent": "samsun-rss-crawler/1.0"},
+        )
+        resp.raise_for_status()
+
+        og_match = re.search(
+            r'<meta[^>]+property=["\']og:description["\'][^>]+content=["\'](.*?)["\']',
+            resp.text,
+            re.IGNORECASE | re.DOTALL,
+        )
+        if not og_match:
+            og_match = re.search(
+                r'<meta[^>]+content=["\'](.*?)["\'][^>]+property=["\']og:description["\']',
+                resp.text,
+                re.IGNORECASE | re.DOTALL,
+            )
+
+        if og_match:
+            return html.unescape(og_match.group(1).strip())
         return ""
-    # preview.redd.it 썸네일 URL만 제거 (Reddit 자동 생성 이미지, 본문과 무관)
-    # 일반 URL은 본문 내용일 수 있으므로 유지
-    cleaned = re.sub(r"https?://preview\.redd\.it/\S+", "", text).strip()
-    # 'submitted by /u/...' 이후 전부 제거
-    cleaned = re.sub(r"\s*submitted by\s+/u/\S+.*$", "", cleaned, flags=re.DOTALL).strip()
-    # [link], [comments] 잔여 제거
-    cleaned = re.sub(r"\[link\]|\[comments\]", "", cleaned).strip()
-    # 연속 공백 정리
-    cleaned = re.sub(r"\s+", " ", cleaned).strip()
-    # 50자 미만이면 본문 없는 링크 공유 게시글 → 빈 문자열
-    return cleaned if len(cleaned) >= 50 else ""
+    except Exception as e:
+        logger.warning("[OG] 미리보기 조회 실패 (%s): %s", external_url[:80], e)
+        return ""
 
 
 # ──────────────────────────────────────────
@@ -143,7 +168,7 @@ MEDIA_FEEDS = [
         "ai_only": True,
         "source_type": "media",
     },
-       {
+    {
         "source": "The Decoder",
         "url": "https://the-decoder.com/feed/",
         "country": "독일/글로벌",
@@ -155,10 +180,21 @@ MEDIA_FEEDS = [
 
 # ──────────────────────────────────────────
 # 커뮤니티 RSS 피드
-# Reddit: .rss 붙이면 RSS 제공
-# Product Hunt: 공식 RSS 제공
+# - Lemmy: title_only + 선택 시 og:description 본문 보완 (use_og)
+# - Hacker News: hnrss.org 키워드 필터 (ai_only=True)
+# - Product Hunt: 공식 RSS
 # ──────────────────────────────────────────
 COMMUNITY_FEEDS = [
+    {
+        "source": "Lemmy Technology",
+        "url": "https://lemmy.world/feeds/c/technology.xml",
+        "country": "글로벌",
+        "category": "AI 커뮤니티",
+        "ai_only": False,
+        "title_only": True,
+        "source_type": "community",
+        "use_og": True,
+    },
     {
         "source": "Hacker News AI",
         "url": "https://hnrss.org/newest?q=artificial+intelligence",
@@ -183,7 +219,6 @@ COMMUNITY_FEEDS = [
         "ai_only": True,
         "source_type": "community",
     },
-
     {
         "source": "Product Hunt",
         "url": "https://www.producthunt.com/feed",
@@ -211,18 +246,19 @@ def parse_published_at(entry) -> str:
 
 def parse_feed(feed_info: dict) -> list[Article]:
     """RSS 피드 파싱 → AI 관련 기사만 필터링하여 반환."""
-    source   = feed_info["source"]
-    ai_only  = feed_info.get("ai_only", False)
-    logger.info(f"[{source}] 피드 수집 중...")
+    source = feed_info["source"]
+    ai_only = feed_info.get("ai_only", False)
+    use_og = feed_info.get("use_og", False)
+    logger.info("[%s] 피드 수집 중...", source)
 
     try:
         feed = feedparser.parse(feed_info["url"])
     except Exception as e:
-        logger.error(f"[{source}] 피드 파싱 실패: {e}")
+        logger.error("[%s] 피드 파싱 실패: %s", source, e)
         return []
 
     if feed.bozo and not feed.entries:
-        logger.warning(f"[{source}] 피드 이상 (bozo): {feed.bozo_exception}")
+        logger.warning("[%s] 피드 이상 (bozo): %s", source, feed.bozo_exception)
         return []
 
     articles = []
@@ -230,7 +266,7 @@ def parse_feed(feed_info: dict) -> list[Article]:
 
     for entry in feed.entries:
         title = entry.get("title", "").strip()
-        link  = entry.get("link", "").strip()
+        link = entry.get("link", "").strip()
         if not title or not link:
             continue
 
@@ -242,15 +278,18 @@ def parse_feed(feed_info: dict) -> list[Article]:
 
         content = clean_html(raw_content)
 
-        # 커뮤니티 소스별 후처리
-        source_url = feed_info["url"].lower()
-        if "reddit" in source_url:
-            content = clean_reddit_content(content)
-            # 본문 없는 링크 공유 게시글은 수집 제외
-            if not content:
+        if use_og:
+            external_url = _extract_lemmy_external_url(raw_content)
+            if external_url:
+                og_desc = fetch_og_description(external_url)
+                if og_desc:
+                    content = og_desc
+                else:
+                    filtered_out += 1
+                    continue
+            else:
                 filtered_out += 1
                 continue
-
 
         article = Article(
             title=title,
@@ -263,7 +302,6 @@ def parse_feed(feed_info: dict) -> list[Article]:
             source_type=feed_info.get("source_type", "media"),
         )
 
-        # AI 전용 피드가 아니면 키워드 필터 적용
         title_only = feed_info.get("title_only", False)
         if not ai_only and not is_ai_related(article, title_only=title_only):
             filtered_out += 1
@@ -273,8 +311,8 @@ def parse_feed(feed_info: dict) -> list[Article]:
         articles.append(article)
 
     if filtered_out:
-        logger.info(f"[{source}] AI 무관 기사 {filtered_out}건 필터링됨")
-    logger.info(f"[{source}] {len(articles)}건 수집 완료")
+        logger.info("[%s] 필터링으로 제외 %s건", source, filtered_out)
+    logger.info("[%s] %s건 수집 완료", source, len(articles))
     return articles
 
 
