@@ -355,6 +355,7 @@ export function getMockFallback<T>(
     const q = (params.get('q') ?? '').toLowerCase();
     const matches = q
       ? MOCK_API_ARTICLES.filter(a =>
+          (a.title_ko ?? '').toLowerCase().includes(q) ||
           a.title.toLowerCase().includes(q) ||
           a.translation.toLowerCase().includes(q) ||
           a.keywords.some(k => k.toLowerCase().includes(q)),

@@ -36,8 +36,11 @@ export interface Article {
   urlHash:     string;   // DB의 url_hash (PK) — 상세 페이지 이동 시 사용
   url:         string;   // 원문 URL — "원문 보기" 버튼에 사용
 
-  // 메타 정보
+  // 메타 정보 (표시 제목은 articleDisplayTitle() 사용 권장)
+  /** 영문 RSS 헤드라인 등 원본 제목 */
   title:       string;
+  /** 한국어 번역 제목 — 없으면 UI 에서 title 로 폴백 */
+  titleKo?:    string;
   source:      string;
   sourceColor: string;   // 소스별 브랜드 컬러 — 카드 왼쪽 액센트 바, 점 색상
   sourceType:  'media' | 'community';
@@ -98,6 +101,13 @@ const DEFAULT_COLOR = '#6B7280';
 // ArticleCard의 우측 상단 시간 표시에 사용
 // ─────────────────────────────────────────────
 
+/** 목록·상세에서 보여 줄 한국어 우선 제목 (레거시 행 폴백 포함). */
+export function articleDisplayTitle(a: Pick<Article, 'title' | 'titleKo'>): string {
+  const ko = (a.titleKo ?? '').trim();
+  return ko || (a.title ?? '').trim();
+}
+
+
 export function formatTimeAgo(publishedAt: string): string {
   if (!publishedAt) return '';
 
@@ -133,6 +143,7 @@ export function toArticle(api: ApiArticle): Article {
     url:         api.url,
 
     title:       api.title,
+    titleKo:     api.title_ko ?? '',
     source:      api.source,
     sourceColor: SOURCE_COLORS[api.source] ?? DEFAULT_COLOR,  // 소스명으로 컬러 주입
     sourceType:  api.source_type ?? 'media',

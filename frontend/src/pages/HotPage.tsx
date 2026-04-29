@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { fetchHot } from '../data/api';
-import type { Article } from '../data/articles';
+import { articleDisplayTitle, type Article } from '../data/articles';
 import DetailPage from './DetailPage';
 import type { BookmarkHook } from '../hooks/useBookmarks';
 
@@ -145,7 +145,7 @@ export default function HotPage({ bm, userId: _userId, onArticleClick }: Props) 
                       <div style={{ width: 5, height: 5, borderRadius: '50%', background: article.sourceColor ?? '#6B7280' }} />
                       <span style={{ fontSize: 11, color: 'var(--color-text-secondary)' }}>{article.source}</span>
                     </div>
-                    <p style={{ fontSize: 13, fontWeight: 600, color: 'var(--color-text-primary)', lineHeight: 1.4, marginBottom: 8 }}>{article.title}</p>
+                    <p style={{ fontSize: 13, fontWeight: 600, color: 'var(--color-text-primary)', lineHeight: 1.4, marginBottom: 8 }}>{articleDisplayTitle(article)}</p>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                       <div style={{ flex: 1, height: 3, borderRadius: 2, background: 'var(--color-border)', overflow: 'hidden' }}>
                         <div style={{ height: '100%', borderRadius: 2, background: 'var(--color-primary)', width: viewCount > 0 ? `${(viewCount / maxV) * 100}%` : '20%' }} />
@@ -158,7 +158,7 @@ export default function HotPage({ bm, userId: _userId, onArticleClick }: Props) 
                   {/* 북마크 — div로 감싸서 button 중첩 방지 */}
                   <div
                     role="button"
-                    onClick={e => { e.stopPropagation(); bm.toggle(article.urlHash); }}
+                    onClick={e => { e.stopPropagation(); bm.toggle(article.urlHash, article); }}
                     style={{
                       width: 28, height: 28, borderRadius: 6, flexShrink: 0,
                       background: bm.isBookmarked(article.urlHash) ? '#FEF3C7' : 'var(--color-surface-secondary)',

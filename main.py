@@ -40,8 +40,8 @@ def run_pipeline(max_articles: int = 10, summary_sentences: int = 3):
                 "source_type":       article.source_type,
                 "category":          article.category,
                 "country":           article.country,
-                "title":             processed.get("title", ""),   # 한국어 제목
-                "title_en":          article.title,                # 영어 원제
+                "title":             article.title,
+                "title_ko":          processed.get("title") or "",
                 "url":               article.url,
                 "credibility_score": article.credibility_score,
                 "published_at":      article.published_at,
@@ -53,7 +53,7 @@ def run_pipeline(max_articles: int = 10, summary_sentences: int = 3):
             }
             results.append(result)
 
-            print(f"  [한국어 제목]  {result['title'][:50]}")
+            print(f"  [한국어 제목]  {(result['title_ko'] or '')[:50]}")
             print(f"  [번역]        {result['translation'][:50]}...")
             print(f"  [격식체 요약]  {result['summary_formal'][:50]}...")
             print(f"  [일상체 요약]  {result['summary_casual'][:50]}...")
@@ -61,8 +61,8 @@ def run_pipeline(max_articles: int = 10, summary_sentences: int = 3):
             print(f"  오류: {e}")
             results.append({
                 "source":         article.source,
-                "title":          "",
-                "title_en":       article.title,
+                "title":          article.title,
+                "title_ko":       "",
                 "url":            article.url,
                 "translation":    "",
                 "summary_formal": "",

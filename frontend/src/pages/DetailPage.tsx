@@ -1,5 +1,5 @@
 import { useState, useRef } from 'react';
-import type { Article } from '../data/articles';
+import { articleDisplayTitle, type Article } from '../data/articles';
 import { translateArticle, summarizeArticle } from '../data/api';
 
 interface Props {
@@ -106,7 +106,7 @@ export default function DetailPage({ article, bookmarked, onBookmark, onBack }: 
   };
 
   const handleShare = () => {
-    navigator.clipboard.writeText(`[${article.source}] ${article.title}\n\n格식체 요약: ${summaryFormal}\n\n일상체 요약: ${summaryCasual}`).catch(() => {});
+    navigator.clipboard.writeText(`[${article.source}] ${articleDisplayTitle(article)}\n\n格식체 요약: ${summaryFormal}\n\n일상체 요약: ${summaryCasual}`).catch(() => {});
     setCopiedShare(true); setTimeout(() => setCopiedShare(false), 2000);
   };
   const handleCopyFormal = () => {
@@ -166,7 +166,7 @@ export default function DetailPage({ article, bookmarked, onBookmark, onBack }: 
             {article.category}
           </span>
           <h1 style={{ fontSize: 19, fontWeight: 700, lineHeight: 1.42, letterSpacing: '-0.03em', color: 'var(--color-text-primary)' }}>
-            {article.title}
+            {articleDisplayTitle(article)}
           </h1>
         </div>
 

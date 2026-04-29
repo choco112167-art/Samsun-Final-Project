@@ -17,8 +17,8 @@ CREATE TABLE IF NOT EXISTS articles (
     url               TEXT NOT NULL,         -- 원문 URL
 
     -- 기사 메타데이터 (RSS 수집 · 이상준)
-    title             TEXT,                  -- 기사 제목 (한국어, LLM 번역)
-    title_en          TEXT,                  -- 기사 제목 (영문 원제)
+    title             TEXT,                  -- 원문 영어 헤드라인 (RSS)
+    title_ko          TEXT,                  -- 번역 한국어 제목 (nullable)
     source            VARCHAR,               -- 언론사명 (TechCrunch, MIT TR 등)
     source_type       VARCHAR,               -- 'media' | 'community'
     category          VARCHAR,               -- 'AI' | 'Tech' 등. Hybrid Search 필터
@@ -43,7 +43,7 @@ CREATE TABLE IF NOT EXISTS articles (
     summary_casual    TEXT,                  -- 일상체 3줄 요약 (~해요)
 
     -- RAG (강주찬)
-    embedding         VECTOR(1024)           -- title(한국어) + translation 합산 임베딩
+    embedding         VECTOR(1024)           -- title_ko + translation 합산 임베딩
 );
 
 -- 인덱스
@@ -152,6 +152,7 @@ RETURNS TABLE (
     url_hash          VARCHAR,
     url               TEXT,
     title             TEXT,
+    title_ko          TEXT,
     source            VARCHAR,
     category          VARCHAR,
     keywords          TEXT[],
@@ -168,6 +169,7 @@ LANGUAGE sql STABLE AS $$
         a.url_hash,
         a.url,
         a.title,
+        a.title_ko,
         a.source,
         a.category,
         a.keywords,
@@ -207,7 +209,7 @@ RETURNS TABLE (
     url_hash          VARCHAR,
     url               TEXT,
     title             TEXT,
-    title_en          TEXT,
+    title_ko          TEXT,
     source            VARCHAR,
     source_type       VARCHAR,
     category          VARCHAR,
@@ -243,22 +245,25 @@ LANGUAGE sql STABLE AS $$
             a.url_hash,
             ROW_NUMBER() OVER (
                 ORDER BY GREATEST(
-                    word_similarity(query_text, a.title),
+                    word_similarity(query_text, COALESCE(a.title, '')),
+                    word_similarity(query_text, COALESCE(a.title_ko, '')),
                     word_similarity(query_text, COALESCE(a.translation, '')),
-                    similarity(query_text, a.title)
+                    similarity(query_text, COALESCE(a.title, '')),
+                    similarity(query_text, COALESCE(a.title_ko, ''))
                 ) DESC
             ) AS rnk
         FROM articles a
         WHERE
             (filter_category IS NULL OR a.category = filter_category)
             AND (
-                a.title          ILIKE '%' || query_text || '%'
-                OR a.title_en     ILIKE '%' || query_text || '%'
-                OR a.translation  ILIKE '%' || query_text || '%'
-                OR word_similarity(query_text, a.title)                          > 0.15
-                OR word_similarity(query_text, COALESCE(a.title_en, ''))         > 0.15
-                OR word_similarity(query_text, COALESCE(a.translation, ''))      > 0.15
-                OR similarity(query_text, a.title)                               > 0.10
+                COALESCE(a.title, '')       ILIKE '%' || query_text || '%'
+                OR COALESCE(a.title_ko, '') ILIKE '%' || query_text || '%'
+                OR COALESCE(a.translation, '') ILIKE '%' || query_text || '%'
+                OR word_similarity(query_text, COALESCE(a.title, ''))                  > 0.15
+                OR word_similarity(query_text, COALESCE(a.title_ko, ''))               > 0.15
+                OR word_similarity(query_text, COALESCE(a.translation, ''))             > 0.15
+                OR similarity(query_text, COALESCE(a.title, ''))                       > 0.10
+                OR similarity(query_text, COALESCE(a.title_ko, ''))                  > 0.10
             )
         LIMIT 60
     ),
@@ -278,7 +283,7 @@ LANGUAGE sql STABLE AS $$
         a.url_hash,
         a.url,
         a.title,
-        a.title_en,
+        a.title_ko,
         a.source,
         a.source_type,
         a.category,

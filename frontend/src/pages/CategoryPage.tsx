@@ -1,7 +1,6 @@
 import { useState, useEffect } from 'react';
 import { fetchArticles } from '../data/api';
-import { CATEGORIES, filterByCategory } from '../data/articles';
-import type { Article, Category } from '../data/articles';
+import { CATEGORIES, filterByCategory, articleDisplayTitle, type Article, type Category } from '../data/articles';
 import DetailPage from './DetailPage';
 import type { BookmarkHook } from '../hooks/useBookmarks';
 
@@ -83,7 +82,7 @@ export default function CategoryPage({ bm, onArticleClick }: Props) {
                   {article.isBreaking && <span style={{ fontSize: 10, fontWeight: 600, color: '#EF4444' }}>속보</span>}
                   <span style={{ fontSize: 11, color: 'var(--color-text-tertiary)', marginLeft: 'auto' }}>{article.timeAgo}</span>
                 </div>
-                <p style={{ fontSize: 13, fontWeight: 600, color: 'var(--color-text-primary)', lineHeight: 1.4, marginBottom: 8 }}>{article.title}</p>
+                <p style={{ fontSize: 13, fontWeight: 600, color: 'var(--color-text-primary)', lineHeight: 1.4, marginBottom: 8 }}>{articleDisplayTitle(article)}</p>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                   <div style={{ flex: 1, height: 3, borderRadius: 2, background: 'var(--color-border)', overflow: 'hidden' }}>
                     <div style={{ height: '100%', borderRadius: 2, background: i < 3 ? 'var(--color-primary)' : 'var(--color-text-tertiary)', width: `${((article.credibilityScore ?? 0) / maxScore) * 100}%`, opacity: i < 3 ? 1 : 0.4 }} />
@@ -93,7 +92,7 @@ export default function CategoryPage({ bm, onArticleClick }: Props) {
               </div>
               <div
                 role="button"
-                onClick={e => { e.stopPropagation(); bm.toggle(article.urlHash); }}
+                onClick={e => { e.stopPropagation(); bm.toggle(article.urlHash, article); }}
                 style={{
                   width: 30, height: 30, borderRadius: 8, flexShrink: 0, marginTop: -2,
                   background: bm.isBookmarked(article.urlHash) ? '#FEF3C7' : 'var(--color-surface-secondary)',

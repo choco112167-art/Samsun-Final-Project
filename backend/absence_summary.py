@@ -105,7 +105,7 @@ def maybe_digest_sub_message(articles: list[dict[str, Any]]) -> str | None:
         return None
     parts: list[str] = []
     for a in articles[:5]:
-        t = (a.get("title") or "").strip()
+        t = ((a.get("title_ko") or a.get("title")) or "").strip()
         s = (a.get("summary_formal") or "").strip()
         if t or s:
             parts.append(f"{t}\n{s}".strip())
@@ -187,6 +187,7 @@ def compute_absence_summary(
             {
                 "url_hash": r.get("url_hash"),
                 "title": r.get("title") or "",
+                "title_ko": r.get("title_ko") or "",
                 "source": r.get("source") or "",
                 "category": r.get("category") or "",
                 "published_at": r.get("published_at"),

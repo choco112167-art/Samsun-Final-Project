@@ -1,7 +1,6 @@
 import { useState, useRef, useCallback } from 'react';
 import { searchArticles } from '../data/api';
-import { toArticle } from '../data/articles';
-import type { Article } from '../data/articles';
+import { toArticle, articleDisplayTitle, type Article } from '../data/articles';
 import DetailPage from './DetailPage';
 import type { BookmarkHook } from '../hooks/useBookmarks';
 
@@ -206,12 +205,12 @@ export default function SearchPage({ bm }: Props) {
                           </div>
                         )}
                       </div>
-                      <p style={{ fontSize: 13, fontWeight: 600, color: 'var(--color-text-primary)', lineHeight: 1.4, marginBottom: 5 }}>{article.title}</p>
+                      <p style={{ fontSize: 13, fontWeight: 600, color: 'var(--color-text-primary)', lineHeight: 1.4, marginBottom: 5 }}>{articleDisplayTitle(article)}</p>
                       <p style={{ fontSize: 12, color: 'var(--color-text-secondary)', lineHeight: 1.5, display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
                         {article.summaryFormal}
                       </p>
                       <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 8 }}>
-                        <button onClick={e => { e.stopPropagation(); bm.toggle(article.urlHash); }} style={{
+                        <button onClick={e => { e.stopPropagation(); bm.toggle(article.urlHash, article); }} style={{
                           display: 'flex', alignItems: 'center', gap: 4, fontSize: 11, fontWeight: 500,
                           color: bm.isBookmarked(article.urlHash) ? '#D97706' : 'var(--color-text-tertiary)',
                           background: bm.isBookmarked(article.urlHash) ? '#FEF3C7' : 'var(--color-surface-secondary)',

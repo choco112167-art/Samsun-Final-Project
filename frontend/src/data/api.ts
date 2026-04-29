@@ -90,7 +90,10 @@ export class ApiError extends Error {
 export interface ApiArticle {
   url_hash:          string;
   url:               string;
+  /** RSS 영문 헤드라인 (저장 규약). */
   title:             string;
+  /** 한국어 번역 제목 — 없으면 레거시 행에서 `title` 만 채워져 있을 수 있음. */
+  title_ko?:         string;
   source:            string;
   source_type:       'media' | 'community';
   category:          string;
@@ -196,6 +199,7 @@ export async function healthCheck(): Promise<{ status: string }> {
 export interface AbsenceArticle {
   url_hash:       string;
   title:          string;
+  title_ko?:      string;
   source:         string;
   category:       string;
   published_at:   string;

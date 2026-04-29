@@ -118,11 +118,11 @@ def save_articles(articles: list[dict]) -> int:
     같은 기사가 다시 들어와도 url_hash 기준으로 중복 저장되지 않는다.
 
     Args:
-        articles: 파이프라인에서 넘어온 기사 딕셔너리 리스트
-                  각 항목에 필요한 키:
-                  url, title, source, source_type, category, country,
+        articles: 파이프라인에서 넘어온 기사 딕셔너리 리스트.
+                  권장 키: url, title (RSS 원문 영어 제목), title_ko (한국어 번역 제목),
+                  source, source_type, category, country,
                   keywords, published_at, content, credibility_score,
-                  translation, summary_formal, summary_casual
+                  translation, summary_formal, summary_casual.
 
     Returns:
         저장된 기사 건수 (팩트체크 결과 DROP 인 기사는 건너뜀)
@@ -148,8 +148,9 @@ def save_articles(articles: list[dict]) -> int:
 
     for a in articles:
         url = a.get("url", "") or ""
-        title_en = a.get("title_en", "") or ""
-        title_fc = (title_en or a.get("title") or "").strip()
+        title_rss = (a.get("title") or "").strip()
+        title_ko = (a.get("title_ko") or "").strip()
+        title_fc = (title_rss or title_ko).strip()
         content_fc = (a.get("content") or "")[:120000]
         source = a.get("source") or ""
         source_type = (a.get("source_type") or "media")
@@ -186,7 +187,6 @@ def save_articles(articles: list[dict]) -> int:
             except Exception:
                 logger.exception("[FactCheck] 예외 — 크롤러 신뢰도(contradiction_score) 유지")
 
-        title_ko = a.get("title") or title_en
         combined = f"{title_ko}\n{a.get('translation', '')}"
         embedding = make_embedding(combined)
 
@@ -195,8 +195,8 @@ def save_articles(articles: list[dict]) -> int:
         batch.append({
             "url_hash":          uh,
             "url":               url,
-            "title":             title_ko or title_en,
-            "title_en":          title_en,
+            "title":             title_rss or title_ko or "",
+            "title_ko":          title_ko or None,
             "source":            a.get("source"),
             "source_type":       a.get("source_type"),
             "category":          a.get("category"),

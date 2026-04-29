@@ -3,8 +3,14 @@ import { BottomSheet, useToast } from '../components/Overlay';
 import ArticleCard from '../components/ArticleCard';
 import { FeedSkeleton } from '../components/Skeleton';
 import { fetchArticles } from '../data/api';
-import { CATEGORIES, filterByCategory } from '../data/articles';
-import type { Article, Category, Interest } from '../data/articles';
+import {
+  CATEGORIES,
+  filterByCategory,
+  articleDisplayTitle,
+  type Article,
+  type Category,
+  type Interest,
+} from '../data/articles';
 import type { AbsenceSummaryResponse, AbsenceArticle } from '../data/api';
 import DetailPage from './DetailPage';
 import type { BookmarkHook } from '../hooks/useBookmarks';
@@ -216,7 +222,7 @@ export default function HomePage({ bm, onNavigateToFeed, onArticleClick, absence
                 <span style={{ fontSize: 10, color: 'var(--color-text-tertiary)' }}>{article.source}</span>
               </div>
               <p style={{ fontSize: 13, fontWeight: 600, color: 'var(--color-text-primary)', lineHeight: 1.45, marginBottom: 6 }}>
-                {article.title}
+                {article.title_ko?.trim() || article.title}
               </p>
               {article.summary_formal && (
                 <p style={{ fontSize: 12, color: 'var(--color-text-secondary)', lineHeight: 1.6 }}>
@@ -310,7 +316,7 @@ export default function HomePage({ bm, onNavigateToFeed, onArticleClick, absence
                       <span style={{ fontSize: 10, color: '#EF4444', fontWeight: 600 }}>{a.timeAgo}</span>
                     </div>
                     <p style={{ fontSize: 12, fontWeight: 600, color: 'var(--color-text-primary)', lineHeight: 1.4, display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
-                      {a.title}
+                      {articleDisplayTitle(a)}
                     </p>
                   </button>
                 ))}

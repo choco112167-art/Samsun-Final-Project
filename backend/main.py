@@ -18,7 +18,7 @@ from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 from supabase import create_client
 
 from backend.embedder import make_embedding, expand_query
@@ -55,6 +55,17 @@ class LlmTextRequest(BaseModel):
     """번역·요약 API 공통 본문."""
     text: str
     summary_sentences: int | None = None
+
+
+class ArticleResponse(BaseModel):
+    """articles 테이블 단건 조회 응답 — 원문 영어는 `title`, 번역 한국어는 `title_ko`."""
+
+    model_config = ConfigDict(extra="allow")
+
+    url_hash: str
+    url: str | None = None
+    title: str | None = None
+    title_ko: str | None = None
 
 
 @app.post("/onboarding")
@@ -96,7 +107,7 @@ def get_articles(
     HomePage, CategoryPage 등에서 기사 목록을 가져올 때 호출된다.
     """
     query = sb.table("articles").select(
-        "url_hash, url, title, title_en, source, source_type, category, country, "
+        "url_hash, url, title, title_ko, source, source_type, category, country, "
         "keywords, published_at, collected_at, content, "
         "credibility_score, fact_label, "
         "translation, summary_formal, summary_casual"
@@ -114,7 +125,7 @@ def get_articles(
     return result.data
 
 
-@app.get("/article/{url_hash}")
+@app.get("/article/{url_hash}", response_model=ArticleResponse)
 def get_article(url_hash: str):
     """
     DetailPage에서 기사 하나의 전체 내용을 가져올 때 호출된다.
@@ -146,7 +157,7 @@ def search(q: str, top_k: int = 10, threshold: float = 0.4):
     흐름:
       1. LLM으로 쿼리를 한/영 키워드로 확장 (예: "엔비디아" → "엔비디아 NVIDIA GPU ...")
       2. 확장 쿼리 임베딩 → pgvector 유사도 검색 (threshold 0.4 이상만)
-      3. 키워드 폴백: 제목(영문) 또는 번역(한국어)에 원본 검색어가 포함된 기사 추가
+      3. 키워드 폴백: 제목(영문·한국어) 또는 번역에 원본 검색어가 포함된 기사 추가
          → 벡터 점수가 낮아도 직접 언급되면 결과에 포함
       4. 중복 제거 후 유사도 내림차순 반환
     """
@@ -154,7 +165,7 @@ def search(q: str, top_k: int = 10, threshold: float = 0.4):
         return {"results": []}
 
     COLS = (
-        "url_hash, url, title, source, source_type, category, country, "
+        "url_hash, url, title, title_ko, source, source_type, category, country, "
         "keywords, published_at, credibility_score, fact_label, "
         "translation, summary_formal, summary_casual"
     )
@@ -177,7 +188,7 @@ def search(q: str, top_k: int = 10, threshold: float = 0.4):
     # 3. 키워드 폴백: 제목(영문) 또는 한국어 번역에 검색어 포함 여부
     try:
         kw_result = sb.table("articles").select(COLS).or_(
-            f"title.ilike.%{q}%,translation.ilike.%{q}%"
+            f"title.ilike.%{q}%,title_ko.ilike.%{q}%,translation.ilike.%{q}%"
         ).limit(top_k).execute()
         for r in (kw_result.data or []):
             h = r["url_hash"]
@@ -328,7 +339,7 @@ def get_hot(date: str, top_k: int = 5):
     end   = f"{date}T23:59:59+00:00"
 
     cols = (
-        "url_hash, url, title, source, source_type, category, country, "
+        "url_hash, url, title, title_ko, source, source_type, category, country, "
         "keywords, published_at, credibility_score, fact_label, "
         "translation, summary_formal, summary_casual"
     )
