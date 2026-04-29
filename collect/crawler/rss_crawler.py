@@ -300,6 +300,8 @@ def parse_feed(feed_info: dict) -> list[Article]:
             published_at=parse_published_at(entry),
             content=content,
             source_type=feed_info.get("source_type", "media"),
+            ai_only_feed=feed_info.get("ai_only", False),
+            title_only_feed=feed_info.get("title_only", False),
         )
 
         title_only = feed_info.get("title_only", False)

@@ -50,12 +50,16 @@ def _factcheck_skip_flags() -> tuple[bool, bool]:
 
 
 def normalize_fact_label(label: str | None) -> str:
-    """articles.fact_checks.verdict 및 articles.fact_label 용 (FACT|RUMOR|UNVERIFIED|DROP)."""
+    """articles.fact_checks.verdict 및 articles.fact_label (FACT|RUMOR|INSIGHT|UNVERIFIED|DROP)."""
     u = (label or "").strip().upper().replace(" ", "_")
     if u == "FACT":
         return "FACT"
     if u == "RUMOR":
         return "RUMOR"
+    if u == "INSIGHT":
+        return "INSIGHT"
+    if u in ("FACT_INSIGHT", "FACT+INSIGHT", "INSIGHT+FACT"):
+        return "FACT_INSIGHT"
     if u == "DROP":
         return "DROP"
     # NEEDS_VERIFICATION 등 중간 상태 → DB 스키마에 맞춤
@@ -65,7 +69,7 @@ def normalize_fact_label(label: str | None) -> str:
 def infer_fact_label_from_fc(score: float, fc_label: str) -> str:
     """팩트체크 파이프라인 라벨 우선, 없으면 점수 기반 infer_fact_label 과 동일 규칙."""
     normalized = normalize_fact_label(fc_label)
-    if normalized in ("FACT", "RUMOR", "UNVERIFIED"):
+    if normalized in ("FACT", "RUMOR", "UNVERIFIED", "INSIGHT", "FACT_INSIGHT"):
         return normalized
     return infer_fact_label(score)
 
@@ -123,6 +127,8 @@ def save_articles(articles: list[dict]) -> int:
                   source, source_type, category, country,
                   keywords, published_at, content, credibility_score,
                   translation, summary_formal, summary_casual.
+                  루트 main.py 파이프라인 사용 시 `_pipeline_fact_checked`, `fact_label`,
+                  `claims_payload_rows` 가 포함되면 저장 단계에서 팩트체크를 재실행하지 않는다.
 
     Returns:
         저장된 기사 건수 (팩트체크 결과 DROP 인 기사는 건너뜀)
@@ -159,7 +165,24 @@ def save_articles(articles: list[dict]) -> int:
         label_out = infer_fact_label(score_out)
         claims_payload: list[dict] = []
 
-        if FACTCHECK_ENABLED and run_fact_check is not None:
+        pipeline_done = bool(a.get("_pipeline_fact_checked"))
+
+        if pipeline_done:
+            score_out = float(a.get("credibility_score") or score_out)
+            label_out = normalize_fact_label(a.get("fact_label"))
+            for row in a.get("claims_payload_rows") or []:
+                verdict = normalize_fact_label(row.get("verdict"))
+                if verdict == "DROP":
+                    continue
+                claims_payload.append({
+                    "claim": row.get("claim"),
+                    "verdict": verdict,
+                    "confidence": row.get("confidence"),
+                    "evidence_url": row.get("evidence_url"),
+                    "reasoning_trace": row.get("reasoning_trace"),
+                    "verification_method": row.get("verification_method"),
+                })
+        elif FACTCHECK_ENABLED and run_fact_check is not None:
             try:
                 fc = run_fact_check(
                     title_fc,

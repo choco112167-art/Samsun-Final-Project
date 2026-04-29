@@ -47,7 +47,7 @@ IMPORTANCE_DEBATE_THRESHOLD = 0.70     # 이 이상이면 3C DebateCV 발동
 @dataclass
 class FactCheckResult:
     # 최종 라벨
-    fact_label: str        # FACT | RUMOR | UNVERIFIED | DROP
+    fact_label: str        # FACT | RUMOR | UNVERIFIED | INSIGHT | DROP
     confidence: float      # 0.0~1.0
 
     # 처리 경로 (디버깅·로깅용)
@@ -170,6 +170,20 @@ def run_fact_check(
                 signal=signal, matched_patterns=signal.matched_patterns,
                 verification_method="auto",
                 reasoning_trace=f"Opinion 패턴 탐지 → DROP: {signal.matched_patterns[:3]}",
+            )
+
+        if signal.fact_label_hint == "INSIGHT":
+            boost = cross_source_boost(title, all_sources_for_claim or [])
+            ic = round(min(profile.credibility_score + boost + 0.05, 0.85), 4)
+            return FactCheckResult(
+                fact_label="INSIGHT",
+                confidence=ic,
+                tier=tier, step_reached=1,
+                signal=signal, matched_patterns=signal.matched_patterns,
+                verification_method="insight_signal",
+                reasoning_trace=(
+                    "의견·칼럼 신호 다수 + 전문 용어·수치 포함 — Insight (심층 FC 대신 라벨만)"
+                ),
             )
 
         # MEDIA_CREDIBLE_LEAK는 소식통 인용이 잦은 출처 — 루머 신호 없어도 LLM 검증 필요
