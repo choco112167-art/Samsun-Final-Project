@@ -15,6 +15,8 @@
 - 커뮤니티 피드 추가: Product Hunt
 - Reddit 제거: 2026-03-26 정책 변경으로 앱 등록 및 수집 불가
 - Hacker News RSS 추가: hnrss.org 키워드 필터 활용
+- Lemmy API 연동: RSS summary 본문 없을 때 API로 post.body 보완
+- Lemmy Open Graph: 링크 포스트 외부 URL의 og:description으로 본문 보완
 """
 
 import feedparser
@@ -62,6 +64,64 @@ def clean_html(text: str) -> str:
     text = html.unescape(text)
     text = re.sub(r"\s+", " ", text).strip()
     return text
+
+
+# ──────────────────────────────────────────
+# Lemmy 링크 포스트 Open Graph 미리보기
+# - Lemmy RSS의 외부 URL에서 og:description 추출
+# - Lemmy가 보여주는 미리보기와 동일한 내용
+# - 크롤링보다 가볍고 범용적
+# ──────────────────────────────────────────
+from html.parser import HTMLParser as _BaseHTMLParser
+
+
+def _extract_lemmy_external_url(rss_summary: str) -> str | None:
+    """
+    Lemmy RSS summary에서 외부 링크 URL 추출.
+    HTML 정리 후 순수 URL만 추출, Lemmy 도메인/유저/커뮤니티 URL 제외.
+    """
+    clean = clean_html(rss_summary)
+    matches = re.findall(r'https?://\S+', clean)
+    for url in matches:
+        if not re.search(r'lemmy|/u/|/c/', url):
+            return url
+    return None
+
+
+def fetch_og_description(external_url: str) -> str:
+    """
+    외부 URL의 Open Graph og:description 추출.
+    Lemmy 미리보기와 동일한 내용 (1~3문장 요약).
+    """
+    try:
+        resp = requests.get(
+            external_url,
+            timeout=5,
+            headers={"User-Agent": "samsun-rss-crawler/1.0"},
+        )
+        resp.raise_for_status()
+
+        # og:description 파싱 (BeautifulSoup 없이 정규식으로)
+        og_match = re.search(
+            r'<meta[^>]+property=["\']og:description["\'][^>]+content=["\'](.*?)["\']',
+            resp.text,
+            re.IGNORECASE | re.DOTALL,
+        )
+        if not og_match:
+            # content가 앞에 오는 경우도 처리
+            og_match = re.search(
+                r'<meta[^>]+content=["\'](.*?)["\'][^>]+property=["\']og:description["\']',
+                resp.text,
+                re.IGNORECASE | re.DOTALL,
+            )
+
+        if og_match:
+            import html
+            return html.unescape(og_match.group(1).strip())
+        return ""
+    except Exception as e:
+        logger.warning(f"[OG] 미리보기 조회 실패 ({external_url}): {e}")
+        return ""
 
 
 # ──────────────────────────────────────────
@@ -141,6 +201,7 @@ COMMUNITY_FEEDS = [
         "ai_only": False,        # 전체 글 수집 후 필터링
         "title_only": True,      # 제목만 보고 AI 관련 여부 판단
         "source_type": "community",
+        "use_og": True,          # 외부 URL og:description으로 본문 보완
     },
     {
         "source": "Hacker News AI",
@@ -187,6 +248,7 @@ def parse_feed(feed_info: dict) -> list[Article]:
     """RSS 피드 파싱 → AI 관련 기사만 필터링하여 반환."""
     source  = feed_info["source"]
     ai_only = feed_info.get("ai_only", False)
+    use_og  = feed_info.get("use_og", False)
     logger.info(f"[{source}] 피드 수집 중...")
 
     try:
@@ -215,6 +277,19 @@ def parse_feed(feed_info: dict) -> list[Article]:
             raw_content = entry.content[0].get("value", "")
 
         content = clean_html(raw_content)
+
+        # Lemmy 링크 포스트: RSS summary의 외부 URL로 og:description 추출
+        # 실패하면 저장 스킵
+        if use_og:
+            external_url = _extract_lemmy_external_url(raw_content)
+            if external_url:
+                og_desc = fetch_og_description(external_url)
+                if og_desc:
+                    content = og_desc
+                else:
+                    continue  # og 실패 → 저장 스킵
+            else:
+                continue  # 외부 URL 없음 → 저장 스킵
 
         article = Article(
             title=title,
