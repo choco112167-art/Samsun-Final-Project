@@ -17,6 +17,8 @@
 - Hacker News RSS 추가: hnrss.org 키워드 필터 활용
 - Lemmy API 연동: RSS summary 본문 없을 때 API로 post.body 보완
 - Lemmy Open Graph: 링크 포스트 외부 URL의 og:description으로 본문 보완
+- Lemmy embed_description: 외부 직접 크롤링 대신 Lemmy API의 embed_description 사용
+  (JS 렌더링 사이트도 Lemmy 서버가 캐싱한 미리보기 그대로 가져옴)
 """
 
 import feedparser
@@ -67,60 +69,51 @@ def clean_html(text: str) -> str:
 
 
 # ──────────────────────────────────────────
-# Lemmy 링크 포스트 Open Graph 미리보기
-# - Lemmy RSS의 외부 URL에서 og:description 추출
-# - Lemmy가 보여주는 미리보기와 동일한 내용
-# - 크롤링보다 가볍고 범용적
+# Lemmy 링크 포스트 미리보기
+# - Lemmy API의 embed_description 사용
+# - 외부 사이트 직접 크롤링 불필요
+# - JS 렌더링 사이트도 Lemmy 서버가 캐싱한 값 그대로 가져옴
+# - 응답 구조: post_view.post.embed_description
 # ──────────────────────────────────────────
-from html.parser import HTMLParser as _BaseHTMLParser
+
+LEMMY_API_BASE = "https://lemmy.world/api/v3"
 
 
-def _extract_lemmy_external_url(rss_summary: str) -> str | None:
+def _extract_lemmy_post_id(entry_link: str) -> str | None:
     """
-    Lemmy RSS summary에서 외부 링크 URL 추출.
-    HTML 정리 후 순수 URL만 추출, Lemmy 도메인/유저/커뮤니티 URL 제외.
+    Lemmy 게시글 URL에서 post ID 추출.
+    예: https://lemmy.world/post/46191199 → "46191199"
     """
-    clean = clean_html(rss_summary)
-    matches = re.findall(r'https?://\S+', clean)
-    for url in matches:
-        if not re.search(r'lemmy|/u/|/c/', url):
-            return url
-    return None
+    match = re.search(r'/post/(\d+)', entry_link)
+    return match.group(1) if match else None
 
 
-def fetch_og_description(external_url: str) -> str:
+def fetch_lemmy_embed_description(post_id: str) -> str:
     """
-    외부 URL의 Open Graph og:description 추출.
-    Lemmy 미리보기와 동일한 내용 (1~3문장 요약).
+    Lemmy API로 게시글의 embed_description 조회.
+    Lemmy가 미리보기로 보여주는 텍스트와 동일한 내용.
+    embed_description 없으면 body 폴백.
     """
     try:
         resp = requests.get(
-            external_url,
+            f"{LEMMY_API_BASE}/post",
+            params={"id": post_id},
             timeout=5,
             headers={"User-Agent": "samsun-rss-crawler/1.0"},
         )
         resp.raise_for_status()
+        post = resp.json()["post_view"]["post"]
 
-        # og:description 파싱 (BeautifulSoup 없이 정규식으로)
-        og_match = re.search(
-            r'<meta[^>]+property=["\']og:description["\'][^>]+content=["\'](.*?)["\']',
-            resp.text,
-            re.IGNORECASE | re.DOTALL,
-        )
-        if not og_match:
-            # content가 앞에 오는 경우도 처리
-            og_match = re.search(
-                r'<meta[^>]+content=["\'](.*?)["\'][^>]+property=["\']og:description["\']',
-                resp.text,
-                re.IGNORECASE | re.DOTALL,
-            )
+        embed_desc = (post.get("embed_description") or "").strip()
+        if embed_desc:
+            return embed_desc
 
-        if og_match:
-            import html
-            return html.unescape(og_match.group(1).strip())
-        return ""
+        # 텍스트 포스트인 경우 body 폴백
+        body = (post.get("body") or "").strip()
+        return body
+
     except Exception as e:
-        logger.warning(f"[OG] 미리보기 조회 실패 ({external_url}): {e}")
+        logger.warning(f"[Lemmy API] embed_description 조회 실패 (post_id={post_id}): {e}")
         return ""
 
 
@@ -278,18 +271,18 @@ def parse_feed(feed_info: dict) -> list[Article]:
 
         content = clean_html(raw_content)
 
-        # Lemmy 링크 포스트: RSS summary의 외부 URL로 og:description 추출
-        # 실패하면 저장 스킵
+        # Lemmy 링크 포스트: Lemmy API embed_description으로 본문 보완
+        # JS 렌더링 사이트도 Lemmy 서버 캐시에서 가져오므로 안정적
         if use_og:
-            external_url = _extract_lemmy_external_url(raw_content)
-            if external_url:
-                og_desc = fetch_og_description(external_url)
-                if og_desc:
-                    content = og_desc
+            post_id = _extract_lemmy_post_id(link)
+            if post_id:
+                embed_desc = fetch_lemmy_embed_description(post_id)
+                if embed_desc:
+                    content = embed_desc
                 else:
-                    continue  # og 실패 → 저장 스킵
+                    continue  # 미리보기 없음 → 저장 스킵
             else:
-                continue  # 외부 URL 없음 → 저장 스킵
+                continue  # post ID 추출 실패 → 저장 스킵
 
         article = Article(
             title=title,
