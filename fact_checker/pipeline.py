@@ -164,6 +164,19 @@ def run_fact_check(
             tier = signal.tier_override
 
         if should_drop(tier):
+            # TIER 0-1(학술·공식 언론)의 opinion → DROP 대신 INSIGHT로 저장
+            # 근거: 전문가 사설은 팩트체크 불가지만 콘텐츠 가치가 있음
+            if profile.default_tier in ("ACADEMIC_INSTITUTIONAL", "MEDIA_OFFICIAL"):
+                return FactCheckResult(
+                    fact_label="INSIGHT", confidence=0.85,
+                    tier=tier, step_reached=1,
+                    signal=signal, matched_patterns=signal.matched_patterns,
+                    verification_method="auto",
+                    reasoning_trace=(
+                        f"TIER 0-1 미디어 Opinion 패턴 감지 → INSIGHT: "
+                        f"{signal.matched_patterns[:3]}"
+                    ),
+                )
             return FactCheckResult(
                 fact_label="DROP", confidence=0.90,
                 tier=tier, step_reached=1,
@@ -203,7 +216,9 @@ def run_fact_check(
                 ),
             )
 
-        if signal.fact_label_hint == "RUMOR" and skip_fc_api:
+        # 강한 루머 신호: skip_fc_api 여부와 무관하게 조기 종료.
+        # FC API로 번복될 가능성이 낮고, API 블로킹 위험 방지.
+        if signal.fact_label_hint == "RUMOR":
             return FactCheckResult(
                 fact_label="RUMOR", confidence=0.80,
                 tier=tier, step_reached=1,

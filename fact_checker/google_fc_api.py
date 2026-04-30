@@ -12,12 +12,14 @@ Google ClaimReview DB(AFP·PolitiFact·Snopes 등 200개+ 기관) 조회.
 """
 
 import os
+import threading
 import requests
 from dataclasses import dataclass
 
 # 모듈 임포트 시점에 env가 아직 로드 안 됐을 수 있어 query() 내부에서 재조회
 FC_API_URL = "https://factchecktools.googleapis.com/v1alpha1/claims:search"
-REQUEST_TIMEOUT = 3   # 초
+REQUEST_TIMEOUT = 3   # 소켓 read/connect 타임아웃 (초)
+FC_HARD_TIMEOUT = 5   # SSL 핸드셰이크 포함 하드 데드라인 (초, Windows SSL hang 방어)
 
 
 @dataclass
@@ -86,14 +88,32 @@ def query(title: str, max_age_days: int = 365) -> FCResult:
         "pageSize":      3,      # 상위 3개 결과만
     }
 
-    try:
-        resp = requests.get(FC_API_URL, params=params, timeout=REQUEST_TIMEOUT)
-        resp.raise_for_status()
-        data = resp.json()
-    except requests.Timeout:
-        return FCResult(matched=False, verdict="NO_MATCH", rating="API 타임아웃")
-    except Exception as e:
+    # thread 기반 하드 타임아웃: Python 3.14 + Windows에서 SSL read가
+    # socket timeout을 무시하고 블로킹되는 현상 방어
+    _result: list = []
+    _error:  list = []
+
+    def _fetch() -> None:
+        try:
+            resp = requests.get(FC_API_URL, params=params, timeout=REQUEST_TIMEOUT)
+            resp.raise_for_status()
+            _result.append(resp.json())
+        except Exception as exc:  # noqa: BLE001
+            _error.append(exc)
+
+    t = threading.Thread(target=_fetch, daemon=True)
+    t.start()
+    t.join(timeout=FC_HARD_TIMEOUT)
+
+    if t.is_alive():
+        return FCResult(matched=False, verdict="NO_MATCH", rating="API 하드 타임아웃")
+    if _error:
+        e = _error[0]
+        if isinstance(e, requests.Timeout):
+            return FCResult(matched=False, verdict="NO_MATCH", rating="API 타임아웃")
         return FCResult(matched=False, verdict="NO_MATCH", rating=f"API 오류: {e}")
+
+    data = _result[0]
 
     claims = data.get("claims", [])
     if not claims:

@@ -19,6 +19,7 @@ articles_translated.jsonl
 *.jsonl
 eval/data/
 token.json
+client_secret*.json
 
 # diff 임시파일
 diff_*.txt
@@ -37,3 +38,6 @@ dist/
 
 # MCP 개인 설정 (각자 로컬 머신 경로 포함)
 .mcp.json
+
+# 로컬 파인튜닝 모델 가중치 (용량 대형)
+samsunmodel*/

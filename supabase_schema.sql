@@ -33,7 +33,8 @@ CREATE TABLE IF NOT EXISTS articles (
     -- 신뢰도
     credibility_score FLOAT,                 -- 출처 신뢰도 (0.0~1.0). RSS 수집 시 산정
     fact_label        VARCHAR DEFAULT 'UNVERIFIED',
-                                             -- FACT | RUMOR | UNVERIFIED
+                                             -- FACT | RUMOR | UNVERIFIED | INSIGHT
+                                             -- INSIGHT: TIER 0-1 미디어의 전문가 사설/분석
                                              -- credibility_score 기반 자동 분류 (MVP)
                                              -- fact_checks 집계로 갱신 (MVP 이후)
 
@@ -63,7 +64,7 @@ CREATE TABLE IF NOT EXISTS fact_checks (
     article_url_hash  VARCHAR REFERENCES articles(url_hash) ON DELETE CASCADE,
 
     claim             TEXT,       -- 검증 대상 주장 원문
-    verdict           VARCHAR,    -- FACT | RUMOR | UNVERIFIED
+    verdict           VARCHAR,    -- FACT | RUMOR | UNVERIFIED | INSIGHT
     confidence        FLOAT,      -- LLM 확신도 (0.0~1.0)
 
     -- MVP에서는 NULL 허용

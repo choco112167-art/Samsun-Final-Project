@@ -27,7 +27,7 @@ def _factcheck_skip_flags() -> tuple[bool, bool]:
 def run_pipeline(max_articles: int = 10, summary_sentences: int = 3):
     """
     전체 파이프라인:
-      1) RSS 수집
+      1) RSS·Lemmy 등 수집
       2) AI 관련성 + 초경량 신호 탐지 (프리플라이트) — 통과하지 못하면 DROP (번역 생략)
       3) 번역·요약 (LLM)
       4) 심층 팩트체크 — FACT_AUTO·Insight 경로는 생략 (FACT / INSIGHT 라벨만)
@@ -119,7 +119,6 @@ def run_pipeline(max_articles: int = 10, summary_sentences: int = 3):
                     print("  [심층 팩트체크 DROP] — DB 제외")
                     continue
             else:
-                # 이론상 도달하지 않음
                 prof = get_profile(article.source)
                 fc_res = FactCheckResult(
                     fact_label="UNVERIFIED",
