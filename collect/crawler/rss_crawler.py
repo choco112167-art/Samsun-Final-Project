@@ -14,7 +14,8 @@
 - source_type 필드 추가: 'media' | 'community'
 - 커뮤니티 피드: Lemmy / Hacker News(hnrss) / Product Hunt — Reddit 제거 (feat/leesangjun)
 - Hacker News RSS: hnrss.org 키워드 필터 활용
-- Lemmy 링크 포스트: 외부 URL의 og:description 으로 본문 보완 (feat/leesangjun)
+- Lemmy 링크 포스트: Lemmy API v3 `/post` 로 embed_description·body 우선,
+  실패 시 RSS summary 내 외부 URL의 og:description 폴백 (feat/leesangjun + feat/rss lemmy api)
 """
 
 import feedparser
@@ -68,16 +69,47 @@ def clean_html(text: str) -> str:
 
 
 # ──────────────────────────────────────────
-# Lemmy 링크 포스트 Open Graph 미리보기
-# - Lemmy RSS summary 의 외부 URL 에서 og:description 추출
+# Lemmy: API 미리보기 + OG 폴백
 # ──────────────────────────────────────────
+
+LEMMY_API_BASE = "https://lemmy.world/api/v3"
+
+
+def _extract_lemmy_post_id(entry_link: str) -> str | None:
+    """Lemmy 게시글 URL에서 post ID 추출. 예: …/post/46191199 → 46191199"""
+    match = re.search(r"/post/(\d+)", entry_link)
+    return match.group(1) if match else None
+
+
+def fetch_lemmy_embed_description(post_id: str) -> str:
+    """
+    Lemmy API로 embed_description 조회; 없으면 body 폴백.
+    링크 미리보기는 Lemmy 서버 캐시와 동일한 텍스트.
+    """
+    try:
+        resp = requests.get(
+            f"{LEMMY_API_BASE}/post",
+            params={"id": int(post_id)},
+            timeout=8,
+            headers={"User-Agent": "samsun-rss-crawler/1.0"},
+        )
+        resp.raise_for_status()
+        data = resp.json()
+        post = data.get("post_view", {}).get("post") or {}
+
+        embed_desc = (post.get("embed_description") or "").strip()
+        if embed_desc:
+            return embed_desc
+
+        body = (post.get("body") or "").strip()
+        return clean_html(body) if body else ""
+    except Exception as e:
+        logger.warning("[Lemmy API] embed/body 조회 실패 (post_id=%s): %s", post_id, e)
+        return ""
 
 
 def _extract_lemmy_external_url(rss_summary: str) -> str | None:
-    """
-    Lemmy RSS summary 에서 외부 링크 URL 추출.
-    Lemmy 도메인 / 유저 / 커뮤니티 URL 은 제외.
-    """
+    """RSS summary 에서 외부 링크 URL 추출 (Lemmy 내부·유저·커뮤니티 링크 제외)."""
     clean = clean_html(rss_summary)
     matches = re.findall(r"https?://\S+", clean)
     for url in matches:
@@ -91,7 +123,7 @@ def fetch_og_description(external_url: str) -> str:
     try:
         resp = requests.get(
             external_url,
-            timeout=5,
+            timeout=8,
             headers={"User-Agent": "samsun-rss-crawler/1.0"},
         )
         resp.raise_for_status()
@@ -114,6 +146,35 @@ def fetch_og_description(external_url: str) -> str:
     except Exception as e:
         logger.warning("[OG] 미리보기 조회 실패 (%s): %s", external_url[:80], e)
         return ""
+
+
+def _enrich_lemmy_content(
+    *,
+    link: str,
+    raw_content: str,
+    rss_text: str,
+) -> tuple[str, bool]:
+    """
+    Lemmy 피드(use_og) 전용 본문 보강.
+    반환: (content, ok) — ok False 이면 스킵 대상.
+    """
+    post_id = _extract_lemmy_post_id(link)
+    filled = ""
+    if post_id:
+        filled = fetch_lemmy_embed_description(post_id)
+
+    if not filled:
+        external_url = _extract_lemmy_external_url(raw_content)
+        if external_url:
+            filled = fetch_og_description(external_url)
+
+    if filled:
+        return filled, True
+
+    if rss_text.strip():
+        return rss_text, True
+
+    return "", False
 
 
 # ──────────────────────────────────────────
@@ -180,9 +241,6 @@ MEDIA_FEEDS = [
 
 # ──────────────────────────────────────────
 # 커뮤니티 RSS 피드
-# - Lemmy: title_only + 선택 시 og:description 본문 보완 (use_og)
-# - Hacker News: hnrss.org 키워드 필터 (ai_only=True)
-# - Product Hunt: 공식 RSS
 # ──────────────────────────────────────────
 COMMUNITY_FEEDS = [
     {
@@ -229,7 +287,6 @@ COMMUNITY_FEEDS = [
     },
 ]
 
-# 전체 피드 (main.py에서 사용)
 RSS_FEEDS = MEDIA_FEEDS + COMMUNITY_FEEDS
 
 
@@ -238,10 +295,9 @@ def parse_published_at(entry) -> str:
     fmt = "%Y-%m-%dT%H:%M:%S"
     if hasattr(entry, "published_parsed") and entry.published_parsed:
         return datetime(*entry.published_parsed[:6]).strftime(fmt)
-    elif hasattr(entry, "updated_parsed") and entry.updated_parsed:
+    if hasattr(entry, "updated_parsed") and entry.updated_parsed:
         return datetime(*entry.updated_parsed[:6]).strftime(fmt)
-    else:
-        return datetime.utcnow().strftime(fmt)
+    return datetime.utcnow().strftime(fmt)
 
 
 def parse_feed(feed_info: dict) -> list[Article]:
@@ -279,17 +335,15 @@ def parse_feed(feed_info: dict) -> list[Article]:
         content = clean_html(raw_content)
 
         if use_og:
-            external_url = _extract_lemmy_external_url(raw_content)
-            if external_url:
-                og_desc = fetch_og_description(external_url)
-                if og_desc:
-                    content = og_desc
-                else:
-                    filtered_out += 1
-                    continue
-            else:
+            enriched, ok = _enrich_lemmy_content(
+                link=link,
+                raw_content=raw_content,
+                rss_text=content,
+            )
+            if not ok:
                 filtered_out += 1
                 continue
+            content = enriched
 
         article = Article(
             title=title,
@@ -320,7 +374,7 @@ def parse_feed(feed_info: dict) -> list[Article]:
 
 def fetch_all(delay: float = 1.0) -> list[Article]:
     """전체 RSS 피드 수집. delay로 서버 부하 방지."""
-    all_articles = []
+    all_articles: list[Article] = []
     for feed_info in RSS_FEEDS:
         articles = parse_feed(feed_info)
         all_articles.extend(articles)
