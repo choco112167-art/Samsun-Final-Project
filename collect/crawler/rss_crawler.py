@@ -12,31 +12,30 @@
 - 날짜 형식: strftime으로 마이크로초 제거
 - 필터링된 기사 수 로그 출력
 - source_type 필드 추가: 'media' | 'community'
-- 커뮤니티 피드: Lemmy / Hacker News(hnrss) / Product Hunt — Reddit 제거 (feat/leesangjun)
-- Hacker News RSS: hnrss.org 키워드 필터 활용
-- Lemmy 링크 포스트: Lemmy API v3 `/post` 로 embed_description·body 우선,
-  실패 시 RSS summary 내 외부 URL의 og:description 폴백 (feat/leesangjun + feat/rss lemmy api)
+- 커뮤니티 피드 추가: Product Hunt
+- Reddit 제거: 2026-03-26 정책 변경으로 앱 등록 및 수집 불가
+- Hacker News RSS 추가: hnrss.org 키워드 필터 활용
+- Lemmy API 연동: RSS summary 본문 없을 때 API로 post.body 보완
+- Lemmy Open Graph: 링크 포스트 외부 URL의 og:description으로 본문 보완
+- Lemmy embed_description: 외부 직접 크롤링 대신 Lemmy API의 embed_description 사용
+  (JS 렌더링 사이트도 Lemmy 서버가 캐싱한 미리보기 그대로 가져옴)
 """
 
 import feedparser
-import html
+import time
 import logging
 import re
-import time
 from html.parser import HTMLParser
 from datetime import datetime
-
-import requests
 
 from models.article import Article
 from models.credibility import is_ai_related, score_article
 
 logger = logging.getLogger(__name__)
-
+import requests
 
 class _HTMLStripper(HTMLParser):
     """HTML 태그 제거용 파서."""
-
     def __init__(self):
         super().__init__()
         self.reset()
@@ -63,118 +62,59 @@ def clean_html(text: str) -> str:
     except Exception:
         text = re.sub(r"<[^>]+>", " ", text)
 
+    import html
     text = html.unescape(text)
     text = re.sub(r"\s+", " ", text).strip()
     return text
 
 
 # ──────────────────────────────────────────
-# Lemmy: API 미리보기 + OG 폴백
+# Lemmy 링크 포스트 미리보기
+# - Lemmy API의 embed_description 사용
+# - 외부 사이트 직접 크롤링 불필요
+# - JS 렌더링 사이트도 Lemmy 서버가 캐싱한 값 그대로 가져옴
+# - 응답 구조: post_view.post.embed_description
 # ──────────────────────────────────────────
 
 LEMMY_API_BASE = "https://lemmy.world/api/v3"
 
 
 def _extract_lemmy_post_id(entry_link: str) -> str | None:
-    """Lemmy 게시글 URL에서 post ID 추출. 예: …/post/46191199 → 46191199"""
-    match = re.search(r"/post/(\d+)", entry_link)
+    """
+    Lemmy 게시글 URL에서 post ID 추출.
+    예: https://lemmy.world/post/46191199 → "46191199"
+    """
+    match = re.search(r'/post/(\d+)', entry_link)
     return match.group(1) if match else None
 
 
 def fetch_lemmy_embed_description(post_id: str) -> str:
     """
-    Lemmy API로 embed_description 조회; 없으면 body 폴백.
-    링크 미리보기는 Lemmy 서버 캐시와 동일한 텍스트.
+    Lemmy API로 게시글의 embed_description 조회.
+    Lemmy가 미리보기로 보여주는 텍스트와 동일한 내용.
+    embed_description 없으면 body 폴백.
     """
     try:
         resp = requests.get(
             f"{LEMMY_API_BASE}/post",
-            params={"id": int(post_id)},
-            timeout=8,
+            params={"id": post_id},
+            timeout=5,
             headers={"User-Agent": "samsun-rss-crawler/1.0"},
         )
         resp.raise_for_status()
-        data = resp.json()
-        post = data.get("post_view", {}).get("post") or {}
+        post = resp.json()["post_view"]["post"]
 
         embed_desc = (post.get("embed_description") or "").strip()
         if embed_desc:
             return embed_desc
 
+        # 텍스트 포스트인 경우 body 폴백
         body = (post.get("body") or "").strip()
-        return clean_html(body) if body else ""
+        return body
+
     except Exception as e:
-        logger.warning("[Lemmy API] embed/body 조회 실패 (post_id=%s): %s", post_id, e)
+        logger.warning(f"[Lemmy API] embed_description 조회 실패 (post_id={post_id}): {e}")
         return ""
-
-
-def _extract_lemmy_external_url(rss_summary: str) -> str | None:
-    """RSS summary 에서 외부 링크 URL 추출 (Lemmy 내부·유저·커뮤니티 링크 제외)."""
-    clean = clean_html(rss_summary)
-    matches = re.findall(r"https?://\S+", clean)
-    for url in matches:
-        if not re.search(r"lemmy|/u/|/c/", url):
-            return url.rstrip(").,]}\"'")
-    return None
-
-
-def fetch_og_description(external_url: str) -> str:
-    """외부 URL 의 Open Graph og:description 추출."""
-    try:
-        resp = requests.get(
-            external_url,
-            timeout=8,
-            headers={"User-Agent": "samsun-rss-crawler/1.0"},
-        )
-        resp.raise_for_status()
-
-        og_match = re.search(
-            r'<meta[^>]+property=["\']og:description["\'][^>]+content=["\'](.*?)["\']',
-            resp.text,
-            re.IGNORECASE | re.DOTALL,
-        )
-        if not og_match:
-            og_match = re.search(
-                r'<meta[^>]+content=["\'](.*?)["\'][^>]+property=["\']og:description["\']',
-                resp.text,
-                re.IGNORECASE | re.DOTALL,
-            )
-
-        if og_match:
-            return html.unescape(og_match.group(1).strip())
-        return ""
-    except Exception as e:
-        logger.warning("[OG] 미리보기 조회 실패 (%s): %s", external_url[:80], e)
-        return ""
-
-
-def _enrich_lemmy_content(
-    *,
-    link: str,
-    raw_content: str,
-    rss_text: str,
-) -> tuple[str, bool]:
-    """
-    Lemmy 피드(use_og) 전용 본문 보강.
-    반환: (content, ok) — ok False 이면 스킵 대상.
-    """
-    post_id = _extract_lemmy_post_id(link)
-    filled = ""
-    if post_id:
-        filled = fetch_lemmy_embed_description(post_id)
-
-    if not filled:
-        external_url = _extract_lemmy_external_url(raw_content)
-        if external_url:
-            filled = fetch_og_description(external_url)
-
-    if filled:
-        return filled, True
-
-    if rss_text.strip():
-        return rss_text, True
-
-    return "", False
 
 
 # ──────────────────────────────────────────
@@ -241,6 +181,9 @@ MEDIA_FEEDS = [
 
 # ──────────────────────────────────────────
 # 커뮤니티 RSS 피드
+# hnrss.org: Hacker News 공식 서드파티 RSS
+# - q= 파라미터로 키워드 필터링
+# - ai_only=True로 추가 필터 스킵 (URL 자체가 이미 필터됨)
 # ──────────────────────────────────────────
 COMMUNITY_FEEDS = [
     {
@@ -248,10 +191,10 @@ COMMUNITY_FEEDS = [
         "url": "https://lemmy.world/feeds/c/technology.xml",
         "country": "글로벌",
         "category": "AI 커뮤니티",
-        "ai_only": False,
-        "title_only": True,
+        "ai_only": False,        # 전체 글 수집 후 필터링
+        "title_only": True,      # 제목만 보고 AI 관련 여부 판단
         "source_type": "community",
-        "use_og": True,
+        "use_og": True,          # 외부 URL og:description으로 본문 보완
     },
     {
         "source": "Hacker News AI",
@@ -277,16 +220,9 @@ COMMUNITY_FEEDS = [
         "ai_only": True,
         "source_type": "community",
     },
-    {
-        "source": "Product Hunt",
-        "url": "https://www.producthunt.com/feed",
-        "country": "글로벌",
-        "category": "AI 제품",
-        "ai_only": False,
-        "source_type": "community",
-    },
 ]
 
+# 전체 피드 (main.py에서 사용)
 RSS_FEEDS = MEDIA_FEEDS + COMMUNITY_FEEDS
 
 
@@ -295,26 +231,27 @@ def parse_published_at(entry) -> str:
     fmt = "%Y-%m-%dT%H:%M:%S"
     if hasattr(entry, "published_parsed") and entry.published_parsed:
         return datetime(*entry.published_parsed[:6]).strftime(fmt)
-    if hasattr(entry, "updated_parsed") and entry.updated_parsed:
+    elif hasattr(entry, "updated_parsed") and entry.updated_parsed:
         return datetime(*entry.updated_parsed[:6]).strftime(fmt)
-    return datetime.utcnow().strftime(fmt)
+    else:
+        return datetime.utcnow().strftime(fmt)
 
 
 def parse_feed(feed_info: dict) -> list[Article]:
     """RSS 피드 파싱 → AI 관련 기사만 필터링하여 반환."""
-    source = feed_info["source"]
+    source  = feed_info["source"]
     ai_only = feed_info.get("ai_only", False)
-    use_og = feed_info.get("use_og", False)
-    logger.info("[%s] 피드 수집 중...", source)
+    use_og  = feed_info.get("use_og", False)
+    logger.info(f"[{source}] 피드 수집 중...")
 
     try:
         feed = feedparser.parse(feed_info["url"])
     except Exception as e:
-        logger.error("[%s] 피드 파싱 실패: %s", source, e)
+        logger.error(f"[{source}] 피드 파싱 실패: {e}")
         return []
 
     if feed.bozo and not feed.entries:
-        logger.warning("[%s] 피드 이상 (bozo): %s", source, feed.bozo_exception)
+        logger.warning(f"[{source}] 피드 이상 (bozo): {feed.bozo_exception}")
         return []
 
     articles = []
@@ -322,7 +259,7 @@ def parse_feed(feed_info: dict) -> list[Article]:
 
     for entry in feed.entries:
         title = entry.get("title", "").strip()
-        link = entry.get("link", "").strip()
+        link  = entry.get("link", "").strip()
         if not title or not link:
             continue
 
@@ -334,16 +271,18 @@ def parse_feed(feed_info: dict) -> list[Article]:
 
         content = clean_html(raw_content)
 
+        # Lemmy 링크 포스트: Lemmy API embed_description으로 본문 보완
+        # JS 렌더링 사이트도 Lemmy 서버 캐시에서 가져오므로 안정적
         if use_og:
-            enriched, ok = _enrich_lemmy_content(
-                link=link,
-                raw_content=raw_content,
-                rss_text=content,
-            )
-            if not ok:
-                filtered_out += 1
-                continue
-            content = enriched
+            post_id = _extract_lemmy_post_id(link)
+            if post_id:
+                embed_desc = fetch_lemmy_embed_description(post_id)
+                if embed_desc:
+                    content = embed_desc
+                else:
+                    continue  # 미리보기 없음 → 저장 스킵
+            else:
+                continue  # post ID 추출 실패 → 저장 스킵
 
         article = Article(
             title=title,
@@ -354,10 +293,8 @@ def parse_feed(feed_info: dict) -> list[Article]:
             published_at=parse_published_at(entry),
             content=content,
             source_type=feed_info.get("source_type", "media"),
-            ai_only_feed=feed_info.get("ai_only", False),
-            title_only_feed=feed_info.get("title_only", False),
         )
-
+      
         title_only = feed_info.get("title_only", False)
         if not ai_only and not is_ai_related(article, title_only=title_only):
             filtered_out += 1
@@ -366,15 +303,13 @@ def parse_feed(feed_info: dict) -> list[Article]:
         article = score_article(article)
         articles.append(article)
 
-    if filtered_out:
-        logger.info("[%s] 필터링으로 제외 %s건", source, filtered_out)
-    logger.info("[%s] %s건 수집 완료", source, len(articles))
+
     return articles
 
 
 def fetch_all(delay: float = 1.0) -> list[Article]:
     """전체 RSS 피드 수집. delay로 서버 부하 방지."""
-    all_articles: list[Article] = []
+    all_articles = []
     for feed_info in RSS_FEEDS:
         articles = parse_feed(feed_info)
         all_articles.extend(articles)
