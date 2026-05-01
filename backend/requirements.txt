@@ -1,2 +1,0 @@
-# 저장소 루트의 requirements.txt와 동일합니다.
--r ../requirements.txt

@@ -1,139 +1,103 @@
 """
 backend/embedder.py — 임베딩 어댑터
 
-MODE=local  → Ollama HTTP (OLLAMA_BASE_URL, 기본: qwen3-embedding:0.6b)
-MODE=cloud  → OpenRouter Embeddings API
+MODE=local  → Ollama 로컬 (개발 중)
+MODE=cloud  → OpenRouter API (배포 시)
 
-- 로컬 Ollama 실패 시: OPENROUTER_API_KEY가 있으면 OpenRouter 임베딩으로 재시도
-- 전부 실패 시: 1024차원 0-벡터 (검색/피드·RPC는 동작, 유사도는 품질 저하)
+.env에서 MODE 한 줄만 바꾸면 전체 전환됩니다.
 """
 
-from __future__ import annotations
-
-import logging
 import os
-import time
 from dotenv import load_dotenv
 
 load_dotenv()
 
-logger = logging.getLogger(__name__)
-
 MODE = os.getenv("MODE", "local")
-EMBED_DIM = 1024
-OLLAMA_EMBED_MODEL = os.getenv("OLLAMA_EMBED_MODEL", "qwen3-embedding:0.6b")
-OPENROUTER_EMBED_MODEL = os.getenv("OPENROUTER_EMBEDDING_MODEL", "qwen/qwen3-embedding-4b")
-DEFAULT_OLLAMA_BASE = "http://127.0.0.1:11434"
-REF = os.getenv("OPENROUTER_HTTP_REFERER", "https://samsun-production.up.railway.app").strip()
-
-
-def _ollama_base() -> str:
-    return (os.getenv("OLLAMA_BASE_URL") or DEFAULT_OLLAMA_BASE).rstrip("/")
-
-
-def _openrouter_embed_headers() -> dict[str, str]:
-    key = os.getenv("OPENROUTER_API_KEY", "")
-    return {
-        "Authorization": f"Bearer {key}",
-        "Content-Type": "application/json",
-        "HTTP-Referer": REF,
-    }
-
-
-def _zero_embedding() -> list[float]:
-    return [0.0] * EMBED_DIM
 
 
 # ════════════════════════════════════════════
-# LOCAL — Ollama HTTP (OLLAMA_BASE_URL)
+# LOCAL — Ollama (개발 환경)
+# 사용: MODE=local
+# 준비: ollama pull qwen3-embedding:0.6b
 # ════════════════════════════════════════════
 
-
-def _embed_ollama_http(text: str) -> list[float]:
-    import requests
-
-    base = _ollama_base()
-    last_err: str | None = None
-    for payload in (
-        {"model": OLLAMA_EMBED_MODEL, "input": text},
-        {"model": OLLAMA_EMBED_MODEL, "prompt": text},
-    ):
-        r = requests.post(f"{base}/api/embeddings", json=payload, timeout=30)
-        if r.status_code != 200:
-            last_err = f"HTTP {r.status_code} {r.text[:200]}"
-            continue
-        data = r.json()
-        emb = data.get("embedding")
-        if emb and isinstance(emb, list):
-            return [float(x) for x in emb[:EMBED_DIM]]
-        last_err = "no embedding in body"
-    raise RuntimeError(f"Ollama /api/embeddings 실패: {last_err}")
+def _embed_local(text: str) -> list[float]:
+    # ollama 라이브러리로 직접 호출 (HTTP 요청보다 안정적)
+    import ollama
+    resp = ollama.embeddings(
+        model="qwen3-embedding:0.6b",
+        prompt=text,
+    )
+    return resp["embedding"][:1024]
 
 
 # ════════════════════════════════════════════
-# CLOUD — OpenRouter Embeddings
+# CLOUD — OpenRouter Embedding API (배포 환경)
+# 사용: MODE=cloud
+# 준비: .env에 OPENROUTER_API_KEY 설정
 # ════════════════════════════════════════════
-
 
 def _embed_cloud(text: str) -> list[float]:
-    import requests
-
+    import requests, time
     api_key = os.getenv("OPENROUTER_API_KEY", "")
-    if not api_key:
-        raise RuntimeError("OPENROUTER_API_KEY 없음")
     for attempt in range(3):
         resp = requests.post(
             "https://openrouter.ai/api/v1/embeddings",
-            headers=_openrouter_embed_headers(),
+            headers={
+                "Authorization": f"Bearer {api_key}",
+                "Content-Type":  "application/json",
+            },
             json={
-                "model": OPENROUTER_EMBED_MODEL,
+                "model": "qwen/qwen3-embedding-4b",
                 "input": text,
             },
             timeout=30,
         )
         body = resp.json()
-        if "data" in body and body["data"]:
-            emb = body["data"][0].get("embedding", [])
-            return [float(x) for x in emb[:EMBED_DIM]]
+        if "data" in body:
+            return body["data"][0]["embedding"][:1024]
+        # 429 rate limit 또는 일시 오류 → 재시도
         if attempt < 2:
-            time.sleep(2**attempt)
-    raise RuntimeError(f"OpenRouter 임베딩 실패: {body if isinstance(body, dict) else ''}")
+            time.sleep(2 ** attempt)
+    raise RuntimeError(f"OpenRouter 임베딩 실패: {body}")
 
 
 # ════════════════════════════════════════════
-# QUERY EXPANSION — OpenRouter chat
+# QUERY EXPANSION — LLM으로 검색어 확장
+# 한국어 짧은 쿼리 → 한/영 풍부한 키워드로 변환
 # ════════════════════════════════════════════
-
 
 def expand_query(q: str) -> str:
     """
     LLM(OpenRouter)을 이용해 검색어를 확장한다.
+    예: "엔비디아" → "엔비디아 NVIDIA GPU 반도체 AI가속기 블랙웰 H100 데이터센터"
+
     MODE=local이거나 실패하면 원본 쿼리를 그대로 반환.
     """
     if MODE != "cloud":
         return q
 
     import requests
-
     api_key = os.getenv("OPENROUTER_API_KEY", "")
     if not api_key:
         return q
 
     prompt = (
-        "You are a search query expander for an AI/tech news search engine.\n"
-        "Expand the user's Korean search query into a rich set of relevant keywords.\n"
-        "Include both Korean and English terms, related concepts, tech names, and company names.\n"
-        "Output ONLY the expanded keywords on a single line, space-separated. No explanation.\n\n"
+        "Expand this search query for an AI/tech news engine.\n"
+        "Output ONLY 8-12 unique keywords (Korean + English), space-separated, one line, no repetition.\n\n"
         f"Query: {q}"
     )
 
     try:
         resp = requests.post(
             "https://openrouter.ai/api/v1/chat/completions",
-            headers=_openrouter_embed_headers(),
+            headers={
+                "Authorization": f"Bearer {api_key}",
+                "Content-Type":  "application/json",
+            },
             json={
-                "model": "meta-llama/llama-3.1-8b-instruct",
-                "messages": [{"role": "user", "content": prompt}],
+                "model":      "meta-llama/llama-3.1-8b-instruct",
+                "messages":   [{"role": "user", "content": prompt}],
                 "max_tokens": 120,
                 "temperature": 0.2,
             },
@@ -141,41 +105,25 @@ def expand_query(q: str) -> str:
         )
         body = resp.json()
         expanded = body["choices"][0]["message"]["content"].strip()
+        # LLM이 원본 쿼리도 포함하도록 앞에 붙여줌
         return f"{q} {expanded}"
     except Exception:
+        # 실패하면 원본 쿼리 그대로 사용 (검색은 항상 동작해야 함)
         return q
 
 
 # ════════════════════════════════════════════
-# 공개 인터페이스
+# 공개 인터페이스 — 이것만 import해서 쓰세요
 # ════════════════════════════════════════════
-
 
 def make_embedding(text: str) -> list[float]:
     """
-    텍스트 → 임베딩 벡터 (최대 1024차원).
+    텍스트 → 임베딩 벡터 (1024차원)
 
-    - MODE=cloud: OpenRouter 임베딩 (실패 시 0-벡터)
-    - MODE=local: Ollama HTTP (실패 시 OpenRouter 키가 있으면 클라우드, 끝도 실패면 0-벡터)
+    .env의 MODE 값으로 전환:
+      MODE=local  → Ollama qwen3-embedding:0.6b  (개발용, 기본값)
+      MODE=cloud  → OpenRouter qwen/qwen3-embedding-4b (Railway 배포용)
     """
-    text = (text or "").strip() or " "
-
     if MODE == "cloud":
-        try:
-            return _embed_cloud(text)
-        except Exception as e:
-            logger.warning("OpenRouter 임베딩 실패, 0-벡터 폴백: %s", e)
-        return _zero_embedding()
-
-    # MODE=local — Ollama
-    try:
-        return _embed_ollama_http(text)
-    except Exception as e:
-        logger.warning("Ollama 임베딩 실패 (%s), OpenRouter/폴백 시도: %s", _ollama_base(), e)
-    if os.getenv("OPENROUTER_API_KEY"):
-        try:
-            return _embed_cloud(text)
-        except Exception as e2:
-            logger.warning("OpenRouter 임베딩(폴백)도 실패: %s", e2)
-    logger.warning("임베딩 전부 실패, 0-벡터로 진행(검색/피드는 계속됨)")
-    return _zero_embedding()
+        return _embed_cloud(text)
+    return _embed_local(text)

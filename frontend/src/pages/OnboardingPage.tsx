@@ -1,8 +1,12 @@
 import { useState } from 'react';
 import { postOnboarding } from '../data/api';
-import logoImg from '../assets/samsun_blue.png';
+import type { Interest } from '../data/articles';
+import logoLight from '../assets/samsun_blue.png';
+import logoDark from '../assets/samsun_dark.png';
+import { useColorScheme } from '../hooks/useColorScheme';
 
-export type Interest = 'AI 연구' | 'AI 심층' | 'AI 스타트업' | 'AI 비즈니스' | 'AI 윤리' | 'AI 커뮤니티' | '테크 전반';
+// Interest 타입 단일 진실 소스: data/articles.ts (CATEGORIES). 재내보내기로 기존 import 호환 유지.
+export type { Interest };
 
 const INTERESTS: { id: Interest; emoji: string; desc: string }[] = [
   { id: 'AI 연구',    emoji: '🔬', desc: 'MIT TR · The Decoder — AI 최신 연구 동향' },
@@ -29,6 +33,8 @@ export default function OnboardingPage({ onDone }: Props) {
   const [step, setStep]         = useState<1 | 2>(1);
   const [selected, setSelected] = useState<Interest[]>([]);
   const [submitting, setSubmitting] = useState(false);
+  const colorScheme             = useColorScheme();
+  const logoImg                 = colorScheme === 'dark' ? logoDark : logoLight;
 
   const toggle = (id: Interest) =>
     setSelected(p => p.includes(id) ? p.filter(i => i !== id) : [...p, id]);

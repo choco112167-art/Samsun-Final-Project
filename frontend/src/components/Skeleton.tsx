@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react';
-import { Skeleton } from '@toss/tds-mobile';
+import { Skeleton } from './SkeletonPrimitive';
 
 export function ArticleCardSkeleton() {
   return (

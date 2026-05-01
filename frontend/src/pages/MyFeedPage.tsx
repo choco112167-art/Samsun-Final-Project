@@ -6,7 +6,7 @@ import DetailPage from './DetailPage';
 import type { BookmarkHook } from '../hooks/useBookmarks';
 import type { Interest } from './OnboardingPage';
 
-type FeedItem = Article & { similarity?: number };
+type FeedItem = Article & { similarity?: number; reason?: string };
 
 const ALL_INTERESTS: { id: Interest; emoji: string; desc: string }[] = [
   { id: 'AI 연구·심층', emoji: '🔬', desc: 'MIT TR · The Decoder — AI 최신 연구 및 심층 분석' },

@@ -1,11 +1,14 @@
-# 루트에서: pip install -r requirements.txt
-# FastAPI + RSS 파이프라인(main.py) + backend API 공통
-
 fastapi>=0.115.0
 uvicorn[standard]>=0.32.0
 supabase>=2.10.0
 pydantic>=2.0
+pydantic-settings>=2.0
 python-dotenv
 requests>=2.32.0
+httpx>=0.25.0
 feedparser>=6.0.11
 ollama>=0.3.0
+
+# 팩트체크 파이프라인 (fact_checker/) — Gemini + OpenRouter fallback
+google-genai>=1.0.0
+openai>=1.0.0

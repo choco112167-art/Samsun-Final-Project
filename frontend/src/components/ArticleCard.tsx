@@ -1,9 +1,18 @@
 import { useState } from 'react';
-import { Badge } from '@toss/tds-mobile';
+import { Badge } from './Badge';
 import type { Article } from '../data/articles';
 import type { ApiArticle } from '../data/api';
 
 export type CardArticle = Article | ApiArticle;
+
+/** 카드가 Article 또는 원본 ApiArticle 일 때 한국어 제목 우선 */
+function cardHeadline(article: CardArticle): string {
+  let ko = '';
+  if ('titleKo' in article) ko = ((article as Article).titleKo ?? '').trim();
+  else ko = ((article as ApiArticle).title_ko ?? '').trim();
+  const fb = (article.title ?? '').trim();
+  return ko || fb;
+}
 
 function pickSummary(article: CardArticle): string {
   if ('summaryFormal' in article && article.summaryFormal) return article.summaryFormal;
@@ -46,7 +55,7 @@ export default function ArticleCard({ article, bookmarked = false, onBookmark, o
   const handleShare = (e: React.MouseEvent) => {
     e.stopPropagation();
     navigator.clipboard
-      .writeText(`[${article.source}] ${article.title}\n\n${summary}`)
+      .writeText(`[${article.source}] ${cardHeadline(article)}\n\n${summary}`)
       .catch(() => {});
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
@@ -110,7 +119,7 @@ export default function ArticleCard({ article, bookmarked = false, onBookmark, o
         lineHeight: 1.45, letterSpacing: '-0.02em',
         marginBottom: 7, paddingLeft: 8,
       }}>
-        {article.title}
+        {cardHeadline(article)}
       </h2>
 
       <p style={{

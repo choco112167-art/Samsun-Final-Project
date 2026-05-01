@@ -1,16 +1,43 @@
 .env
-.DS_Store
+apps-in-toss-examples-main/
+../unzip/
 venv/
 .venv/
 __pycache__/
 *.pyc
 *.pyo
+.DS_Store
 CLAUDE.md
+
+# 로컬 데이터
+data/
+!frontend/src/data/
+logs/
+poc_dummy.py
+articles_raw.jsonl
+articles_translated.jsonl
+*.jsonl
 eval/data/
 token.json
+client_secret*.json
 
-# JS / build
-node_modules/
-# 저장소 루트 dist만 무시 (frontend/dist 는 커밋)
-/dist/
+# diff 임시파일
+diff_*.txt
 
+# JS / build — any depth
+**/node_modules/
+dist/
+# frontend/dist/는 Railway 서빙을 위해 추적
+!frontend/dist/
+
+# 커서 설정
+.cursor/
+
+# Claude Code
+.claude/
+
+# MCP 개인 설정 (각자 로컬 머신 경로 포함)
+.mcp.json
+
+# 로컬 파인튜닝 모델 가중치 (용량 대형)
+samsunmodel*/

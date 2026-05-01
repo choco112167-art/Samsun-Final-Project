@@ -1,74 +1,84 @@
 """
-三鮮 (삼선) - 신뢰도 스코어링
-담당: 이상준 (데이터 수집) / 강주찬 (백엔드)
-- 출처별 기본 신뢰도
-- AI 관련성 키워드 필터 (일반 / 제목 전용 엄격 모드)
-- 루머/팩트 구분 (향후 Claude API 연동 예정)
+피드(ai_only=False) 및 파이프라인 프리플라이트용 AI 관련성 판별.
+
+토큰 비용 절감: 단순 정규식·키워드 매칭만 사용 (LLM 호출 없음).
 """
+
+from __future__ import annotations
+
+import re
 
 from models.article import Article
 
-# ──────────────────────────────────────────
-# 출처별 기본 신뢰도 (어드민에서 조정 가능)
-# ──────────────────────────────────────────
-SOURCE_CREDIBILITY: dict[str, float] = {
-    "MIT Technology Review": 0.95,
-    "IEEE Spectrum":         0.93,
-    "BBC Technology":        0.90,
-    "The Guardian Tech":     0.88,
-    "TechCrunch":            0.82,
-    "The Verge":             0.80,
-
-    "VentureBeat AI":        0.75,
-}
-
-# ──────────────────────────────────────────
-# AI 관련성 필터 키워드 (제목 + 본문 검색용)
-# ──────────────────────────────────────────
-AI_KEYWORDS: list[str] = [
-    "AI", "artificial intelligence", "machine learning", "deep learning",
-    "LLM", "GPT", "ChatGPT", "neural", "transformer", "diffusion",
-    "semiconductor", "chip", "NVIDIA", "robot", "autonomous",
-    "OpenAI", "Anthropic", "Google DeepMind", "Meta AI",
-    "generative", "foundation model", "large language", "inference",
-    "Gemini", "Claude", "Copilot", "DeepSeek", "Mistral",
-]
-
-# ──────────────────────────────────────────
-# # 더 명확한 AI/반도체 용어만 포함
-# ──────────────────────────────────────────
-AI_TITLE_KEYWORDS: list[str] = [
-    "AI", "artificial intelligence", "machine learning",
-    "LLM", "GPT", "ChatGPT", "neural", "semiconductor", "chip",
-    "NVIDIA", "robot", "OpenAI", "Anthropic", "DeepMind",
-    "Gemini", "Claude", "DeepSeek", "Mistral",
-    "generative", "foundation model", "inference",
-]
-
-
-def get_credibility_score(source: str) -> float:
-    """출처 기반 신뢰도 점수 반환. 미등록 출처는 0.5."""
-    return SOURCE_CREDIBILITY.get(source, 0.5)
+# 한 줄 요약형 피드(title_only)에서는 제목 위주로만 검사할 수 있음
+_AI_TERMS_COMPILED = re.compile(
+    r"|".join(
+        [
+            r"\bai\b",
+            r"\bml\b",
+            r"\bllm\b",
+            r"\bl\.l\.m\b",
+            r"\bnlp\b",
+            r"\bchatgpt\b",
+            r"\bgpt[- ]?[345]\b",
+            r"\bgpt-4o\b",
+            r"\bopenai\b",
+            r"\bclaude\b",
+            r"\banthropic\b",
+            r"\bgemini\b",
+            r"\bgoogle deepmind\b",
+            r"\bdeepmind\b",
+            r"\bllama\b",
+            r"\bmistral\b",
+            r"\bmixtral\b",
+            r"\bdeepseek\b",
+            r"\bqwen\b",
+            r"\bneural\b",
+            r"\btransformer\b",
+            r"\bdiffusion\b",
+            r"\bStable\s+Diffusion\b",
+            r"\bMidjourney\b",
+            r"\bLLaVA\b",
+            r"\bRAG\b",
+            r"\bfine[- ]tun(e|ing)\b",
+            r"\binference\b",
+            r"\bparameter[s]?\b",
+            r"\bgpu\b|\btpu\b|\bnpu\b",
+            r"\bnvidia\b|\bradeon\b|\bcuda\b",
+            r"\bcopilot\b",
+            r"\bassistant\b.{0,25}\b(model|AI)\b",
+            r"\bmachine\s+learning\b",
+            r"\bdeep\s+learning\b",
+            r"\bfoundation\s+model\b",
+            r"\bmultimodal\b",
+            r"\bembedding\b|\bvector\b.{0,15}\b(search|db)\b",
+            r"\bfederated\b.{0,15}\blearning\b",
+            r"\bagi\b|\bagentic\b",
+        ]
+    ),
+    re.IGNORECASE,
+)
 
 
 def is_ai_related(article: Article, title_only: bool = False) -> bool:
     """
-    AI 관련 기사 여부 판별.
-    title_only=True → 제목만 엄격하게 검사 (본문이 없는 피드용)
-    title_only=False → 제목 + 본문 모두 검사
+    제목(+ 선택적으로 본문 앞부분)에서 AI·ML 관련 용어 탐지.
+
+    Lemmy 등 ai_only=False 피드에서 RSS 단계 및 파이프라인 프리플라이트에 사용한다.
     """
-    if title_only:
-        text = article.title.lower()
-        return any(kw.lower() in text for kw in AI_TITLE_KEYWORDS)
-    else:
-        text = (article.title + " " + article.content).lower()
-        return any(kw.lower() in text for kw in AI_KEYWORDS)
+    blob = article.title.strip()
+    if not title_only and article.content:
+        blob = blob + "\n" + article.content[:12000]
+    return bool(_AI_TERMS_COMPILED.search(blob))
 
 
 def score_article(article: Article) -> Article:
-    """
-    기사 신뢰도 점수 계산 후 article에 반영.
-    향후 Claude API로 루머/팩트 분류 추가 예정.
-    """
-    article.credibility_score = get_credibility_score(article.source)
+    """출처 프로파일 기준 credibility 스코어 주입."""
+    try:
+        from fact_checker.channel_config import get_profile
+
+        p = get_profile(article.source)
+        article.credibility_score = float(p.credibility_score)
+    except Exception:
+        pass
     return article

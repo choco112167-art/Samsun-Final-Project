@@ -1,4 +1,3 @@
-
 # 삼선 — AI 테크 뉴스 큐레이션 미니앱
 
 > 추천 · 요약 · 번역을 하나의 흐름으로  
@@ -6,69 +5,90 @@
 
 ---
 
-## 🚀 빠른 시작 (팀원용)
+## 🚀 팀원용 1분 로컬 셋팅 가이드
 
-> 처음 합류한 팀원은 이 섹션만 따라하면 5분 안에 개발환경 세팅 완료.  
-> 상세 실행 옵션은 아래 `📦 상세 실행 가이드` 참조.
+> 클론부터 로컬 실행까지 한 번에. **운영(Railway) 과 동일한 팀 공용 Supabase 를 그대로 바라봄** — 더미 DB 없이 실제 데이터로 개발합니다.
 
-### 필수 설치
+### 0. 사전 준비
+- Python **3.11** (`runtime.txt` 기준), Node.js **20+**, npm
+- Railway 대시보드 접근 권한 (Supabase anon key 복사를 위해 1회 필요)
 
-| 도구 | 버전 | 다운로드 |
-| --- | --- | --- |
-| Python | **3.11.x** | https://www.python.org/downloads/release/python-3119/ |
-| Node.js | **20.x LTS** | https://nodejs.org/ |
-| Git | 최신 | https://git-scm.com/ |
-| Ollama | 최신 | https://ollama.com/ (선택) |
+### 1. 클론 & 진입
 
-### 초기 세팅 (최초 1회)
-
-**1. 레포 클론**
-
-```
+```bash
 git clone https://github.com/choco112167-art/Samsun-Final-Project.git
 cd Samsun-Final-Project
+git switch feat/joochan       # 자동 배포 브랜치 (필요 시)
 ```
 
-**2. Python 가상환경 (.venv)**
+### 2. 프론트엔드 의존성 설치
 
-Windows:
-```
-python -m venv .venv
-.venv\Scripts\activate
-pip install -r requirements.txt
-```
-
-Mac/Linux:
-```
-python3 -m venv .venv
-source .venv/bin/activate
-pip install -r requirements.txt
-```
-
-**3. 프론트엔드**
-
-```
+```bash
 cd frontend
 npm install
 cd ..
 ```
 
-**4. 환경변수**
+### 3. 백엔드 의존성 설치 (가상환경 권장)
 
-Windows: `copy .env.example .env`  
-Mac/Linux: `cp .env.example .env`  
-이후 `.env` 열어서 Slack 공유 값 입력.
+```bash
+python3.11 -m venv .venv
+source .venv/bin/activate           # Windows: .venv\Scripts\activate
+pip install -r requirements.txt
+```
 
-### Cursor 사용자 필수 설정
+### 4. 🔑 환경 변수 셋팅 — **`backend/.env` 한 파일로 끝**
 
-1. `Ctrl/Cmd + Shift + P` → **Python: Select Interpreter**
-2. `./.venv/Scripts/python.exe` (Windows) 또는 `./.venv/bin/python` (Mac) 선택
-3. 안 하면 시스템 Python 사용됨
+> ⚠️ **단일 `.env` 정책** (이슈 #18 청소 시 `.env.example` 폐기). `.gitignore` 에 등재되어 커밋되지 않습니다.
 
-### 매일 작업 시작할 때
+`backend/.env` 가 이미 placeholder 상태로 존재합니다. **`SUPABASE_KEY` 만 실제 값으로 채우면 끝**입니다.
 
-Windows: `.venv\Scripts\activate`  
-Mac/Linux: `source .venv/bin/activate`
+```bash
+# Railway 대시보드에서 anon key 복사:
+#   https://railway.app  →  samsun-production  →  Variables  →  SUPABASE_KEY  →  Copy
+# 그런 다음 placeholder 치환:
+sed -i '' 's|<PASTE_TEAM_ANON_KEY_HERE>|<여기에_복사한_KEY>|' backend/.env
+```
+
+치환 후 `backend/.env` 의 모습:
+
+```env
+SUPABASE_URL=https://srdvlalyucbokdwfkmcf.supabase.co     # 운영 Railway 와 동일 인스턴스
+SUPABASE_KEY=eyJhbGc...실제_anon_key...                    # 위에서 복사한 값
+MODE=cloud
+OLLAMA_BASE_URL=http://localhost:11434
+OPENROUTER_API_KEY=sk-or-v1-...
+```
+
+> 새 머신에서 `.env` 가 없다면 위 5줄을 직접 작성하면 됩니다 (자세한 운영은 `HANDOFF.md` §9 참조).
+
+### 5. 실행 — 서버 두 개 (백엔드 + 프론트엔드)
+
+**터미널 ① — 백엔드 (FastAPI :8000)**
+
+```bash
+source .venv/bin/activate
+uvicorn backend.main:app --reload --port 8000
+# 헬스체크: curl http://localhost:8000/debug | python3 -m json.tool
+#   → "sdk_ok": true  ✓
+```
+
+**터미널 ② — 프론트엔드 (Vite :5173)**
+
+```bash
+cd frontend
+npm run dev
+# → http://localhost:5173 접속
+```
+
+### 6. 첫 검증 체크리스트
+
+- [ ] `http://localhost:5173` 접속 시 흰 화면 없이 메인 렌더 ✓
+- [ ] 하단 탭 5개(홈/카테고리/핫이슈/검색/내 피드) 아이콘 정상 표시 ✓
+- [ ] 카테고리 탭 7개(`AI 연구`/`AI 심층`/`AI 스타트업`/`AI 비즈니스`/`AI 윤리`/`AI 커뮤니티`/`테크 전반`) 모두 기사가 채워짐 ✓
+- [ ] `curl 'http://localhost:8000/articles?limit=5'` 가 운영과 동일한 카테고리 분포를 반환
+
+위 4개가 통과하면 셋업 완료. 백엔드를 켜지 않고 프론트만 띄워도 DEV 모드 mock 폴백(`mock-articles.ts`) 이 동작해 7개 탭이 채워집니다.
 
 ---
 
@@ -100,8 +120,8 @@ AI 종사자·학습자들은 수십 개의 해외 전문 매체에 흩어진 �
 | --- | --- | --- |
 | 📝 번역 + 3줄 요약 | 영문 기사를 단일 LLM 호출로 번역 및 3줄 요약 동시 생성 | Qwen3.5-4B (Ollama) |
 | 🎨 격식체 / 일상체 | 동일 기사를 두 가지 문체로 동시 제공 + 복사 버튼 | Qwen3.5-4B |
-| 🔍 개인화 추천 (RAG) | 관심 주제 기반 벡터 유사도 검색으로 맞춤 피드 | `qwen3-embedding:0.6b` (1024차원) + pgvector |
-| 🔤 신조어 처리 (RAG) | AI 신조어를 DB에서 검색해 첫 등장 시 `Term(음차, 설명)` 형식으로 자동 포매팅 | `qwen3-embedding:0.6b` (1024차원) + pgvector |
+| 🔍 개인화 추천 (RAG) | 관심 주제 기반 벡터 유사도 검색으로 맞춤 피드 | `qwen3:0.6b` (1024차원) + pgvector |
+| 🔤 신조어 처리 (RAG) | AI 신조어를 DB에서 검색해 첫 등장 시 `Term(음차, 설명)` 형식으로 자동 포매팅 | `qwen3:0.6b` (1024차원) + pgvector |
 | 📋 즉시 공유 포맷 | 복사 버튼 → 사내 메신저 바로 붙여넣기 | — |
 | 🔔 부재중 요약 알림 | 오랜만에 접속 시 부재 중 기사 요약 알림 제공 | — |
 
@@ -131,7 +151,7 @@ AI 종사자·학습자들은 수십 개의 해외 전문 매체에 흩어진 �
 - **LoRA 파인튜닝** — **데이터셋:** RSS·크롤링으로 수집한 AI 뉴스 기사를 LLM으로 번역·요약해 만든 **자체 합성 데이터**. **학습:** epoch **8**, **Google Colab Pro (A100)**. (실험·평가는 `eval/`·파이프라인 기본 경로와 별도.)
 - **공개 모델 (Hugging Face)** — LoRA Adapter [`mingyu3939/samsun123`](https://huggingface.co/mingyu3939/samsun123), GGUF [`mingyu3939/samsun1234`](https://huggingface.co/mingyu3939/samsun1234)
 - **로컬 접근** — Ollama 로컬 서버; 외부에서 붙을 때는 ngrok 등으로 `11434` 터널링.
-- **`qwen3-embedding:0.6b` (Ollama `/api/embeddings`)** — 임베딩 전용 소형 모델, **출력 차원 1024**, 컨텍스트 32K. 기사 번역문·신조어 텍스트 임베딩을 **동일 모델**로 통일. Supabase `pgvector`와 조합해 기사 추천 RAG 및 신조어 DB 유사도 검색에 사용.
+- **`qwen3:0.6b` (Ollama `/api/embeddings`)** — 임베딩 전용 소형 모델, **출력 차원 1024**. 기사 번역문·신조어 텍스트 임베딩을 **동일 모델**로 통일. Supabase `pgvector`와 조합해 기사 추천 RAG 및 신조어 DB 유사도 검색에 사용.
 
 ### 인프라
 
@@ -214,30 +234,30 @@ AI 종사자·학습자들은 수십 개의 해외 전문 매체에 흩어진 �
    ├── articles
    ├── embeddings
    ├── user_feeds
-   └── neologisms                   ← 신조어 DB (`qwen3-embedding:0.6b`, 1024차원)
+   └── neologisms                   ← 신조어 DB (`qwen3:0.6b`, 1024차원)
         ↓
 [Qwen3.5-4B - Ollama + 로컬 GPU · ngrok 외부 접속] — **추후 연결 예정**
 ```
 
 ---
 
-## 📦 상세 실행 가이드
+## 🚀 실행 방법
 
 ### 가상환경 설정 (최초 1회)
 
 Windows:
 
 ```bash
-python -m venv .venv
-.venv\Scripts\activate
+python -m venv venv
+venv\Scripts\activate
 pip install -r requirements.txt
 ```
 
 Mac/Linux:
 
 ```bash
-python3 -m venv .venv
-source .venv/bin/activate
+python3 -m venv venv
+source venv/bin/activate
 pip install -r requirements.txt
 ```
 
@@ -466,7 +486,7 @@ Samsun-Final-Project-main/
 - [ ] 부재중 요약 알림
 - [ ] 신뢰도·팩트 라벨 (미구현)
 - [ ] **신조어 RAG**
-  - [ ] 신조어 DB 구축 (Supabase pgvector, `qwen3-embedding:0.6b`, 1024차원)
+  - [ ] 신조어 DB 구축 (Supabase pgvector, `qwen3:0.6b`, 1024차원)
   - [ ] 신조어 검색 API (`/neologisms/search`, `/neologisms/context`, `/neologisms/format`)
   - [ ] 번역 파이프라인 통합 (첫등장 포매팅 자동 적용)
   - [ ] Term Preservation Rate ≥ 95%

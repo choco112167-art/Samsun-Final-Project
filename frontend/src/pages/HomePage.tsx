@@ -1,15 +1,24 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { BottomSheet, useToast } from '@toss/tds-mobile';
+import { BottomSheet, useToast } from '../components/Overlay';
 import ArticleCard from '../components/ArticleCard';
 import { FeedSkeleton } from '../components/Skeleton';
 import { fetchArticles } from '../data/api';
-import type { Article, Category } from '../data/articles';
+import {
+  CATEGORIES,
+  filterByCategory,
+  articleDisplayTitle,
+  type Article,
+  type Category,
+  type Interest,
+} from '../data/articles';
 import type { AbsenceSummaryResponse, AbsenceArticle } from '../data/api';
-import type { Interest } from './OnboardingPage';
 import DetailPage from './DetailPage';
 import type { BookmarkHook } from '../hooks/useBookmarks';
 
-const LIMIT = 20;
+// CategoryPage 와 동일한 데이터 풀 크기를 보장해야 카테고리 칩 별 매핑 결과가
+// 두 화면에서 동일하게 나온다 (이슈 #15). 너무 작으면 최신 N개 안에 특정 카테고리가
+// 0건 이라 칩 클릭 시 빈 화면이 나오는 사일런트 누락 발생.
+const LIMIT = 100;
 
 type Filter = '전체' | Category;
 
@@ -123,16 +132,20 @@ export default function HomePage({ bm, onNavigateToFeed, onArticleClick, absence
     }
   }, [detail]);
 
-  // toArticle()에서 이미 정규화 — CATEGORY_MAP 불필요
-  // 온보딩에서 관심사를 선택했으면 그 카테고리만 기본으로 보여줌
-  // 매칭 결과가 없으면(구버전 관심사 등) 전체 기사 폴백
+  // 필터 규칙
+  //   '전체' 선택  → 사용자가 온보딩에서 고른 관심사로 우선 좁힌 개인화 피드
+  //                  (관심사 매칭 결과가 0이면 전체 기사로 폴백 — 구버전 라벨 호환)
+  //   카테고리 칩 → 관심사를 무시하고 전체 풀에서 해당 카테고리만 매칭
+  //                 ↳ filterByCategory(공유 유틸)을 통해 CategoryPage 와 동일 동작 보장
   const interestFiltered = interests.length > 0
     ? articles.filter(a => interests.includes(a.category as Interest))
     : articles;
-  const baseArticles = interestFiltered.length > 0 ? interestFiltered : articles;
+  const baseArticles = filter === '전체'
+    ? (interestFiltered.length > 0 ? interestFiltered : articles)
+    : articles;
 
   const breaking = baseArticles.filter(a => a.isBreaking);
-  const filtered  = filter === '전체' ? baseArticles : baseArticles.filter(a => a.category === filter);
+  const filtered  = filterByCategory(baseArticles, filter);
   const newCount  = baseArticles.filter(a => a.isNew).length;
 
   if (detail) return (
@@ -209,7 +222,7 @@ export default function HomePage({ bm, onNavigateToFeed, onArticleClick, absence
                 <span style={{ fontSize: 10, color: 'var(--color-text-tertiary)' }}>{article.source}</span>
               </div>
               <p style={{ fontSize: 13, fontWeight: 600, color: 'var(--color-text-primary)', lineHeight: 1.45, marginBottom: 6 }}>
-                {article.title}
+                {article.title_ko?.trim() || article.title}
               </p>
               {article.summary_formal && (
                 <p style={{ fontSize: 12, color: 'var(--color-text-secondary)', lineHeight: 1.6 }}>
@@ -256,7 +269,7 @@ export default function HomePage({ bm, onNavigateToFeed, onArticleClick, absence
 
         {/* 카테고리 필터 — 8개 */}
         <div style={{ display: 'flex', gap: 7, marginTop: 16, paddingBottom: 16, overflowX: 'auto', scrollbarWidth: 'none' }}>
-          {(['전체','AI 연구','AI 심층','AI 스타트업','AI 비즈니스','AI 윤리','AI 커뮤니티','테크 전반'] as Filter[]).map(f => (
+          {(['전체', ...CATEGORIES] as Filter[]).map(f => (
             <button key={f} onClick={() => setFilter(f)} style={{
               flexShrink: 0, fontSize: 12, fontWeight: filter === f ? 700 : 400,
               color: filter === f ? '#FFFFFF' : '#6B7684',
@@ -303,7 +316,7 @@ export default function HomePage({ bm, onNavigateToFeed, onArticleClick, absence
                       <span style={{ fontSize: 10, color: '#EF4444', fontWeight: 600 }}>{a.timeAgo}</span>
                     </div>
                     <p style={{ fontSize: 12, fontWeight: 600, color: 'var(--color-text-primary)', lineHeight: 1.4, display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
-                      {a.title}
+                      {articleDisplayTitle(a)}
                     </p>
                   </button>
                 ))}

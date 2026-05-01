@@ -1,11 +1,7 @@
-"""
-三鮮 (삼선) - 데이터 모델
-담당: 강주찬 (백엔드)
-- Article 데이터 클래스
-- crawler / db / FastAPI 모두 이 모델을 공유
-"""
+"""RSS 크롤러용 기사 데이터 클래스."""
 
-import hashlib
+from __future__ import annotations
+
 from dataclasses import dataclass, field
 
 
@@ -17,10 +13,11 @@ class Article:
     category: str
     country: str
     published_at: str
-    content: str = ""
-    credibility_score: float = 0.0
-    source_type: str = "media"          # 'media' | 'community'
-    url_hash: str = field(init=False)
-
-    def __post_init__(self):
-        self.url_hash = hashlib.md5(self.url.encode()).hexdigest()
+    content: str
+    source_type: str = "media"
+    credibility_score: float = 0.5
+    keywords: list[str] = field(default_factory=list)
+    #: 해당 피드가 ai_only=True 면 True — 크롤 단계에서 AI 키워드 게이트 생략
+    ai_only_feed: bool = True
+    #: Lemmy 등 title_only 피드 — 관련성 검사 시 제목 위주
+    title_only_feed: bool = False

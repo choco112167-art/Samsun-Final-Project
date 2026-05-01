@@ -10,17 +10,26 @@ Usage:
   python pipeline/translate_summarize.py
 """
 
+import logging
+import os
 import re
 import sys
+
 import ollama
 from dotenv import load_dotenv
-import os
-from pipeline.utils import preprocess_text, extract_json as _extract_json_util
+
+from pipeline.utils import extract_json as _extract_json_util
+
+_REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+if _REPO_ROOT not in sys.path:
+    sys.path.insert(0, _REPO_ROOT)
 
 if sys.stdout.encoding != "utf-8":
     sys.stdout.reconfigure(encoding="utf-8")
 
 load_dotenv()
+
+logger = logging.getLogger(__name__)
 
 MODEL = os.getenv("MODEL_NAME", "qwen3.5:4b")
 
@@ -37,11 +46,13 @@ If the source contains these scripts, translate or romanize them into Korean. NE
 ━━━ OUTPUT FORMAT ━━━
 Return ONLY valid JSON. No markdown fences, no explanation outside JSON.
 {{
+  "title": "<한국어 제목>",
   "translation": "<전체 한국어 번역>",
   "summary_formal": "<격식체 요약>",
   "summary_casual": "<일상체 요약>"
 }}
-All three fields are REQUIRED. Never leave any field empty.
+All four fields are REQUIRED. Never leave any field empty.
+If no title is provided, set "title" to "".
 
 ━━━ TRANSLATION RULES ━━━
 1. Translate the ENTIRE article into Korean.
@@ -95,6 +106,13 @@ All three fields are REQUIRED. Never leave any field empty.
 8. New English coinages not in the glossary: EnglishTerm(한국어 음차, 한 줄 설명) on first mention.
    Example: Blackwell Ultra(블랙웰 울트라, Nvidia 차세대 GPU 아키텍처)
 
+━━━ TITLE TRANSLATION RULES ━━━
+- title: translate the English title into Korean headline style.
+- Use noun-final endings: ~함 / ~됨 / ~발표 / ~출시 / ~공개
+- Keep it concise — omit articles (a/the) and filler words.
+- Apply all proper noun, person name, and number rules above.
+- If no title is given in the input, set title to "".
+
 ━━━ SUMMARY RULES ━━━
 - summary_formal: exactly {n} Korean sentence(s), 격식체 (~습니다/~됩니다). Must be complete.
 - summary_casual: exactly {n} Korean sentence(s), 일상체 (~해요/~예요/~거예요). Must be complete.
@@ -126,6 +144,7 @@ def estimate_sentences(text: str, max_sentences: int = 3) -> int:
 # ────────────────────────────────────────────────
 def translate_and_summarize(
     text: str,
+    title: str = "",
     summary_sentences: int = 3,
     temperature: float = 0.1,
 ) -> dict:
@@ -133,25 +152,38 @@ def translate_and_summarize(
     영어 뉴스 기사를 격식체·일상체로 번역하고 요약합니다 (단일 LLM 호출).
 
     Args:
-        text: 원본 영어 텍스트
+        text: 원본 영어 본문
+        title: 영어 기사 제목 (선택). 제공 시 title 번역 포함.
         summary_sentences: 요약 문장 수 (기본: 3)
         temperature: 생성 다양성 (0.0~1.0)
 
     Returns:
         {
-            "translation": str,     # 번역 전문
-            "summary_formal": str,  # 격식체 3줄 요약
-            "summary_casual": str,  # 일상체 3줄 요약
+            "title":          str,  # 한국어 제목 (title 미제공 시 "")
+            "translation":    str,  # 번역 전문
+            "summary_formal": str,  # 격식체 요약
+            "summary_casual": str,  # 일상체 요약
         }
     """
     system = SYSTEM_PROMPT.format(n=summary_sentences)
+
+    neo_block = ""
+    try:
+        from backend.neologism_rag import build_neologism_glossary_prompt_section
+
+        neo_block = build_neologism_glossary_prompt_section(title or "", text or "")
+    except Exception as exc:
+        logger.debug("신조어 용어집 생략: %s", exc)
+
+    base_user = f"[TITLE]\n{title}\n\n[BODY]\n{text}" if title else text
+    user_content = f"{neo_block}\n\n{base_user}" if neo_block else base_user
 
     for attempt in range(3):   # 최대 3회 시도
         response = ollama.chat(
             model=MODEL,
             messages=[
                 {"role": "system", "content": system},
-                {"role": "user", "content": text},
+                {"role": "user", "content": user_content},
             ],
             options={
                 "temperature": 0.1,
@@ -184,7 +216,9 @@ def batch_translate_summarize(
     for i, text in enumerate(texts, 1):
         print(f"[{i}/{len(texts)}] 처리 중...")
         try:
-            result = translate_and_summarize(text, summary_sentences)
+            result = translate_and_summarize(
+                text, summary_sentences=summary_sentences
+            )
             results.append({"index": i, "status": "ok", **result})
         except Exception as e:
             results.append({"index": i, "status": "error", "error": str(e)})

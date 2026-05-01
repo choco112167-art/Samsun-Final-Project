@@ -1,11 +1,11 @@
 import { useState, useEffect } from 'react';
 import { fetchArticles } from '../data/api';
-import type { Article, Category } from '../data/articles';
+import { CATEGORIES, filterByCategory, articleDisplayTitle, type Article, type Category } from '../data/articles';
 import DetailPage from './DetailPage';
 import type { BookmarkHook } from '../hooks/useBookmarks';
 
 type SubTab = '전체' | Category;
-const CATEGORY_TABS: SubTab[] = ['전체', 'AI 연구', 'AI 심층', 'AI 스타트업', 'AI 비즈니스', 'AI 윤리', 'AI 커뮤니티', '테크 전반'];
+const CATEGORY_TABS: SubTab[] = ['전체', ...CATEGORIES];
 
 interface Props {
   bm: BookmarkHook;
@@ -21,8 +21,9 @@ export default function CategoryPage({ bm, onArticleClick }: Props) {
     fetchArticles({ limit: 100 }).then(setArticles).catch(() => {});
   }, []);
 
-  // Article.category는 toArticle()에서 이미 Category 타입으로 정규화되어 있음
-  const filtered = tab === '전체' ? articles : articles.filter(a => a.category === tab);
+  // Article.category는 toArticle()에서 이미 normalizeCategory() 가 적용된 UI 카테고리.
+  // HomePage 와 동일한 공유 유틸을 통해 두 화면의 결과가 완전히 일치하도록 보장한다.
+  const filtered = filterByCategory(articles, tab);
   const sorted   = [...filtered].sort((a, b) => (b.credibilityScore ?? 0) - (a.credibilityScore ?? 0));
 
   if (detail) return (
@@ -81,7 +82,7 @@ export default function CategoryPage({ bm, onArticleClick }: Props) {
                   {article.isBreaking && <span style={{ fontSize: 10, fontWeight: 600, color: '#EF4444' }}>속보</span>}
                   <span style={{ fontSize: 11, color: 'var(--color-text-tertiary)', marginLeft: 'auto' }}>{article.timeAgo}</span>
                 </div>
-                <p style={{ fontSize: 13, fontWeight: 600, color: 'var(--color-text-primary)', lineHeight: 1.4, marginBottom: 8 }}>{article.title}</p>
+                <p style={{ fontSize: 13, fontWeight: 600, color: 'var(--color-text-primary)', lineHeight: 1.4, marginBottom: 8 }}>{articleDisplayTitle(article)}</p>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                   <div style={{ flex: 1, height: 3, borderRadius: 2, background: 'var(--color-border)', overflow: 'hidden' }}>
                     <div style={{ height: '100%', borderRadius: 2, background: i < 3 ? 'var(--color-primary)' : 'var(--color-text-tertiary)', width: `${((article.credibilityScore ?? 0) / maxScore) * 100}%`, opacity: i < 3 ? 1 : 0.4 }} />
@@ -91,7 +92,7 @@ export default function CategoryPage({ bm, onArticleClick }: Props) {
               </div>
               <div
                 role="button"
-                onClick={e => { e.stopPropagation(); bm.toggle(article.urlHash); }}
+                onClick={e => { e.stopPropagation(); bm.toggle(article.urlHash, article); }}
                 style={{
                   width: 30, height: 30, borderRadius: 8, flexShrink: 0, marginTop: -2,
                   background: bm.isBookmarked(article.urlHash) ? '#FEF3C7' : 'var(--color-surface-secondary)',

@@ -15,23 +15,62 @@ import type { Article } from './articles';
  *   GET  /health            → healthCheck()        서버 상태 확인
  *   POST /translate         → translateArticle()   번역
  *   POST /summarize         → summarizeArticle()   요약
+ *   GET  /absence-summary/:userId
+ *        → fetchAbsenceSummary() (별칭: GET /api/users/:userId/absence-summary)
+ *   POST /user-seen/:userId → markUserSeen() (별칭: POST /api/users/:userId/seen)
  */
 
-const BASE_URL = (import.meta.env.VITE_API_BASE_URL as string | undefined)
-  ?? 'http://localhost:8000';
+// API 베이스 URL 결정 규칙
+//   1. VITE_API_BASE_URL 가 명시되어 있으면 그대로 사용 (로컬 개발: http://localhost:8000)
+//   2. 비어있거나 미정의면 빈 문자열 → 상대 경로 (`/articles`)
+//      → 프론트와 백엔드가 같은 origin 에서 서빙되는 Railway 배포 환경에서 정상 동작
+// trailing slash 가 들어와도 `${BASE_URL}/articles` 가 `//articles` 가 되지 않도록 정리한다.
+const RAW_BASE = (import.meta.env.VITE_API_BASE_URL as string | undefined) ?? '';
+const BASE_URL = RAW_BASE.replace(/\/+$/, '');
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(`${BASE_URL}${path}`, {
-    headers: { 'Content-Type': 'application/json' },
-    ...init,
-  });
+  const url    = `${BASE_URL}${path.startsWith('/') ? path : `/${path}`}`;
+  const method = (init?.method ?? 'GET').toUpperCase();
 
-  if (!res.ok) {
-    const body = await res.text().catch(() => '');
-    throw new ApiError(res.status, body || res.statusText);
+  try {
+    const res = await fetch(url, {
+      headers: { 'Content-Type': 'application/json' },
+      ...init,
+    });
+
+    if (!res.ok) {
+      const body = await res.text().catch(() => '');
+      throw new ApiError(res.status, body || res.statusText);
+    }
+
+    return (await res.json()) as T;
+  } catch (err) {
+    // ─── DEV 전용 mock 폴백 ─────────────────────────────────────────
+    // 로컬 `npm run dev` 중 백엔드가 떠있지 않거나 네트워크가 끊겨도
+    // UI 가 빈 화면 / 깨진 화면이 되지 않도록 가짜 응답을 돌려준다.
+    // `import.meta.env.DEV` 가드 + 동적 import 로 묶어 production 빌드에서는
+    // 폴백 코드 + mock 데이터 모두 자동 tree-shaking.
+    // ────────────────────────────────────────────────────────────────
+    if (import.meta.env.DEV) {
+      try {
+        const mod = await import('./mock-articles');
+        const fallback = mod.getMockFallback<T>(path, method);
+        if (fallback !== undefined) {
+          const reason =
+            err instanceof ApiError
+              ? `HTTP ${err.status}`
+              : (err as Error)?.message || 'fetch failed';
+          console.warn(
+            `[api] dev mock fallback for ${method} ${path} (${reason})`,
+          );
+          return fallback;
+        }
+      } catch {
+        // mock 모듈 로드 실패는 무시하고 아래에서 원래 에러 throw
+      }
+    }
+    throw err;
   }
-
-  return res.json() as Promise<T>;
 }
 
 export class ApiError extends Error {
@@ -51,7 +90,10 @@ export class ApiError extends Error {
 export interface ApiArticle {
   url_hash:          string;
   url:               string;
+  /** RSS 영문 헤드라인 (저장 규약). */
   title:             string;
+  /** 한국어 번역 제목 — 없으면 레거시 행에서 `title` 만 채워져 있을 수 있음. */
+  title_ko?:         string;
   source:            string;
   source_type:       'media' | 'community';
   category:          string;
@@ -83,7 +125,7 @@ export interface FetchArticlesParams {
 export interface OnboardingRequest  { user_id: string; interest_tags: string[]; }
 export interface OnboardingResponse { message: string; }
 
-export interface FeedArticle   extends ApiArticle { similarity?: number; }
+export interface FeedArticle   extends ApiArticle { similarity?: number; reason?: string }
 export interface SearchResult  extends ApiArticle { similarity?: number; }
 
 
@@ -115,12 +157,19 @@ export async function postOnboarding(userId: string, interestTags: string[]): Pr
   });
 }
 
-export async function fetchFeed(userId: string, topK = 10): Promise<(Article & { similarity?: number })[]> {
+export async function fetchFeed(
+  userId: string,
+  topK = 10,
+): Promise<(Article & { similarity?: number; reason?: string })[]> {
   const res = await request<{ feed: FeedArticle[] }>(
     `/feed/${encodeURIComponent(userId)}?top_k=${topK}`,
   );
   const list = res.feed ?? [];
-  return list.map(f => ({ ...toArticle(f), similarity: f.similarity }));
+  return list.map(f => ({
+    ...toArticle(f),
+    similarity: f.similarity,
+    ...(f.reason ? { reason: f.reason } : {}),
+  }));
 }
 
 export async function searchArticles(query: string, topK = 10): Promise<(Article & { similarity?: number })[]> {
@@ -150,6 +199,7 @@ export async function healthCheck(): Promise<{ status: string }> {
 export interface AbsenceArticle {
   url_hash:       string;
   title:          string;
+  title_ko?:      string;
   source:         string;
   category:       string;
   published_at:   string;

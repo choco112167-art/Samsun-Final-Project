@@ -3,13 +3,16 @@
 LLM 출력 또는 학습 데이터의 노이즈를 제거하고 JSON 파싱을 보장합니다.
 
 사용법:
-    from pipeline.utils import preprocess_text, extract_json
+    from pipeline.utils import preprocess_text, extract_json, extract_loose_json_object
 """
+
+from __future__ import annotations
 
 import json
 import re
+from typing import Any
 
-_FIELDS = ["translation", "summary_formal", "summary_casual"]
+_FIELDS = ["title", "translation", "summary_formal", "summary_casual"]
 
 
 def preprocess_text(text: str) -> str:
@@ -136,3 +139,23 @@ def extract_json(text: str) -> dict:
         "summary_formal": "(파싱 실패)",
         "summary_casual": "(파싱 실패)",
     }
+
+
+def extract_loose_json_object(text: str) -> dict[str, Any]:
+    """
+    Gemini 등에서 반환된 자연어 혼합 텍스트에서 첫 JSON 객체를 추출합니다.
+    코드블록·주변 설명이 붙어도 동작합니다.
+    """
+    cleaned = re.sub(r"```(?:json)?\s*|\s*```", "", text or "").strip()
+    try:
+        return json.loads(cleaned)
+    except json.JSONDecodeError:
+        pass
+    for pattern in (r"\{[\s\S]*\}", r"\{[^{}]*\}"):
+        m = re.search(pattern, cleaned)
+        if m:
+            try:
+                return json.loads(m.group())
+            except json.JSONDecodeError:
+                continue
+    return {}

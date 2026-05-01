@@ -17,7 +17,8 @@ CREATE TABLE IF NOT EXISTS articles (
     url               TEXT NOT NULL,         -- 원문 URL
 
     -- 기사 메타데이터 (RSS 수집 · 이상준)
-    title             TEXT,                  -- 기사 제목 (영문)
+    title             TEXT,                  -- 원문 영어 헤드라인 (RSS)
+    title_ko          TEXT,                  -- 번역 한국어 제목 (nullable)
     source            VARCHAR,               -- 언론사명 (TechCrunch, MIT TR 등)
     source_type       VARCHAR,               -- 'media' | 'community'
     category          VARCHAR,               -- 'AI' | 'Tech' 등. Hybrid Search 필터
@@ -32,7 +33,8 @@ CREATE TABLE IF NOT EXISTS articles (
     -- 신뢰도
     credibility_score FLOAT,                 -- 출처 신뢰도 (0.0~1.0). RSS 수집 시 산정
     fact_label        VARCHAR DEFAULT 'UNVERIFIED',
-                                             -- FACT | RUMOR | UNVERIFIED
+                                             -- FACT | RUMOR | UNVERIFIED | INSIGHT
+                                             -- INSIGHT: TIER 0-1 미디어의 전문가 사설/분석
                                              -- credibility_score 기반 자동 분류 (MVP)
                                              -- fact_checks 집계로 갱신 (MVP 이후)
 
@@ -42,7 +44,7 @@ CREATE TABLE IF NOT EXISTS articles (
     summary_casual    TEXT,                  -- 일상체 3줄 요약 (~해요)
 
     -- RAG (강주찬)
-    embedding         VECTOR(1024)           -- translation 임베딩. mxbai-embed-large
+    embedding         VECTOR(1024)           -- title_ko + translation 합산 임베딩
 );
 
 -- 인덱스
@@ -62,7 +64,7 @@ CREATE TABLE IF NOT EXISTS fact_checks (
     article_url_hash  VARCHAR REFERENCES articles(url_hash) ON DELETE CASCADE,
 
     claim             TEXT,       -- 검증 대상 주장 원문
-    verdict           VARCHAR,    -- FACT | RUMOR | UNVERIFIED
+    verdict           VARCHAR,    -- FACT | RUMOR | UNVERIFIED | INSIGHT
     confidence        FLOAT,      -- LLM 확신도 (0.0~1.0)
 
     -- MVP에서는 NULL 허용
@@ -124,7 +126,23 @@ CREATE INDEX IF NOT EXISTS idx_eval_results_model    ON eval_results (model_vers
 
 
 -- ============================================================
--- 5. match_articles  (RAG 벡터 검색 RPC · 강주찬)
+-- 5. pg_trgm  (오타 허용 퍼지 검색용)
+-- ============================================================
+
+-- pg_trgm 확장 (최초 1회)
+CREATE EXTENSION IF NOT EXISTS pg_trgm;
+
+-- 제목·번역문 트라이그램 GIN 인덱스
+-- hybrid_search_articles의 word_similarity() 쿼리를 인덱스로 가속
+CREATE INDEX IF NOT EXISTS idx_articles_title_trgm
+    ON articles USING gin (title gin_trgm_ops);
+
+CREATE INDEX IF NOT EXISTS idx_articles_translation_trgm
+    ON articles USING gin (translation gin_trgm_ops);
+
+
+-- ============================================================
+-- 6. match_articles  (RAG 벡터 검색 RPC · 강주찬)
 -- ============================================================
 CREATE OR REPLACE FUNCTION match_articles(
     query_vector VECTOR(1024),
@@ -135,6 +153,7 @@ RETURNS TABLE (
     url_hash          VARCHAR,
     url               TEXT,
     title             TEXT,
+    title_ko          TEXT,
     source            VARCHAR,
     category          VARCHAR,
     keywords          TEXT[],
@@ -151,6 +170,7 @@ LANGUAGE sql STABLE AS $$
         a.url_hash,
         a.url,
         a.title,
+        a.title_ko,
         a.source,
         a.category,
         a.keywords,
@@ -168,3 +188,135 @@ LANGUAGE sql STABLE AS $$
     ORDER BY a.embedding <=> query_vector
     LIMIT top_k;
 $$;
+
+
+-- ============================================================
+-- 7. hybrid_search_articles  (벡터 + 퍼지 키워드 하이브리드 검색)
+--
+-- 동작 방식:
+--   1) vec_ranked  : pgvector 코사인 유사도로 후보 60개 추출
+--   2) kw_ranked   : pg_trgm word_similarity + ILIKE 로 후보 60개 추출
+--                    → 오타·부분 일치 모두 포괄
+--   3) fused       : Reciprocal Rank Fusion(RRF, k=60) 으로 두 순위 결합
+--   최종 top_k 개를 RRF 점수 내림차순으로 반환
+-- ============================================================
+CREATE OR REPLACE FUNCTION hybrid_search_articles(
+    query_text      TEXT,
+    query_vector    VECTOR(1024),
+    top_k           INT DEFAULT 15,
+    filter_category VARCHAR DEFAULT NULL
+)
+RETURNS TABLE (
+    url_hash          VARCHAR,
+    url               TEXT,
+    title             TEXT,
+    title_ko          TEXT,
+    source            VARCHAR,
+    source_type       VARCHAR,
+    category          VARCHAR,
+    keywords          TEXT[],
+    published_at      TIMESTAMPTZ,
+    translation       TEXT,
+    summary_formal    TEXT,
+    summary_casual    TEXT,
+    credibility_score FLOAT,
+    fact_label        VARCHAR,
+    similarity        FLOAT
+)
+LANGUAGE sql STABLE AS $$
+    WITH
+    -- ── 1. 벡터 검색 (의미 유사도) ───────────────────────────────
+    vec_ranked AS (
+        SELECT
+            a.url_hash,
+            ROW_NUMBER() OVER (ORDER BY a.embedding <=> query_vector) AS rnk,
+            (1 - (a.embedding <=> query_vector))::FLOAT AS vec_sim
+        FROM articles a
+        WHERE
+            (filter_category IS NULL OR a.category = filter_category)
+            AND a.embedding IS NOT NULL
+        ORDER BY a.embedding <=> query_vector
+        LIMIT 60
+    ),
+    -- ── 2. 퍼지 키워드 검색 (오타 허용) ──────────────────────────
+    -- word_similarity: 쿼리 단어가 긴 텍스트 안에 얼마나 유사하게 존재하는지
+    -- ILIKE: 정확한 부분 문자열 매칭 (짧은 쿼리·키워드 검색 보완)
+    kw_ranked AS (
+        SELECT
+            a.url_hash,
+            ROW_NUMBER() OVER (
+                ORDER BY GREATEST(
+                    word_similarity(query_text, COALESCE(a.title, '')),
+                    word_similarity(query_text, COALESCE(a.title_ko, '')),
+                    word_similarity(query_text, COALESCE(a.translation, '')),
+                    similarity(query_text, COALESCE(a.title, '')),
+                    similarity(query_text, COALESCE(a.title_ko, ''))
+                ) DESC
+            ) AS rnk
+        FROM articles a
+        WHERE
+            (filter_category IS NULL OR a.category = filter_category)
+            AND (
+                COALESCE(a.title, '')       ILIKE '%' || query_text || '%'
+                OR COALESCE(a.title_ko, '') ILIKE '%' || query_text || '%'
+                OR COALESCE(a.translation, '') ILIKE '%' || query_text || '%'
+                OR word_similarity(query_text, COALESCE(a.title, ''))                  > 0.15
+                OR word_similarity(query_text, COALESCE(a.title_ko, ''))               > 0.15
+                OR word_similarity(query_text, COALESCE(a.translation, ''))             > 0.15
+                OR similarity(query_text, COALESCE(a.title, ''))                       > 0.10
+                OR similarity(query_text, COALESCE(a.title_ko, ''))                  > 0.10
+            )
+        LIMIT 60
+    ),
+    -- ── 3. Reciprocal Rank Fusion (RRF, k=60) ────────────────────
+    -- 두 순위를 1/(k+rank) 점수로 변환 후 합산
+    -- 어느 한쪽에만 있어도 FULL OUTER JOIN 으로 포함
+    fused AS (
+        SELECT
+            COALESCE(v.url_hash, k.url_hash)                          AS url_hash,
+            COALESCE(1.0 / (60 + v.rnk), 0.0)
+                + COALESCE(1.0 / (60 + k.rnk), 0.0)                  AS rrf_score,
+            COALESCE(v.vec_sim, 0.0)                                  AS vec_sim
+        FROM vec_ranked v
+        FULL OUTER JOIN kw_ranked k ON v.url_hash = k.url_hash
+    )
+    SELECT
+        a.url_hash,
+        a.url,
+        a.title,
+        a.title_ko,
+        a.source,
+        a.source_type,
+        a.category,
+        a.keywords,
+        a.published_at,
+        a.translation,
+        a.summary_formal,
+        a.summary_casual,
+        a.credibility_score,
+        a.fact_label,
+        f.vec_sim AS similarity
+    FROM fused f
+    JOIN articles a ON a.url_hash = f.url_hash
+    ORDER BY f.rrf_score DESC
+    LIMIT top_k;
+$$;
+
+
+-- ============================================================
+-- user_logs  (조회 기록 테이블 — HotPage 조회수 집계용)
+-- ============================================================
+CREATE TABLE IF NOT EXISTS user_logs (
+    id          BIGSERIAL PRIMARY KEY,
+    user_id     TEXT        NOT NULL,
+    url_hash    TEXT        NOT NULL REFERENCES articles(url_hash) ON DELETE CASCADE,
+    action      TEXT        NOT NULL DEFAULT 'view',
+    created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_user_logs_url_hash   ON user_logs(url_hash);
+CREATE INDEX IF NOT EXISTS idx_user_logs_user_id    ON user_logs(user_id);
+CREATE INDEX IF NOT EXISTS idx_user_logs_created_at ON user_logs(created_at);
+
+-- RLS 비활성화 (백엔드 서버에서만 INSERT/SELECT)
+ALTER TABLE user_logs DISABLE ROW LEVEL SECURITY;

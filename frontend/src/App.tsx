@@ -25,9 +25,14 @@ export default function App() {
     () => (DEV_FORCE_ONBOARDING ? false : localStorage.getItem(LS_ONBOARDED) === 'true'),
   );
   const [interests, setInterests] = useState<Interest[]>(loadInterests);
-  const [userId, setUserId] = useState(
-    () => localStorage.getItem('samsun_user_id') ?? '',
-  );
+  const [userId, setUserId] = useState(() => {
+    const key = 'samsun_user_id';
+    const existing = localStorage.getItem(key);
+    if (existing) return existing;
+    const id = `user_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+    localStorage.setItem(key, id);
+    return id;
+  });
   const [activeTab, setActiveTab] = useState<TabId>('home');
   const bm = useBookmarks();
   const [absenceData, setAbsenceData] = useState<AbsenceSummaryResponse | null>(null);
