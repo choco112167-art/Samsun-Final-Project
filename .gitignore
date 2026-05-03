@@ -13,6 +13,7 @@ CLAUDE.md
 data/
 !frontend/src/data/
 logs/
+backend_server.*.log
 poc_dummy.py
 articles_raw.jsonl
 articles_translated.jsonl

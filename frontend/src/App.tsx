@@ -8,6 +8,7 @@ import SearchPage from './pages/SearchPage';
 import MyFeedPage from './pages/MyFeedPage';
 import { useBookmarks } from './hooks/useBookmarks';
 import { recordArticleView, logArticleView, fetchAbsenceSummary, markUserSeen, type AbsenceSummaryResponse } from './data/api';
+import { getSamsunUserId, tossHaptic } from './lib/toss';
 
 const LS_ONBOARDED = 'samsun_onboarded';
 const LS_INTERESTS = 'samsun_interests';
@@ -26,12 +27,7 @@ export default function App() {
   );
   const [interests, setInterests] = useState<Interest[]>(loadInterests);
   const [userId, setUserId] = useState(() => {
-    const key = 'samsun_user_id';
-    const existing = localStorage.getItem(key);
-    if (existing) return existing;
-    const id = `user_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
-    localStorage.setItem(key, id);
-    return id;
+    return getSamsunUserId();
   });
   const [activeTab, setActiveTab] = useState<TabId>('home');
   const bm = useBookmarks();
@@ -53,6 +49,7 @@ export default function App() {
   // 모든 탭에서 기사 클릭 시 호출 — user_vector 업데이트 + 조회수 기록
   const handleArticleClick = (urlHash: string) => {
     if (userId) {
+      tossHaptic().catch(() => {});
       recordArticleView(userId, urlHash).catch(() => {});
       logArticleView(userId, urlHash).catch(() => {});
     }

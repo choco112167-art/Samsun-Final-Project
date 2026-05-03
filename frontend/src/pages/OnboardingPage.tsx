@@ -4,6 +4,7 @@ import type { Interest } from '../data/articles';
 import logoLight from '../assets/samsun_blue.png';
 import logoDark from '../assets/samsun_dark.png';
 import { useColorScheme } from '../hooks/useColorScheme';
+import { getSamsunUserId, tossHaptic } from '../lib/toss';
 
 // Interest 타입 단일 진실 소스: data/articles.ts (CATEGORIES). 재내보내기로 기존 import 호환 유지.
 export type { Interest };
@@ -19,12 +20,7 @@ const INTERESTS: { id: Interest; emoji: string; desc: string }[] = [
 ];
 
 function getOrCreateUserId(): string {
-  const key = 'samsun_user_id';
-  const existing = localStorage.getItem(key);
-  if (existing) return existing;
-  const id = `user_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
-  localStorage.setItem(key, id);
-  return id;
+  return getSamsunUserId();
 }
 
 interface Props { onDone: (selected: Interest[], userId: string) => void; }
@@ -41,6 +37,7 @@ export default function OnboardingPage({ onDone }: Props) {
 
   const handleDone = async () => {
     setSubmitting(true);
+    tossHaptic('tickMedium').catch(() => {});
     const userId = getOrCreateUserId();
     try {
       await postOnboarding(userId, selected);

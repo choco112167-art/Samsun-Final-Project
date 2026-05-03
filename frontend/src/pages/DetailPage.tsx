@@ -1,6 +1,8 @@
-import { useState, useRef } from 'react';
+import { useEffect, useState, useRef, type MouseEvent } from 'react';
 import { articleDisplayTitle, type Article } from '../data/articles';
-import { translateArticle, summarizeArticle } from '../data/api';
+import { tossOpenURL } from '../lib/toss';
+
+type SummaryTone = 'formal' | 'casual';
 
 interface Props {
   article: Article;
@@ -62,60 +64,54 @@ function CopyBtn({ copied, onClick }: { copied: boolean; onClick: () => void }) 
   );
 }
 
+function isExternalHttpUrl(url: string): boolean {
+  try {
+    const parsed = new URL(url);
+    return parsed.protocol === 'http:' || parsed.protocol === 'https:';
+  } catch {
+    return false;
+  }
+}
+
 export default function DetailPage({ article, bookmarked, onBookmark, onBack }: Props) {
   const [copiedFormal, setCopiedFormal] = useState(false);
-  const [copiedCasual, setCopiedCasual] = useState(false);
   const [copiedShare,  setCopiedShare]  = useState(false);
+  const [summaryTone, setSummaryTone] = useState<SummaryTone>(() =>
+    article.summaryFormal.trim() || !article.summaryCasual.trim() ? 'formal' : 'casual',
+  );
+  const [translationOpen, setTranslationOpen] = useState(false);
   const [tooltip, setTooltip] = useState<{ word: string; top: number } | null>(null);
   const mainRef = useRef<HTMLDivElement>(null);
 
-  // 번역·요약 API 호출 상태
-  const [translation,   setTranslation]   = useState(article.translation);
-  const [summaryFormal, setSummaryFormal] = useState(article.summaryFormal);
-  const [summaryCasual, setSummaryCasual] = useState(article.summaryCasual);
-  const [loadingTranslate,  setLoadingTranslate]  = useState(false);
-  const [loadingSummarize,  setLoadingSummarize]  = useState(false);
-  const [translateError,    setTranslateError]    = useState<string | null>(null);
-  const [summarizeError,    setSummarizeError]    = useState<string | null>(null);
+  const translation = article.translation.trim();
+  const summaryFormal = article.summaryFormal.trim();
+  const summaryCasual = article.summaryCasual.trim();
+  const hasFormalSummary = Boolean(summaryFormal);
+  const hasCasualSummary = Boolean(summaryCasual);
+  const hasAnySummary = hasFormalSummary || hasCasualSummary;
+  const selectedSummary = summaryTone === 'formal' ? summaryFormal : summaryCasual;
+  const selectedToneLabel = summaryTone === 'formal' ? '격식체' : '일상체';
+  const selectedSummaryMessage = hasAnySummary ? '선택한 스타일의 요약이 아직 없습니다.' : '요약이 아직 없습니다.';
 
-  const handleTranslate = async () => {
-    setLoadingTranslate(true);
-    setTranslateError(null);
-    try {
-      const res = await translateArticle(article.content);
-      setTranslation(res.translation || translation);
-    } catch {
-      setTranslateError('번역 중 오류가 발생했어요. 잠시 후 다시 시도해주세요.');
-    } finally {
-      setLoadingTranslate(false);
+  useEffect(() => {
+    if (hasFormalSummary) {
+      setSummaryTone('formal');
+    } else if (hasCasualSummary) {
+      setSummaryTone('casual');
+    } else {
+      setSummaryTone('formal');
     }
-  };
-
-  const handleSummarize = async () => {
-    setLoadingSummarize(true);
-    setSummarizeError(null);
-    try {
-      const res = await summarizeArticle(article.content);
-      setSummaryFormal(res.summary_formal || summaryFormal);
-      setSummaryCasual(res.summary_casual || summaryCasual);
-    } catch {
-      setSummarizeError('요약 중 오류가 발생했어요. 잠시 후 다시 시도해주세요.');
-    } finally {
-      setLoadingSummarize(false);
-    }
-  };
+  }, [article.urlHash, hasFormalSummary, hasCasualSummary]);
 
   const handleShare = () => {
-    navigator.clipboard.writeText(`[${article.source}] ${articleDisplayTitle(article)}\n\n格식체 요약: ${summaryFormal}\n\n일상체 요약: ${summaryCasual}`).catch(() => {});
+    const lines = [`[${article.source}] ${articleDisplayTitle(article)}`];
+    if (selectedSummary) lines.push(`\n${selectedToneLabel} 요약: ${selectedSummary}`);
+    navigator.clipboard.writeText(lines.join('\n')).catch(() => {});
     setCopiedShare(true); setTimeout(() => setCopiedShare(false), 2000);
   };
-  const handleCopyFormal = () => {
-    navigator.clipboard.writeText(summaryFormal).catch(() => {});
+  const handleCopySummary = () => {
+    navigator.clipboard.writeText(selectedSummary).catch(() => {});
     setCopiedFormal(true); setTimeout(() => setCopiedFormal(false), 2000);
-  };
-  const handleCopyCasual = () => {
-    navigator.clipboard.writeText(summaryCasual).catch(() => {});
-    setCopiedCasual(true); setTimeout(() => setCopiedCasual(false), 2000);
   };
 
   const handleJargon = (word: string, el: HTMLElement) => {
@@ -124,13 +120,37 @@ export default function DetailPage({ article, bookmarked, onBookmark, onBack }: 
     const top = el.getBoundingClientRect().bottom - mainEl.getBoundingClientRect().top + mainEl.scrollTop + 6;
     setTooltip(prev => prev?.word === word ? null : { word, top });
   };
+  const sourceUrl = (article.sourceUrl || article.url || '').trim();
+  const canOpenSource = isExternalHttpUrl(sourceUrl);
+
+  useEffect(() => {
+    if (import.meta.env.DEV && !canOpenSource) {
+      console.warn('[DetailPage] missing or invalid sourceUrl', {
+        urlHash: article.urlHash,
+        sourceUrl: article.sourceUrl,
+        url: article.url,
+      });
+    }
+  }, [article.sourceUrl, article.url, article.urlHash, canOpenSource]);
+
+  const handleSourceClick = (event: MouseEvent<HTMLAnchorElement>) => {
+    if (!canOpenSource) return;
+    if (import.meta.env.DEV) {
+      event.preventDefault();
+      window.location.assign(sourceUrl);
+      return;
+    }
+    event.preventDefault();
+    tossOpenURL(sourceUrl).catch(() => {
+      window.location.assign(sourceUrl);
+    });
+  };
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%', background: 'var(--color-bg)', animation: 'slideUp 0.28s cubic-bezier(0.22,1,0.36,1)' }}>
       <style>{`
         @keyframes slideUp { from{transform:translateY(100%);opacity:0} to{transform:translateY(0);opacity:1} }
         @keyframes tipIn   { from{opacity:0;transform:translateY(-4px)} to{opacity:1;transform:translateY(0)} }
-        @keyframes spin    { from{transform:rotate(0deg)} to{transform:rotate(360deg)} }
       `}</style>
 
       {/* 헤더 */}
@@ -170,39 +190,81 @@ export default function DetailPage({ article, bookmarked, onBookmark, onBack }: 
           </h1>
         </div>
 
-        {/* 번역 전문 — 신조어 하이라이트 포함 */}
-        <div style={{ background: 'var(--color-surface)', padding: '16px 20px', marginBottom: 8, position: 'relative' }}>
+        {hasAnySummary && (
+          <div style={{ background: 'var(--color-surface)', padding: '14px 20px', marginBottom: 8 }}>
+            <p style={{ fontSize: 11, fontWeight: 600, color: 'var(--color-text-tertiary)', letterSpacing: '0.04em', textTransform: 'uppercase', marginBottom: 10 }}>요약 스타일</p>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, background: 'var(--color-surface-secondary)', borderRadius: 10, padding: 4 }}>
+              {([
+                ['formal', '격식체', hasFormalSummary],
+                ['casual', '일상체', hasCasualSummary],
+              ] as const).map(([tone, label, enabled]) => {
+                const active = summaryTone === tone;
+                return (
+                  <button
+                    key={tone}
+                    disabled={!enabled}
+                    onClick={() => enabled && setSummaryTone(tone)}
+                    style={{
+                      height: 36,
+                      borderRadius: 8,
+                      fontSize: 13,
+                      fontWeight: active ? 700 : 500,
+                      color: !enabled
+                        ? 'var(--color-text-tertiary)'
+                        : active
+                          ? 'var(--color-primary)'
+                          : 'var(--color-text-secondary)',
+                      background: active ? 'var(--color-surface)' : 'transparent',
+                      boxShadow: active ? '0 1px 4px rgba(0,0,0,0.08)' : 'none',
+                      opacity: enabled ? 1 : 0.45,
+                      cursor: enabled ? 'pointer' : 'not-allowed',
+                      transition: 'all 0.15s',
+                    }}
+                  >
+                    {label}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
+        {/* 3줄 요약 */}
+        <div style={{ background: 'var(--color-surface)', padding: '16px 20px', marginBottom: 8 }}>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
-            <p style={{ fontSize: 11, fontWeight: 600, color: 'var(--color-text-tertiary)', letterSpacing: '0.04em', textTransform: 'uppercase' }}>번역 전문</p>
-            <button
-              onClick={handleTranslate}
-              disabled={loadingTranslate}
-              style={{
-                display: 'flex', alignItems: 'center', gap: 4,
-                fontSize: 11, fontWeight: 500,
-                color: loadingTranslate ? 'var(--color-text-tertiary)' : 'var(--color-primary)',
-                background: 'var(--color-primary-light)',
-                padding: '4px 10px', borderRadius: 6,
-                border: '0.5px solid var(--color-border)',
-                opacity: loadingTranslate ? 0.6 : 1,
-                transition: 'all 0.18s',
-              }}
-            >
-              {loadingTranslate
-                ? <><span style={{ display: 'inline-block', animation: 'spin 1s linear infinite' }}>⟳</span> 번역 중…</>
-                : <>🔄 재번역</>
-              }
-            </button>
+            <p style={{ fontSize: 11, fontWeight: 600, color: 'var(--color-text-tertiary)', letterSpacing: '0.04em', textTransform: 'uppercase' }}>3줄 요약</p>
+            {selectedSummary && <CopyBtn copied={copiedFormal} onClick={handleCopySummary} />}
           </div>
 
-          {translateError && (
-            <p style={{ fontSize: 12, color: '#DC2626', marginBottom: 10, padding: '8px 12px', background: '#FEF2F2', borderRadius: 8 }}>
-              {translateError}
+          <div style={{ background: 'var(--color-surface-secondary)', borderRadius: 10, padding: '14px 14px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 8 }}>
+              <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--color-primary)', background: 'var(--color-primary-light)', padding: '3px 8px', borderRadius: 6 }}>{selectedToneLabel}</span>
+            </div>
+            <p style={{ fontSize: 15, lineHeight: 1.78, color: selectedSummary ? 'var(--color-text-primary)' : 'var(--color-text-tertiary)', letterSpacing: '-0.01em', fontWeight: selectedSummary ? 500 : 400 }}>
+              {selectedSummary || selectedSummaryMessage}
             </p>
-          )}
+          </div>
+        </div>
+
+        {/* 번역 전문 — 신조어 하이라이트 포함 */}
+        <div style={{ background: 'var(--color-surface)', padding: '16px 20px', marginBottom: 8, position: 'relative' }}>
+          <button
+            onClick={() => setTranslationOpen(v => !v)}
+            style={{
+              width: '100%',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              marginBottom: translationOpen ? 12 : 0,
+              textAlign: 'left',
+            }}
+          >
+            <p style={{ fontSize: 11, fontWeight: 600, color: 'var(--color-text-tertiary)', letterSpacing: '0.04em', textTransform: 'uppercase' }}>번역 전문</p>
+            <span style={{ fontSize: 12, color: 'var(--color-text-tertiary)' }}>{translationOpen ? '접기' : '펼치기'}</span>
+          </button>
 
           {/* 신조어 툴팁 */}
-          {tooltip && (
+          {translationOpen && tooltip && (
             <div onClick={e => e.stopPropagation()} style={{
               position: 'absolute', left: 16, right: 16, top: tooltip.top,
               background: 'var(--color-surface)', border: '1px solid var(--color-border)',
@@ -217,83 +279,53 @@ export default function DetailPage({ article, bookmarked, onBookmark, onBack }: 
             </div>
           )}
 
-          <div style={{ background: 'var(--color-surface-secondary)', borderRadius: 10, padding: '12px 14px', marginBottom: 10 }}>
-            <p style={{ fontSize: 14, lineHeight: 1.78, color: 'var(--color-text-primary)', letterSpacing: '-0.01em' }}>
-              <HighlightedText text={translation} onTap={handleJargon} />
-            </p>
-          </div>
+          {translationOpen && (
+            translation ? (
+              <>
+                <div style={{ background: 'var(--color-surface-secondary)', borderRadius: 10, padding: '12px 14px', marginBottom: 10 }}>
+                  <p style={{ fontSize: 14, lineHeight: 1.78, color: 'var(--color-text-primary)', letterSpacing: '-0.01em', whiteSpace: 'pre-line' }}>
+                    <HighlightedText text={translation} onTap={handleJargon} />
+                  </p>
+                </div>
 
-          <p style={{ fontSize: 11, color: 'var(--color-text-tertiary)' }}>
-            💡 파란색 단어를 탭하면 설명을 볼 수 있어요
-          </p>
-        </div>
-
-        {/* 3줄 요약 — 격식체 · 일상체 */}
-        <div style={{ background: 'var(--color-surface)', padding: '16px 20px', marginBottom: 8 }}>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
-            <p style={{ fontSize: 11, fontWeight: 600, color: 'var(--color-text-tertiary)', letterSpacing: '0.04em', textTransform: 'uppercase' }}>3줄 요약</p>
-            <button
-              onClick={handleSummarize}
-              disabled={loadingSummarize}
-              style={{
-                display: 'flex', alignItems: 'center', gap: 4,
-                fontSize: 11, fontWeight: 500,
-                color: loadingSummarize ? 'var(--color-text-tertiary)' : 'var(--color-primary)',
-                background: 'var(--color-primary-light)',
-                padding: '4px 10px', borderRadius: 6,
-                border: '0.5px solid var(--color-border)',
-                opacity: loadingSummarize ? 0.6 : 1,
-                transition: 'all 0.18s',
-              }}
-            >
-              {loadingSummarize
-                ? <><span style={{ display: 'inline-block', animation: 'spin 1s linear infinite' }}>⟳</span> 요약 중…</>
-                : <>✨ 재요약</>
-              }
-            </button>
-          </div>
-
-          {summarizeError && (
-            <p style={{ fontSize: 12, color: '#DC2626', marginBottom: 10, padding: '8px 12px', background: '#FEF2F2', borderRadius: 8 }}>
-              {summarizeError}
-            </p>
+                <p style={{ fontSize: 11, color: 'var(--color-text-tertiary)' }}>
+                  파란색 단어를 탭하면 설명을 볼 수 있어요
+                </p>
+              </>
+            ) : (
+              <div style={{ background: 'var(--color-surface-secondary)', borderRadius: 10, padding: '14px', marginBottom: 10 }}>
+                <p style={{ fontSize: 13, lineHeight: 1.7, color: 'var(--color-text-tertiary)' }}>
+                  번역 전문은 아직 준비 중입니다.
+                </p>
+              </div>
+            )
           )}
-
-          {/* 격식체 요약 */}
-          <div style={{ background: 'var(--color-surface-secondary)', borderRadius: 10, padding: '12px 14px', marginBottom: 10 }}>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
-              <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--color-text-tertiary)', letterSpacing: '0.04em' }}>격식체</span>
-              <CopyBtn copied={copiedFormal} onClick={handleCopyFormal} />
-            </div>
-            <p style={{ fontSize: 14, lineHeight: 1.78, color: 'var(--color-text-primary)', letterSpacing: '-0.01em' }}>
-              {summaryFormal}
-            </p>
-          </div>
-
-          {/* 일상체 요약 */}
-          <div style={{ background: 'var(--color-surface-secondary)', borderRadius: 10, padding: '12px 14px', marginBottom: 10 }}>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
-              <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--color-text-tertiary)', letterSpacing: '0.04em' }}>일상체</span>
-              <CopyBtn copied={copiedCasual} onClick={handleCopyCasual} />
-            </div>
-            <p style={{ fontSize: 14, lineHeight: 1.78, color: 'var(--color-text-primary)', letterSpacing: '-0.01em' }}>
-              {summaryCasual}
-            </p>
-          </div>
         </div>
 
         {/* 원문 링크 */}
         <div style={{ padding: '0 20px 40px' }}>
-          <button
-            onClick={() => window.open(article.url, '_blank', 'noopener,noreferrer')}
-            style={{ width: '100%', padding: '14px', background: 'var(--color-surface)', border: '0.5px solid var(--color-border-medium)', borderRadius: 'var(--radius-md)', fontSize: 14, fontWeight: 500, color: 'var(--color-text-secondary)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}
-          >
-            <svg width="15" height="15" viewBox="0 0 24 24" fill="none">
-              <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round"/>
-              <path d="M15 3h6v6M10 14L21 3" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"/>
-            </svg>
-            원문 보기 — {article.source}
-          </button>
+          {canOpenSource ? (
+            <a
+              href={sourceUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              onClick={handleSourceClick}
+              style={{ width: '100%', padding: '12px', background: 'transparent', border: '0.5px solid var(--color-border)', borderRadius: 'var(--radius-md)', fontSize: 13, fontWeight: 500, color: 'var(--color-text-tertiary)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, textDecoration: 'none' }}
+            >
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none">
+                <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round"/>
+                <path d="M15 3h6v6M10 14L21 3" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"/>
+              </svg>
+              원문 보기 — {article.source}
+            </a>
+          ) : (
+            <div
+              aria-disabled="true"
+              style={{ width: '100%', padding: '14px', background: 'var(--color-surface-secondary)', border: '0.5px dashed var(--color-border)', borderRadius: 'var(--radius-md)', fontSize: 14, fontWeight: 500, color: 'var(--color-text-tertiary)', textAlign: 'center', cursor: 'not-allowed' }}
+            >
+              원문 링크가 아직 준비되지 않았습니다.
+            </div>
+          )}
         </div>
       </main>
     </div>

@@ -13,6 +13,7 @@
 
 import type { ApiArticle } from './api';
 import { normalizeCategory } from './categories';
+import type { Category } from './categories';
 
 // 카테고리 분류 체계는 ./categories.ts 가 단일 진실 소스다.
 // 기존 import 호환을 위해 여기서도 재내보낸다.
@@ -34,7 +35,8 @@ export type { Interest, Category } from './categories';
 export interface Article {
   // 식별
   urlHash:     string;   // DB의 url_hash (PK) — 상세 페이지 이동 시 사용
-  url:         string;   // 원문 URL — "원문 보기" 버튼에 사용
+  url:         string;   // 원문 URL — 기존 컴포넌트 호환용
+  sourceUrl:   string;   // 원문 URL — 상세 페이지 "원문 보기" 표준 필드
 
   // 메타 정보 (표시 제목은 articleDisplayTitle() 사용 권장)
   /** 영문 RSS 헤드라인 등 원본 제목 */
@@ -61,6 +63,10 @@ export interface Article {
   translation:   string;   // 한국어 번역 전문 — DetailPage 신조어 하이라이트에 사용
   summaryFormal: string;   // 격식체 3줄 요약 — ArticleCard 미리보기, DetailPage 표시
   summaryCasual: string;   // 일상체 3줄 요약 — DetailPage 표시
+  aiStatus?:     'pending' | 'processing' | 'completed' | 'failed' | 'skipped';
+  aiProvider?:   string;
+  aiModel?:      string;
+  aiError?:      string;
 
   // UI 상태
   isNew:      boolean;   // true면 "NEW" 뱃지 표시
@@ -141,6 +147,7 @@ export function toArticle(api: ApiArticle): Article {
     // snake_case → camelCase 변환
     urlHash:     api.url_hash,
     url:         api.url,
+    sourceUrl:   api.url,
 
     title:       api.title,
     titleKo:     api.title_ko ?? '',
@@ -162,6 +169,10 @@ export function toArticle(api: ApiArticle): Article {
     translation:   api.translation    ?? '',
     summaryFormal: api.summary_formal ?? '',
     summaryCasual: api.summary_casual ?? '',
+    aiStatus:      api.ai_status,
+    aiProvider:    api.ai_provider,
+    aiModel:       api.ai_model,
+    aiError:       api.ai_error,
 
     // 백엔드가 is_new를 내려주면 사용, 없으면 6시간 이내인지 직접 판단
     isNew:      api.is_new      ?? (now - publishedMs < 6 * 3_600_000),

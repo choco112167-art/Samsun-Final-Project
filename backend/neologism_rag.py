@@ -66,10 +66,10 @@ except ImportError:
 
 
 _settings = get_settings()
-_sb_key = os.getenv("SUPABASE_KEY") or _settings.supabase_anon_key
+_sb_key = os.getenv("SUPABASE_KEY") or os.getenv("SUPABASE_ANON_KEY") or _settings.effective_supabase_key
 _sb: Client | None = (
-    create_client(_settings.supabase_url, _sb_key)
-    if (_settings.supabase_url and _sb_key)
+    create_client((_settings.supabase_url or os.getenv("SUPABASE_URL", "")).rstrip("/"), _sb_key)
+    if ((_settings.supabase_url or os.getenv("SUPABASE_URL", "")).strip() and _sb_key)
     else None
 )
 

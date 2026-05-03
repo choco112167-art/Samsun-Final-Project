@@ -14,6 +14,7 @@ import logging
 import os
 import re
 import sys
+import requests
 
 import ollama
 from dotenv import load_dotenv
@@ -32,6 +33,10 @@ load_dotenv()
 logger = logging.getLogger(__name__)
 
 MODEL = os.getenv("MODEL_NAME", "qwen3.5:4b")
+LLM_PROVIDER = (os.getenv("LLM_PROVIDER") or os.getenv("MODE") or "local").strip().lower()
+DISABLE_LOCAL_FALLBACK = os.getenv("LLM_DISABLE_LOCAL_FALLBACK", "").strip().lower() in {"1", "true", "yes"}
+OPENROUTER_MODEL = os.getenv("OPENROUTER_TRANSLATION_MODEL", "openai/gpt-4.1-mini")
+GEMINI_MODEL = os.getenv("GEMINI_TRANSLATION_MODEL", "gemini-2.5-flash")
 
 SYSTEM_PROMPT = """You are a professional Korean translator and summarizer.
 
@@ -47,15 +52,18 @@ If the source contains these scripts, translate or romanize them into Korean. NE
 Return ONLY valid JSON. No markdown fences, no explanation outside JSON.
 {{
   "title": "<한국어 제목>",
-  "translation": "<전체 한국어 번역>",
-  "summary_formal": "<격식체 요약>",
-  "summary_casual": "<일상체 요약>"
+  "translation": "<원문 본문 전체의 한국어 번역. 요약이 아니라 [BODY] 전체를 문단 단위로 번역한 전문>",
+  "summary_formal": "1. <격식체 요약 문장>\\n2. <격식체 요약 문장>\\n3. <격식체 요약 문장>",
+  "summary_casual": "1. <일상체 요약 문장>\\n2. <일상체 요약 문장>\\n3. <일상체 요약 문장>"
 }}
 All four fields are REQUIRED. Never leave any field empty.
 If no title is provided, set "title" to "".
 
 ━━━ TRANSLATION RULES ━━━
-1. Translate the ENTIRE article into Korean.
+1. translation MUST be the full Korean translation of the entire [BODY].
+   It is NOT a summary, NOT a short comment, NOT a headline rewrite.
+   Preserve the article's paragraph flow with newline breaks where natural.
+   If [BODY] is long, translation must also be long enough to cover all major paragraphs.
    Use journalistic body style (~했다 / ~밝혔다 / ~에 따르면). Prefer active voice: '발표했다' over '발표됐다'.
 2. Keep these abbreviations in English exactly as-is: RAG, LLM, GPU, NPU, API, RLHF, SFT, LoRA, QLoRA, P2P, B2B, SNS.
 3. Standard tech transliterations (use exactly these):
@@ -114,9 +122,10 @@ If no title is provided, set "title" to "".
 - If no title is given in the input, set title to "".
 
 ━━━ SUMMARY RULES ━━━
-- summary_formal: exactly {n} Korean sentence(s), 격식체 (~습니다/~됩니다). Must be complete.
-- summary_casual: exactly {n} Korean sentence(s), 일상체 (~해요/~예요/~거예요). Must be complete.
+- summary_formal: exactly {n} numbered Korean line(s), 격식체 (~습니다/~됩니다). Must be complete.
+- summary_casual: exactly {n} numbered Korean line(s), 일상체 (~해요/~예요/~거예요). Must be complete.
 - Summaries must NOT copy translation sentences verbatim — paraphrase with different expressions.
+- Summaries are the ONLY short outputs. translation must remain the full article translation.
 - Use journalistic style (~했다/~밝혔다). Prefer active voice: '발표했다' over '발표됐다'.
 - Apply all language, proper noun, and number rules above."""
 
@@ -178,6 +187,22 @@ def translate_and_summarize(
     base_user = f"[TITLE]\n{title}\n\n[BODY]\n{text}" if title else text
     user_content = f"{neo_block}\n\n{base_user}" if neo_block else base_user
 
+    if LLM_PROVIDER in ("openrouter", "cloud"):
+        try:
+            return _translate_openrouter(system, user_content, temperature)
+        except Exception as exc:
+            if DISABLE_LOCAL_FALLBACK:
+                raise
+            logger.warning("OpenRouter 번역 실패 — Ollama fallback 시도: %s", exc)
+
+    if LLM_PROVIDER == "gemini":
+        try:
+            return _translate_gemini(system, user_content, temperature)
+        except Exception as exc:
+            if DISABLE_LOCAL_FALLBACK:
+                raise
+            logger.warning("Gemini 번역 실패 — Ollama fallback 시도: %s", exc)
+
     for attempt in range(3):   # 최대 3회 시도
         response = ollama.chat(
             model=MODEL,
@@ -197,6 +222,57 @@ def translate_and_summarize(
             return result
 
     return result  # 3회 실패 시 마지막 결과 반환
+
+
+def _translate_openrouter(system: str, user_content: str, temperature: float) -> dict:
+    api_key = os.getenv("OPENROUTER_API_KEY", "")
+    if not api_key:
+        raise RuntimeError("OPENROUTER_API_KEY 환경변수 없음")
+
+    response = requests.post(
+        "https://openrouter.ai/api/v1/chat/completions",
+        headers={
+            "Authorization": f"Bearer {api_key}",
+            "Content-Type": "application/json",
+            "HTTP-Referer": os.getenv("PUBLIC_API_BASE_URL", "http://localhost:8000"),
+            "X-Title": "Samsun News",
+        },
+        json={
+            "model": OPENROUTER_MODEL,
+            "messages": [
+                {"role": "system", "content": system},
+                {"role": "user", "content": user_content},
+            ],
+            "temperature": temperature,
+            "max_tokens": 4096,
+        },
+        timeout=90,
+    )
+    response.raise_for_status()
+    body = response.json()
+    content = body["choices"][0]["message"]["content"]
+    return _extract_json(content)
+
+
+def _translate_gemini(system: str, user_content: str, temperature: float) -> dict:
+    from google import genai
+    from google.genai import types
+
+    api_key = os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY")
+    if not api_key:
+        raise RuntimeError("GEMINI_API_KEY 또는 GOOGLE_API_KEY 환경변수 없음")
+
+    client = genai.Client(api_key=api_key)
+    response = client.models.generate_content(
+        model=GEMINI_MODEL,
+        contents=user_content,
+        config=types.GenerateContentConfig(
+            system_instruction=system,
+            temperature=temperature,
+            max_output_tokens=4096,
+        ),
+    )
+    return _extract_json(response.text or "")
 
 
 def _extract_json(text: str) -> dict:
