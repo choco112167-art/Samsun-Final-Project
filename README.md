@@ -81,6 +81,74 @@ npm run dev
 # → http://localhost:5173 접속
 ```
 
+### 5-1. Apps in Toss 실기기 / 토스앱 WebView 테스트
+
+현재 프론트는 Apps in Toss Web 프로젝트입니다.
+
+- `frontend/package.json`: `@apps-in-toss/web-framework`, React 18, TDS 모바일 패키지 포함
+- `frontend/granite.config.ts`: `appName: "samsun-newsapp"`, `brand.displayName: "삼선뉴스"`, `web.port: 5173`, `outdir: "dist"`
+- `.ait` 업로드 번들은 `npm run ait:build`로 생성합니다. 일반 `npm run build`는 Vite 정적 빌드만 수행합니다.
+
+실기기에서 PC 개발 서버를 보려면 휴대폰과 PC가 같은 Wi-Fi에 있어야 하고, `localhost` 대신 PC 내부 IP를 사용해야 합니다.
+
+```powershell
+# Windows: PC 내부 IP 확인
+ipconfig
+
+# 예: Wi-Fi IPv4가 192.168.45.27이라면
+cd frontend
+Copy-Item .env.mobile.example .env.development
+# .env.development의 VITE_API_BASE_URL을 http://192.168.45.27:8000 으로 수정
+
+# 백엔드도 외부 기기에서 접근 가능하게 실행
+cd ..
+uvicorn backend.main:app --host 0.0.0.0 --port 8000
+
+# 프론트도 외부 기기에서 접근 가능하게 실행
+cd frontend
+npm run dev
+```
+
+Apps in Toss Granite dev를 실기기에서 쓸 때는 `web.host`를 PC 내부 IP로 넘깁니다.
+
+```powershell
+cd frontend
+$env:AIT_WEB_HOST="192.168.45.27"
+npm run ait:dev
+```
+
+점검할 네트워크 조건:
+
+- 휴대폰과 PC가 같은 Wi-Fi에 연결되어 있어야 함
+- Windows 방화벽에서 `5173`, `8000` 포트 접근 허용
+- 프론트 `VITE_API_BASE_URL`은 `http://PC내부IP:8000`
+- 최종 업로드/출시용 `VITE_API_BASE_URL`은 외부 HTTPS API URL
+- 프론트에는 Supabase service role key를 절대 넣지 않음. 프론트는 FastAPI만 호출하고, Supabase 쓰기는 백엔드/배치 스크립트가 담당
+
+토스 콘솔 업로드 흐름:
+
+```bash
+cd frontend
+npm run lint
+npm run build
+npm run ait:build
+# 생성된 samsun-newsapp.ait 파일을 Apps in Toss 콘솔 > 워크스페이스 > 앱 > 앱 출시 메뉴에 업로드
+```
+
+토스앱 테스트 조건:
+
+- 토스앱 로그인 상태
+- 해당 워크스페이스 멤버
+- 만 19세 이상
+- QR 코드 또는 테스트 스킴으로 토스앱 실행
+- 앱 출시 전 테스트 최소 1회 완료
+
+WebView 디버깅:
+
+- Android: USB 디버깅을 켠 뒤 PC Chrome에서 `chrome://inspect/#devices`
+- iOS: 설정에서 Safari Web Inspector를 켠 뒤 Mac Safari 개발자용 메뉴에서 WebView inspect
+- USB는 앱 실행 자체에 필요한 것이 아니라, 실기기 WebView 내부 콘솔/네트워크를 디버깅할 때 필요함
+
 ### 6. 첫 검증 체크리스트
 
 - [ ] `http://localhost:5173` 접속 시 흰 화면 없이 메인 렌더 ✓
@@ -297,6 +365,172 @@ python pipeline/neologism/ingest.py
 ```bash
 pip install -r requirements.txt
 python main.py
+```
+
+### 수집/보강 운영 파이프라인
+
+이번 정렬 이슈의 원인은 프론트 정렬이 아니라 Supabase 데이터 결측이었습니다. `/articles`는 이미 `published_at desc`로 최신순 정렬합니다. 화면에서 첫 기사 다음에 오래된 기사가 나온 것은 DB에 최신 기사가 부족했고, 레거시 기사 대부분의 `title_ko`가 비어 있어서 영어 제목으로 fallback 되었기 때문입니다.
+
+DB 필드 기준:
+
+| 의미 | DB 필드 |
+| --- | --- |
+| 원문 기사 URL | `articles.url` |
+| 원문 제목 | `articles.title` |
+| 한국어 제목 | `articles.title_ko` |
+| 본문 번역 | `articles.translation` |
+| 격식체 요약 | `articles.summary_formal` |
+| 일상체 요약 | `articles.summary_casual` |
+
+스크립트 역할:
+
+| 스크립트 | 용도 |
+| --- | --- |
+| `scripts/ingest_latest_titles.py` | 시연 전 빠른 최신 기사 반영. RSS 최신 기사에서 목록 화면에 필요한 `title_ko`, `published_at`, `url`, 소스/카테고리만 우선 채움. `translation`, `summary_formal`, `summary_casual`은 빈 문자열로 둠. |
+| `scripts/backfill_title_ko.py` | 기존 DB 기사 중 `title_ko`가 비어 있는 행을 최신순으로 보강. 이미 채워진 행은 건드리지 않아 재실행 가능. |
+| `scripts/backfill_article_ai_outputs.py` | DB에 이미 들어간 기사 중 `translation`, `summary_formal`, `summary_casual`이 비어 있는 행을 찾아 실제 LLM 출력으로 보강. 제목을 번역/요약 대체값으로 저장하지 않음. |
+| `scripts/ingest_latest_fast.py` | 본문 번역/요약까지 수행하되, 심층 팩트체크 대기 시간을 줄인 로컬 시연용 전체 처리. 기사 본문 길이와 LLM/API 응답에 따라 느릴 수 있음. |
+| `scripts/check_articles_health.py` | DB 상태 점검. 전체 기사 수, `title_ko`/URL/번역/요약 누락 수, 최신/최오래 날짜, 최근 20개 상태를 출력. |
+
+공통 로직은 `scripts/article_pipeline_common.py`에 있습니다. Supabase 연결, RSS fetch, 기존 기사 hash 조회, `title_ko` 생성, `published_at` 정규화, `url_hash` 기준 upsert를 여기서 공유합니다. 중복 방지는 `url_hash = md5(url)`와 Supabase `upsert(..., on_conflict="url_hash")` 기준입니다.
+
+시연 전 빠른 최신 기사 수집:
+
+```bash
+python scripts/ingest_latest_titles.py --max 20
+python scripts/check_articles_health.py
+curl "http://localhost:8000/articles?limit=15"
+```
+
+기존 `title_ko` 보강:
+
+```bash
+python scripts/backfill_title_ko.py --limit 100
+python scripts/backfill_title_ko.py --limit 20 --dry-run
+```
+
+전체 번역/요약 배치:
+
+```bash
+# 운영 경로: RSS → 프리플라이트 → 번역/요약 → 팩트체크 → Supabase 저장
+python main.py
+
+# 시연용: 번역/요약은 수행하되 심층 팩트체크 대기 시간을 줄임
+python scripts/ingest_latest_fast.py --max 5 --summary-sentences 1
+```
+
+이미 저장된 기사 AI 출력 백필:
+
+```bash
+# 시연 전 테스트용: 실제 모델 호출 없이 1건만 DB 저장 흐름 검증
+python scripts/backfill_article_ai_outputs.py --limit 1 --provider mock --run
+
+# 특정 기사 1건만 mock으로 재처리
+python scripts/backfill_article_ai_outputs.py --url-hash <url_hash> --provider mock --overwrite --run
+
+# 실제 provider 테스트는 반드시 1건부터
+python scripts/backfill_article_ai_outputs.py --limit 1 --provider openrouter --model google/gemini-2.5-flash --run
+python scripts/backfill_article_ai_outputs.py --limit 1 --provider gemini --model gemini-2.5-flash --run
+
+# 대상과 본문 확보 가능 여부만 확인. --run 없으면 DB 업데이트 없음
+python scripts/backfill_article_ai_outputs.py --limit 5
+
+# 운영용 실제 백필. API 비용/쿼터가 발생하므로 작은 limit으로 나눠 실행
+python scripts/backfill_article_ai_outputs.py --limit 5 --provider openrouter --model google/gemini-2.5-flash --run
+
+# 5건 초과는 명시적으로 허용해야 함
+python scripts/backfill_article_ai_outputs.py --limit 20 --allow-large-run --provider openrouter --run
+```
+
+`backfill_article_ai_outputs.py`는 기본적으로 `translation`, `summary_formal`, `summary_casual` 중 하나라도 비어 있는 기사만 조회합니다. DB의 `content`를 우선 사용하고, 비어 있으면 `url`에서 본문 크롤링을 시도합니다. 본문 확보에 실패하면 해당 기사는 건너뜁니다. `--overwrite`가 없으면 이미 채워진 AI 출력 필드는 덮어쓰지 않습니다.
+기본값은 `--limit 1`, `provider=mock`, preview 모드입니다. `--run`을 붙이지 않으면 모델 호출과 DB 업데이트를 하지 않습니다. 5건을 초과하려면 `--allow-large-run`을 명시해야 합니다.
+`provider=mock`은 API 호출 없이 `[MOCK 번역 전문]`과 3줄 요약을 저장해 “DB 저장 → 프론트 표시” 흐름만 검증합니다. `provider=openrouter`는 `OPENROUTER_API_KEY`와 OpenRouter Chat Completions endpoint만 사용하고, `provider=gemini`는 `GOOGLE_API_KEY` 또는 `GEMINI_API_KEY`만 사용합니다. API provider 사용 시 비용과 쿼터가 발생합니다.
+`provider=mock` 결과는 데모 화면에 남기면 안 됩니다. 데모 전에는 반드시 mock 탐지와 정리를 실행합니다.
+
+```bash
+python scripts/check_articles_health.py
+python scripts/clear_mock_ai_outputs.py --limit 10
+python scripts/clear_mock_ai_outputs.py --limit 10 --run
+python scripts/clear_mock_ai_outputs.py --url-hash <url_hash> --run
+```
+
+Local fine-tuned provider:
+
+```bash
+# 아직 local 모델 연결이 완료되지 않았다면 실패하는 것이 정상입니다.
+python scripts/backfill_article_ai_outputs.py --limit 1 --provider local --run
+
+# Ollama에 직접 등록한 fine-tuned/GGUF 모델을 쓸 때
+ollama list
+set LOCAL_LLM_CONFIGURED=1
+set OLLAMA_BASE_URL=http://localhost:11434
+python scripts/backfill_article_ai_outputs.py --limit 1 --provider local --model gemma4-e4b-6ep-samsun --run
+
+# Transformers/PEFT/FastAPI 등 별도 서버를 쓸 때
+set LOCAL_LLM_CONFIGURED=1
+set LOCAL_LLM_ENDPOINT=http://localhost:8001/generate
+python scripts/backfill_article_ai_outputs.py --limit 1 --provider local --model mingyu3939/gemma4-e4b-6ep-samsun-lora --run
+```
+
+`provider=local`은 `LOCAL_LLM_CONFIGURED=1`이 없으면 `local provider not configured`로 실패합니다. OpenRouter/Gemini로 몰래 fallback하지 않습니다. 아직 local fine-tuned model이 안정적으로 연결되지 않았다면 mock으로 DB 저장 흐름만 검증하고, 외부 provider 테스트 결과는 “fine-tuned model 결과가 아니라 external provider 결과”로 표시해야 합니다.
+
+본문 크롤링 품질 확인:
+
+```bash
+python scripts/backfill_article_ai_outputs.py --limit 1 --provider mock --show-body-preview
+```
+
+URL 크롤링은 가능하면 `trafilatura`/`readability`로 기사 본문만 추출하고, TechCrunch 메뉴·푸터 텍스트가 강하게 섞이면 `body_ok=False`로 건너뜁니다. `--show-body-preview`를 붙이면 dry-run에서 추출 본문 앞 300자를 확인할 수 있습니다.
+
+AI 처리 상태 컬럼은 선택 마이그레이션입니다. Supabase SQL Editor에서 다음 파일을 실행하면 새 기사와 AI worker 상태를 추적할 수 있습니다.
+
+```bash
+backend/sql/add_article_ai_status.sql
+```
+
+상태 설계:
+
+| 필드 | 의미 |
+| --- | --- |
+| `ai_status` | `pending`, `processing`, `completed`, `failed`, `skipped` |
+| `ai_provider` | `mock`, `openrouter`, `gemini`, `local` |
+| `ai_model` | 실제 호출 모델명 |
+| `ai_generated_at` | AI 출력 저장 시각 |
+| `ai_error` | 실패 사유 |
+| `content_source` | `db.content`, `rss_summary`, `url crawl` 등 본문 출처 |
+| `content_chars` | 처리에 사용한 본문 길이 |
+| `translation_chars` | 생성된 번역 전문 길이 |
+
+새 기사 수집 흐름:
+
+1. RSS/커뮤니티 수집 스크립트가 `title`, `title_ko`, `url`, `source`, `published_at`, `content`를 저장합니다.
+2. `translation`, `summary_formal`, `summary_casual`은 비워둘 수 있고, 상태 컬럼이 있으면 `ai_status=pending`으로 남깁니다.
+3. AI 처리 스크립트가 `pending` 또는 재시도 대상만 작은 단위로 조회합니다.
+4. 본문이 짧으면 URL 크롤링으로 본문을 확보합니다.
+5. provider가 `translation`, `summary_formal`, `summary_casual`을 생성합니다.
+6. 성공 시 `ai_status=completed`, 실패 시 `ai_status=failed`와 `ai_error`를 저장합니다.
+
+프론트는 실시간 모델 호출을 하지 않습니다. Supabase/API의 `translation`, `summary_formal`, `summary_casual` 값만 표시하고, 비어 있으면 준비 중 문구를 보여줍니다. `ai_status`가 API에 내려오면 상세 페이지에서 “AI 처리 중”, “처리 실패” 같은 상태 뱃지를 추가할 수 있도록 타입은 준비되어 있습니다.
+
+느려질 수 있는 이유:
+
+- OpenRouter/Gemini/Ollama LLM 호출은 기사 본문 길이에 따라 지연됩니다.
+- Google Fact Check, Gemini Grounding, 신조어 검색 등 외부 API 단계가 네트워크 상태와 쿼터에 영향을 받습니다.
+- 전체 번역/요약은 기사별 순차 호출이라 `--max` 값을 크게 잡으면 오래 걸립니다.
+
+프론트 표시 정책:
+
+- `title_ko`가 있으면 한국어 제목을 표시하고, 없으면 원문 `title`을 표시합니다.
+- `translation`, `summary_formal`, `summary_casual`이 비어 있으면 제목으로 대체하지 않습니다.
+- 빈 번역/요약은 “아직 준비 중입니다” 상태로 표시합니다.
+- 원문 보기는 `articles.url`만 사용하며, 빈 URL이나 `http/https`가 아닌 값은 링크를 비활성화합니다.
+
+배치 후 확인 엔드포인트:
+
+```bash
+curl "http://localhost:8000/health"
+curl "http://localhost:8000/articles?limit=15"
+curl "http://localhost:8000/debug"
 ```
 
 ### LLM 서버 (로컬)

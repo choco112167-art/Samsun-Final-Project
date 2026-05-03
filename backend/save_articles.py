@@ -25,10 +25,12 @@ from supabase import create_client
 
 # 우리가 만든 임베딩 어댑터 — make_embedding 하나만 import
 from backend.embedder import make_embedding
+from config import get_settings
 
 load_dotenv()
 
 logger = logging.getLogger(__name__)
+_AI_META_COLUMNS: set[str] | None = None
 
 
 def _truthy_env(name: str, default: str = "1") -> bool:
@@ -73,10 +75,61 @@ def infer_fact_label_from_fc(score: float, fc_label: str) -> str:
         return normalized
     return infer_fact_label(score)
 
+
+def _article_ai_meta_columns() -> set[str]:
+    """Return optional AI worker columns that exist in the current Supabase schema."""
+    global _AI_META_COLUMNS
+    if _AI_META_COLUMNS is not None:
+        return _AI_META_COLUMNS
+    candidates = {
+        "ai_status",
+        "ai_provider",
+        "ai_model",
+        "ai_generated_at",
+        "ai_error",
+        "content_source",
+        "content_chars",
+        "translation_chars",
+    }
+    available: set[str] = set()
+    for column in candidates:
+        try:
+            sb.table("articles").select(column).limit(1).execute()
+            available.add(column)
+        except Exception:
+            pass
+    _AI_META_COLUMNS = available
+    return available
+
+
+def _attach_ai_meta(payload: dict, article: dict) -> None:
+    columns = _article_ai_meta_columns()
+    if not columns:
+        return
+    has_outputs = all(
+        str(article.get(field) or "").strip()
+        for field in ("translation", "summary_formal", "summary_casual")
+    )
+    if "ai_status" in columns:
+        payload["ai_status"] = "completed" if has_outputs else "pending"
+    if "ai_provider" in columns:
+        payload["ai_provider"] = article.get("ai_provider") if has_outputs else None
+    if "ai_model" in columns:
+        payload["ai_model"] = article.get("ai_model")
+    if "ai_error" in columns:
+        payload["ai_error"] = None
+    if "content_source" in columns:
+        payload["content_source"] = article.get("content_source") or ("rss_summary" if article.get("content") else None)
+    if "content_chars" in columns:
+        payload["content_chars"] = len(str(article.get("content") or ""))
+    if "translation_chars" in columns:
+        payload["translation_chars"] = len(str(article.get("translation") or ""))
+
 # Supabase 클라이언트 생성
+_settings = get_settings()
 sb = create_client(
-    os.getenv("SUPABASE_URL"),
-    os.getenv("SUPABASE_KEY"),
+    (os.getenv("SUPABASE_URL") or _settings.supabase_url).rstrip("/"),
+    os.getenv("SUPABASE_KEY") or os.getenv("SUPABASE_ANON_KEY") or _settings.effective_supabase_key,
 )
 
 
@@ -215,7 +268,7 @@ def save_articles(articles: list[dict]) -> int:
 
         uh = make_url_hash(url)
 
-        batch.append({
+        payload = {
             "url_hash":          uh,
             "url":               url,
             "title":             title_rss or title_ko or "",
@@ -234,7 +287,9 @@ def save_articles(articles: list[dict]) -> int:
             "summary_formal":    a.get("summary_formal"),
             "summary_casual":    a.get("summary_casual"),
             "embedding":         embedding,
-        })
+        }
+        _attach_ai_meta(payload, a)
+        batch.append(payload)
 
         if claims_payload:
             pending_fact_checks.append((uh, claims_payload))

@@ -2,14 +2,17 @@ import { createRoot } from 'react-dom/client';
 import './styles/global.css';
 import App from './App';
 import { OverlayProvider, ErrorBoundary } from './components/Overlay';
+import TossAppProvider from './components/TossAppProvider';
 
-// `@toss/tds-mobile` 의존을 100% 제거 (이슈 #13). hostname 기반 환경 차단을
-// 브라우저 보안 정책상 우회할 수 없으므로 자체 OverlayProvider 로 대체.
+// TDS provider is opt-in via VITE_ENABLE_TDS_PROVIDER=1 so normal browser dev
+// stays stable while Apps in Toss/TDS wiring is available for sandbox builds.
 
 createRoot(document.getElementById('root')!).render(
   <ErrorBoundary>
-    <OverlayProvider>
-      <App />
-    </OverlayProvider>
+    <TossAppProvider>
+      <OverlayProvider>
+        <App />
+      </OverlayProvider>
+    </TossAppProvider>
   </ErrorBoundary>,
 );

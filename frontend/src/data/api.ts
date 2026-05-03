@@ -13,8 +13,6 @@ import type { Article } from './articles';
  *   GET  /feed/:userId      → fetchFeed()          맞춤 기사 추천
  *   GET  /search?q=         → searchArticles()     벡터 검색
  *   GET  /health            → healthCheck()        서버 상태 확인
- *   POST /translate         → translateArticle()   번역
- *   POST /summarize         → summarizeArticle()   요약
  *   GET  /absence-summary/:userId
  *        → fetchAbsenceSummary() (별칭: GET /api/users/:userId/absence-summary)
  *   POST /user-seen/:userId → markUserSeen() (별칭: POST /api/users/:userId/seen)
@@ -107,6 +105,11 @@ export interface ApiArticle {
   translation:       string;
   summary_formal:    string;
   summary_casual:    string;
+  ai_status?:         'pending' | 'processing' | 'completed' | 'failed' | 'skipped';
+  ai_provider?:       'mock' | 'openrouter' | 'gemini' | 'local' | string;
+  ai_model?:          string;
+  ai_generated_at?:   string;
+  ai_error?:          string;
   is_new:            boolean;
   is_breaking:       boolean;
   time_ago:          string;
@@ -235,34 +238,4 @@ export async function logArticleView(userId: string, urlHash: string): Promise<v
 export async function fetchHot(date: string): Promise<(Article & { view_count: number })[]> {
   const list = await request<(ApiArticle & { view_count: number })[]>(`/hot/${date}`);
   return list.map(a => ({ ...toArticle(a), view_count: a.view_count ?? 0 }));
-}
-
-/**
- * 영문 원문을 한국어로 번역한다.
- * DetailPage의 "재번역" 버튼에서 호출.
- * 내부적으로 Ollama qwen3.5:4b 모델을 사용한다.
- *
- * @param text 영문 원문 (article.content)
- */
-export async function translateArticle(text: string): Promise<{ translation: string }> {
-  return request<{ translation: string }>('/translate', {
-    method: 'POST',
-    body: JSON.stringify({ text }),
-  });
-}
-
-/**
- * 영문 원문에 대한 격식체·일상체 3줄 요약을 생성한다.
- * DetailPage의 "재요약" 버튼에서 호출.
- * 내부적으로 Ollama qwen3.5:4b 모델을 사용한다.
- *
- * @param text 영문 원문 (article.content)
- */
-export async function summarizeArticle(
-  text: string,
-): Promise<{ summary_formal: string; summary_casual: string }> {
-  return request<{ summary_formal: string; summary_casual: string }>('/summarize', {
-    method: 'POST',
-    body: JSON.stringify({ text }),
-  });
 }

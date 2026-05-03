@@ -1,6 +1,6 @@
 import { useState, useRef, useCallback } from 'react';
 import { searchArticles } from '../data/api';
-import { toArticle, articleDisplayTitle, type Article } from '../data/articles';
+import { articleDisplayTitle, type Article } from '../data/articles';
 import DetailPage from './DetailPage';
 import type { BookmarkHook } from '../hooks/useBookmarks';
 
@@ -27,9 +27,12 @@ function saveRecent(q: string, prev: string[]): string[] {
   return next;
 }
 
-interface Props { bm: BookmarkHook; }
+interface Props {
+  bm: BookmarkHook;
+  onArticleClick?: (urlHash: string) => void;
+}
 
-export default function SearchPage({ bm }: Props) {
+export default function SearchPage({ bm, onArticleClick }: Props) {
   const [query, setQuery]         = useState('');
   const [submitted, setSubmitted] = useState('');
   const [results, setResults]     = useState<SearchItem[]>([]);
@@ -47,9 +50,7 @@ export default function SearchPage({ bm }: Props) {
     setRecent(prev => saveRecent(trimmed, prev));
     searchArticles(trimmed, 15)
       .then(data => {
-        // SearchResult(ApiArticle 기반) → Article(camelCase)로 변환하고 similarity 보존
-        const items: SearchItem[] = data.map(r => ({ ...toArticle(r), similarity: r.similarity }));
-        setResults(items);
+        setResults(data);
         setLoading(false);
       })
       .catch(() => { setResults([]); setLoading(false); });
@@ -187,7 +188,10 @@ export default function SearchPage({ bm }: Props) {
                 {results.map((article, i) => {
                   const simPct = article.similarity !== undefined ? Math.round(article.similarity * 100) : null;
                   return (
-                    <button key={article.urlHash} onClick={() => setDetail(article)} style={{
+                    <button key={article.urlHash} onClick={() => {
+                      onArticleClick?.(article.urlHash);
+                      setDetail(article);
+                    }} style={{
                       background: 'var(--color-surface)', borderRadius: 'var(--radius-lg)',
                       padding: '14px', boxShadow: 'var(--shadow-card)', textAlign: 'left',
                       transition: 'transform 0.12s', animation: `resultIn 0.25s ${i * 0.04}s ease both`,
@@ -207,7 +211,7 @@ export default function SearchPage({ bm }: Props) {
                       </div>
                       <p style={{ fontSize: 13, fontWeight: 600, color: 'var(--color-text-primary)', lineHeight: 1.4, marginBottom: 5 }}>{articleDisplayTitle(article)}</p>
                       <p style={{ fontSize: 12, color: 'var(--color-text-secondary)', lineHeight: 1.5, display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
-                        {article.summaryFormal}
+                        {article.summaryFormal || '요약은 아직 준비 중입니다.'}
                       </p>
                       <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 8 }}>
                         <button onClick={e => { e.stopPropagation(); bm.toggle(article.urlHash, article); }} style={{

@@ -14,6 +14,12 @@ from typing import Any
 
 _FIELDS = ["title", "translation", "summary_formal", "summary_casual"]
 
+_LABEL_ALIASES = {
+    "translation": ["번역 전문", "원문 번역본", "translation"],
+    "summary_formal": ["격식체 요약", "summary_formal", "formal summary"],
+    "summary_casual": ["일상체 요약", "summary_casual", "casual summary"],
+}
+
 
 def preprocess_text(text: str) -> str:
     """LLM 출력·학습 데이터의 표면 노이즈 제거.
@@ -133,12 +139,50 @@ def extract_json(text: str) -> dict:
         obj = json.loads(repaired)
         return {f: obj.get(f, "") for f in _FIELDS}
 
+    labeled = _extract_labeled_sections(text)
+    if labeled.get("translation"):
+        return {f: labeled.get(f, "") for f in _FIELDS}
+
     # ── 3단계: 절대 최후 수단 ────────────────────────────────
     return {
         "translation":    text,
         "summary_formal": "(파싱 실패)",
         "summary_casual": "(파싱 실패)",
     }
+
+
+def _label_pattern(label: str) -> str:
+    return rf"^\s*(?:#+\s*)?(?:\[?{re.escape(label)}\]?)\s*[:：]?\s*$"
+
+
+def _extract_labeled_sections(text: str) -> dict[str, str]:
+    """Parse label-style outputs while preserving full translation newlines.
+
+    Supports:
+      번역 전문:
+      ...
+      격식체 요약:
+      1. ...
+      일상체 요약:
+      1. ...
+    """
+    matches: list[tuple[str, int, int]] = []
+    for field, labels in _LABEL_ALIASES.items():
+        for label in labels:
+            for match in re.finditer(_label_pattern(label), text, flags=re.IGNORECASE | re.MULTILINE):
+                matches.append((field, match.start(), match.end()))
+
+    if not matches:
+        return {}
+
+    matches.sort(key=lambda item: item[1])
+    parsed: dict[str, str] = {}
+    for index, (field, _start, end) in enumerate(matches):
+        next_start = matches[index + 1][1] if index + 1 < len(matches) else len(text)
+        value = text[end:next_start].strip()
+        if value:
+            parsed[field] = value
+    return parsed
 
 
 def extract_loose_json_object(text: str) -> dict[str, Any]:

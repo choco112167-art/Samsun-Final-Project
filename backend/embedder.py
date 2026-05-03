@@ -12,7 +12,7 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-MODE = os.getenv("MODE", "local")
+EMBEDDING_PROVIDER = os.getenv("EMBEDDING_PROVIDER") or os.getenv("MODE", "local")
 
 
 # ════════════════════════════════════════════
@@ -72,9 +72,9 @@ def expand_query(q: str) -> str:
     LLM(OpenRouter)을 이용해 검색어를 확장한다.
     예: "엔비디아" → "엔비디아 NVIDIA GPU 반도체 AI가속기 블랙웰 H100 데이터센터"
 
-    MODE=local이거나 실패하면 원본 쿼리를 그대로 반환.
+    EMBEDDING_PROVIDER/MODE=local이거나 실패하면 원본 쿼리를 그대로 반환.
     """
-    if MODE != "cloud":
+    if EMBEDDING_PROVIDER not in ("cloud", "openrouter"):
         return q
 
     import requests
@@ -120,10 +120,10 @@ def make_embedding(text: str) -> list[float]:
     """
     텍스트 → 임베딩 벡터 (1024차원)
 
-    .env의 MODE 값으로 전환:
-      MODE=local  → Ollama qwen3-embedding:0.6b  (개발용, 기본값)
-      MODE=cloud  → OpenRouter qwen/qwen3-embedding-4b (Railway 배포용)
+    .env의 EMBEDDING_PROVIDER 값으로 전환:
+      local      → Ollama qwen3-embedding:0.6b
+      openrouter → OpenRouter qwen/qwen3-embedding-4b
     """
-    if MODE == "cloud":
+    if EMBEDDING_PROVIDER in ("cloud", "openrouter"):
         return _embed_cloud(text)
     return _embed_local(text)

@@ -15,18 +15,27 @@ function cardHeadline(article: CardArticle): string {
 }
 
 function pickSummary(article: CardArticle): string {
-  if ('summaryFormal' in article && article.summaryFormal) return article.summaryFormal;
-  if ('summary_formal' in article && article.summary_formal) return article.summary_formal;
+  if ('summaryFormal' in article && article.summaryFormal?.trim()) return article.summaryFormal.trim();
+  if ('summary_formal' in article && article.summary_formal?.trim()) return article.summary_formal.trim();
   return '';
 }
 
 function pickFactLabel(article: CardArticle): 'FACT' | 'UNVERIFIED' | 'RUMOR' | undefined {
   if ('factLabel' in article && article.factLabel) return article.factLabel;
-  return article.fact_label;
+  if ('fact_label' in article) return article.fact_label;
+  return undefined;
 }
 
 function pickSourceColor(article: CardArticle): string {
-  return article.sourceColor ?? article.source_color ?? '#6B7280';
+  if ('sourceColor' in article && article.sourceColor) return article.sourceColor;
+  if ('source_color' in article && article.source_color) return article.source_color;
+  return '#6B7280';
+}
+
+function pickTimeAgo(article: CardArticle): string {
+  if ('timeAgo' in article && article.timeAgo) return article.timeAgo;
+  if ('time_ago' in article && article.time_ago) return article.time_ago;
+  return '';
 }
 
 interface Props {
@@ -111,7 +120,7 @@ export default function ArticleCard({ article, bookmarked = false, onBookmark, o
         <span style={{
           marginLeft: 'auto', fontSize: 11, color: 'var(--color-text-tertiary)',
           flexShrink: 0, whiteSpace: 'nowrap',
-        }}>{article.timeAgo ?? article.time_ago}</span>
+        }}>{pickTimeAgo(article)}</span>
       </div>
 
       <h2 style={{
@@ -122,14 +131,23 @@ export default function ArticleCard({ article, bookmarked = false, onBookmark, o
         {cardHeadline(article)}
       </h2>
 
-      <p style={{
-        fontSize: 13, color: 'var(--color-text-secondary)', lineHeight: 1.6,
-        marginBottom: 12, paddingLeft: 8,
-        display: '-webkit-box', WebkitLineClamp: 2,
-        WebkitBoxOrient: 'vertical', overflow: 'hidden',
-      }}>
-        {summary}
-      </p>
+      {summary ? (
+        <p style={{
+          fontSize: 13, color: 'var(--color-text-secondary)', lineHeight: 1.6,
+          marginBottom: 12, paddingLeft: 8,
+          display: '-webkit-box', WebkitLineClamp: 2,
+          WebkitBoxOrient: 'vertical', overflow: 'hidden',
+        }}>
+          {summary}
+        </p>
+      ) : (
+        <p style={{
+          fontSize: 13, color: 'var(--color-text-tertiary)', lineHeight: 1.6,
+          marginBottom: 12, paddingLeft: 8,
+        }}>
+          요약은 아직 준비 중입니다.
+        </p>
+      )}
 
       <div style={{ display: 'flex', alignItems: 'center', paddingLeft: 8 }}>
         <span style={{

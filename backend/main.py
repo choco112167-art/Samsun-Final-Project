@@ -27,6 +27,7 @@ from config import get_settings
 
 _settings = get_settings()
 logging.basicConfig(level=getattr(logging, _settings.log_level.upper(), logging.INFO))
+logger = logging.getLogger(__name__)
 
 app = FastAPI()
 
@@ -38,8 +39,22 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-_sb_key = os.getenv("SUPABASE_KEY") or _settings.supabase_anon_key
-sb = create_client(_settings.supabase_url, _sb_key)
+_sb_key = os.getenv("SUPABASE_KEY") or os.getenv("SUPABASE_ANON_KEY") or _settings.effective_supabase_key
+_sb_url = (_settings.supabase_url or os.getenv("SUPABASE_URL", "")).rstrip("/")
+if _sb_url and _sb_key:
+    sb = create_client(_sb_url, _sb_key)
+else:
+    logger.warning("Supabase env is incomplete. Set SUPABASE_URL and SUPABASE_KEY in root .env.")
+    sb = None
+
+
+def require_supabase():
+    if sb is None:
+        raise HTTPException(
+            status_code=503,
+            detail="Supabase is not configured. Set SUPABASE_URL and SUPABASE_KEY.",
+        )
+    return sb
 
 
 class OnboardingRequest(BaseModel):
@@ -75,7 +90,8 @@ def onboarding(req: OnboardingRequest):
     관심 주제를 벡터로 변환해서 users 테이블에 저장한다.
     이 벡터가 나중에 /feed에서 기사 추천의 기준이 된다.
     """
-    upsert_user_profile(sb, req.user_id, req.interest_tags)
+    db = require_supabase()
+    upsert_user_profile(db, req.user_id, req.interest_tags)
     return {"message": "온보딩 완료!"}
 
 
@@ -87,7 +103,8 @@ def get_feed(user_id: str, top_k: int = 10):
     feat/leesangjun: user_logs 기반 최근 읽기 패턴으로 각 기사에 `reason`(추천 이유) 추가.
     """
     try:
-        articles, _interest_tags = build_personalized_feed(sb, user_id, top_k=top_k)
+        db = require_supabase()
+        articles, _interest_tags = build_personalized_feed(db, user_id, top_k=top_k)
     except LookupError:
         raise HTTPException(status_code=404, detail="유저 없음") from None
 
@@ -106,7 +123,8 @@ def get_articles(
     """
     HomePage, CategoryPage 등에서 기사 목록을 가져올 때 호출된다.
     """
-    query = sb.table("articles").select(
+    db = require_supabase()
+    query = db.table("articles").select(
         "url_hash, url, title, title_ko, source, source_type, category, country, "
         "keywords, published_at, collected_at, content, "
         "credibility_score, fact_label, "
@@ -130,7 +148,8 @@ def get_article(url_hash: str):
     """
     DetailPage에서 기사 하나의 전체 내용을 가져올 때 호출된다.
     """
-    result = sb.table("articles").select("*").eq("url_hash", url_hash).execute()
+    db = require_supabase()
+    result = db.table("articles").select("*").eq("url_hash", url_hash).execute()
 
     if not result.data:
         raise HTTPException(status_code=404, detail="기사 없음")
@@ -174,8 +193,9 @@ def search(q: str, top_k: int = 10, threshold: float = 0.4):
     expanded = expand_query(q)
 
     # 2. 벡터 검색
+    db = require_supabase()
     query_vector = make_embedding(expanded)
-    vec_result = sb.rpc("match_articles", {
+    vec_result = db.rpc("match_articles", {
         "query_vector": query_vector,
         "top_k":        top_k * 2,
     }).execute()
@@ -187,7 +207,7 @@ def search(q: str, top_k: int = 10, threshold: float = 0.4):
 
     # 3. 키워드 폴백: 제목(영문) 또는 한국어 번역에 검색어 포함 여부
     try:
-        kw_result = sb.table("articles").select(COLS).or_(
+        kw_result = db.table("articles").select(COLS).or_(
             f"title.ilike.%{q}%,title_ko.ilike.%{q}%,translation.ilike.%{q}%"
         ).limit(top_k).execute()
         for r in (kw_result.data or []):
@@ -217,7 +237,7 @@ def debug():
     """Supabase 연결 및 환경변수 확인용 (임시)"""
     import requests as _req
     supabase_url = (_settings.supabase_url or os.getenv("SUPABASE_URL", "")).rstrip("/")
-    sb_key = os.getenv("SUPABASE_KEY", "") or _settings.supabase_anon_key
+    sb_key = os.getenv("SUPABASE_KEY", "") or os.getenv("SUPABASE_ANON_KEY", "") or _settings.effective_supabase_key
 
     # URL 형식 진단
     url_issues = []
@@ -244,6 +264,8 @@ def debug():
     sdk_ok = False
     sdk_error = ""
     try:
+        if sb is None:
+            raise RuntimeError("Supabase client is not configured")
         sb.table("articles").select("url_hash").limit(1).execute()
         sdk_ok = True
     except Exception as e:
@@ -298,7 +320,8 @@ def summarize(req: LlmTextRequest):
 @app.post("/article-view/{user_id}/{url_hash}")
 def record_article_view(user_id: str, url_hash: str):
     """프론트에서 기사 카드 조회 시 호출 — user_logs에 적재."""
-    sb.table("user_logs").insert({
+    db = require_supabase()
+    db.table("user_logs").insert({
         "user_id": user_id,
         "url_hash": url_hash,
         "action": "view",
@@ -313,7 +336,7 @@ def absence_summary(user_id: str, top_k: int = 5):
     """마지막 접속 이후 맞춤 유사 기사 목록 (경로 두 종류 동일 처리)."""
     from backend.absence_summary import compute_absence_summary
 
-    return compute_absence_summary(sb, user_id, top_k=top_k)
+    return compute_absence_summary(require_supabase(), user_id, top_k=top_k)
 
 
 @app.post("/user-seen/{user_id}")
@@ -322,7 +345,7 @@ def user_seen(user_id: str):
     """부재 알림 확인 시 last_seen_at 갱신."""
     from backend.absence_summary import mark_user_seen
 
-    mark_user_seen(sb, user_id)
+    mark_user_seen(require_supabase(), user_id)
     return {"message": "last_seen_at 업데이트 완료"}
 
 
@@ -345,8 +368,9 @@ def get_hot(date: str, top_k: int = 5):
     )
 
     # 해당 날짜 조회 기록 집계
+    db = require_supabase()
     logs = (
-        sb.table("user_logs")
+        db.table("user_logs")
         .select("url_hash")
         .eq("action", "view")
         .gte("created_at", start)
@@ -359,14 +383,14 @@ def get_hot(date: str, top_k: int = 5):
         top_hashes = [h for h, _ in counts.most_common(top_k)]
         result = []
         for url_hash in top_hashes:
-            a = sb.table("articles").select(cols).eq("url_hash", url_hash).execute()
+            a = db.table("articles").select(cols).eq("url_hash", url_hash).execute()
             if a.data:
                 result.append({**a.data[0], "view_count": counts[url_hash]})
         return result
     else:
         # 조회 기록 없으면 해당 날짜 발행 기사 반환
         result = (
-            sb.table("articles")
+            db.table("articles")
             .select(cols)
             .gte("published_at", start)
             .lte("published_at", end)
@@ -383,7 +407,8 @@ def log_view(
     user_id: str = Query(..., description="유저 ID"),
     url_hash: str = Query(..., description="기사 url_hash"),
 ):
-    sb.table("user_logs").insert({
+    db = require_supabase()
+    db.table("user_logs").insert({
         "user_id": user_id,
         "url_hash": url_hash,
         "action": "view",
