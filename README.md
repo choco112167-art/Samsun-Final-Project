@@ -186,12 +186,13 @@ AI 종사자·학습자들은 수십 개의 해외 전문 매체에 흩어진 �
 
 | 기능 | 설명 | 기술 |
 | --- | --- | --- |
-| 📝 번역 + 3줄 요약 | 영문 기사를 단일 LLM 호출로 번역 및 3줄 요약 동시 생성 | Qwen3.5-4B (Ollama) |
-| 🎨 격식체 / 일상체 | 동일 기사를 두 가지 문체로 동시 제공 + 복사 버튼 | Qwen3.5-4B |
-| 🔍 개인화 추천 (RAG) | 관심 주제 기반 벡터 유사도 검색으로 맞춤 피드 | `qwen3:0.6b` (1024차원) + pgvector |
+| 📝 번역 + 3줄 요약 | 영문 기사를 단일 LLM 호출로 번역 및 3줄 요약 동시 생성 | Gemma 4 E2B fine-tuned (`MODEL_NAME=gemma4-e2b-samsun-lora`) |
+| 🎨 격식체 / 일상체 | 동일 기사에 대해 격식체·일상체 요약을 제공 | Gemma 4 E2B fine-tuned |
+| 🔍 개인화 추천·검색 (RAG) | 관심 주제 기반 맞춤 피드와 자연어 검색. 한국어·영어·일부 오타/표기 차이를 쿼리 확장 + pgvector + 키워드 fallback으로 처리 | `qwen3:0.6b` (1024차원) + pgvector |
 | 🔤 신조어 처리 (RAG) | AI 신조어를 DB에서 검색해 첫 등장 시 `Term(음차, 설명)` 형식으로 자동 포매팅 | `qwen3:0.6b` (1024차원) + pgvector |
 | 📋 즉시 공유 포맷 | 복사 버튼 → 사내 메신저 바로 붙여넣기 | — |
-| 🔔 부재중 요약 알림 | 오랜만에 접속 시 부재 중 기사 요약 알림 제공 | — |
+| 🔔 부재중 요약 알림 | 마지막 접속 이후 놓친 기사 중 유저 벡터와 유사한 기사 요약 알림 제공 | `/absence-summary/{user_id}` + pgvector |
+| 🧾 FACT 라벨링 | 저장 전 팩트체크 파이프라인과 출처 신뢰도 기반 라벨·점수 저장 | `fact_checker/` + `save_articles.py` |
 
 > **신조어 출력 형식 예시**  
 > 첫 등장: `RAG(Retrieval-Augmented Generation의 약자, 외부 지식을 검색해 LLM 답변에 활용하는 기법)`  
@@ -215,18 +216,18 @@ AI 종사자·학습자들은 수십 개의 해외 전문 매체에 흩어진 �
 
 ### AI/ML
 
-- **`qwen3.5:4b` (Ollama)** — 번역 + 요약 통합 (단일 LLM 호출). 환경 변수 `MODEL_NAME`으로 태그 변경 가능.
-- **LoRA 파인튜닝** — **데이터셋:** RSS·크롤링으로 수집한 AI 뉴스 기사를 LLM으로 번역·요약해 만든 **자체 합성 데이터**. **학습:** epoch **8**, **Google Colab Pro (A100)**. (실험·평가는 `eval/`·파이프라인 기본 경로와 별도.)
-- **공개 모델 (Hugging Face)** — LoRA Adapter [`mingyu3939/samsun123`](https://huggingface.co/mingyu3939/samsun123), GGUF [`mingyu3939/samsun1234`](https://huggingface.co/mingyu3939/samsun1234)
-- **로컬 접근** — Ollama 로컬 서버; 외부에서 붙을 때는 ngrok 등으로 `11434` 터널링.
+- **Gemma 4 E2B fine-tuned (`MODEL_NAME=gemma4-e2b-samsun-lora`)** — 번역 전문 + 격식체/일상체 3줄 요약 통합 생성. 팀 내에서 “gamma4 e2b”로 부르는 파인튜닝 모델을 기본값으로 둡니다.
+- **LoRA 파인튜닝** — **데이터셋:** RSS·크롤링으로 수집한 AI 뉴스 기사를 LLM으로 번역·요약해 만든 **자체 합성 데이터**. **학습:** Google Colab Pro (A100). (실험·평가는 `eval/`·파이프라인 기본 경로와 별도.)
+- **공개 모델 (Hugging Face)** — 최신 LoRA Adapter는 `MODEL_NAME`/`LOCAL_LLM_ENDPOINT`로 연결합니다. 이전 실험 산출물은 [`mingyu3939/samsun123`](https://huggingface.co/mingyu3939/samsun123), [`mingyu3939/samsun1234`](https://huggingface.co/mingyu3939/samsun1234)를 참고합니다.
+- **로컬 접근** — Ollama GGUF 또는 Transformers/PEFT/FastAPI 서버. 외부에서 붙을 때는 ngrok 등으로 모델 서버 포트를 터널링합니다.
 - **`qwen3:0.6b` (Ollama `/api/embeddings`)** — 임베딩 전용 소형 모델, **출력 차원 1024**. 기사 번역문·신조어 텍스트 임베딩을 **동일 모델**로 통일. Supabase `pgvector`와 조합해 기사 추천 RAG 및 신조어 DB 유사도 검색에 사용.
 
 ### 인프라
 
-- Ollama + RTX 4070 (12GB VRAM) — 로컬 LLM 서버 (**추후 연결 예정**)
-- ngrok — 로컬 모델 외부 접속 터널링 (**추후 연결 예정**)
-- Google Colab Pro (A100) — LoRA 파인튜닝 (자체 합성 데이터, epoch 8)
-- Hugging Face — LoRA Adapter [`mingyu3939/samsun123`](https://huggingface.co/mingyu3939/samsun123), GGUF [`mingyu3939/samsun1234`](https://huggingface.co/mingyu3939/samsun1234)
+- Local GPU/Ollama 또는 Transformers/PEFT/FastAPI — Gemma 4 E2B fine-tuned 모델 서빙
+- ngrok — 로컬 모델 외부 접속 터널링
+- Google Colab Pro (A100) — LoRA 파인튜닝 (자체 합성 데이터)
+- Hugging Face — fine-tuned adapter/model 배포 경로
 - Railway — FastAPI 서버 배포
 - Supabase — DB + pgvector 벡터 검색
 
@@ -287,16 +288,18 @@ AI 종사자·학습자들은 수십 개의 해외 전문 매체에 흩어진 �
         ↓ HTTP 요청
 [FastAPI - Railway]                 backend/
    ├── RSS 수집 (크론·main.py)       collect/
-   │     └── RSS → Qwen3.5-4B
+   │     └── RSS → Gemma 4 E2B fine-tuned AI worker
    ├── 번역/요약                     pipeline/
    │     ├── translate_and_summarize()
    │     └── 신조어 RAG 컨텍스트 주입
    │           ├── neologism DB 유사도 검색
    │           └── 첫등장: Term(음차, 설명) 포매팅
    ├── 검색/추천 API
-   │     └── pgvector 유사 검색 (기사 추천)
+   │     ├── 자연어 쿼리 확장 + pgvector 유사 검색
+   │     └── 한국어/영어/오타/표기 차이 키워드 fallback
    └── 유저 API
-         └── 내피드 저장/조회
+         ├── 내피드 저장/조회
+         └── 부재중 요약 알림
         ↓
 [Supabase - DB + pgvector]
    ├── articles
@@ -304,7 +307,7 @@ AI 종사자·학습자들은 수십 개의 해외 전문 매체에 흩어진 �
    ├── user_feeds
    └── neologisms                   ← 신조어 DB (`qwen3:0.6b`, 1024차원)
         ↓
-[Qwen3.5-4B - Ollama + 로컬 GPU · ngrok 외부 접속] — **추후 연결 예정**
+[Gemma 4 E2B fine-tuned - local provider or external worker]
 ```
 
 ---
@@ -464,12 +467,12 @@ python scripts/backfill_article_ai_outputs.py --limit 1 --provider local --run
 ollama list
 set LOCAL_LLM_CONFIGURED=1
 set OLLAMA_BASE_URL=http://localhost:11434
-python scripts/backfill_article_ai_outputs.py --limit 1 --provider local --model gemma4-e4b-6ep-samsun --run
+python scripts/backfill_article_ai_outputs.py --limit 1 --provider local --model gemma4-e2b-samsun-lora --run
 
 # Transformers/PEFT/FastAPI 등 별도 서버를 쓸 때
 set LOCAL_LLM_CONFIGURED=1
 set LOCAL_LLM_ENDPOINT=http://localhost:8001/generate
-python scripts/backfill_article_ai_outputs.py --limit 1 --provider local --model mingyu3939/gemma4-e4b-6ep-samsun-lora --run
+python scripts/backfill_article_ai_outputs.py --limit 1 --provider local --model gemma4-e2b-samsun-lora --run
 ```
 
 `provider=local`은 `LOCAL_LLM_CONFIGURED=1`이 없으면 `local provider not configured`로 실패합니다. OpenRouter/Gemini로 몰래 fallback하지 않습니다. 아직 local fine-tuned model이 안정적으로 연결되지 않았다면 mock으로 DB 저장 흐름만 검증하고, 외부 provider 테스트 결과는 “fine-tuned model 결과가 아니라 external provider 결과”로 표시해야 합니다.
@@ -536,7 +539,9 @@ curl "http://localhost:8000/debug"
 ### LLM 서버 (로컬)
 
 ```bash
-ollama pull qwen3.5:4b
+# Ollama에 GGUF로 등록한 경우의 예시입니다. 실제 로컬 태그명은 `ollama list` 기준으로 맞춥니다.
+ollama list
+set MODEL_NAME=gemma4-e2b-samsun-lora
 ollama serve
 
 # 외부에서 붙일 때
@@ -622,13 +627,13 @@ Samsun-Final-Project-main/
 | --- | --- |
 | `main.py` | 앱 진입점. 온보딩·피드·기사·검색·`/health`·`/translate`·`/summarize` 등 API 라우트 정의 |
 | `embedder.py` | 텍스트 임베딩 (기본: Ollama `qwen3-embedding:4b`, 1024차원; `MODE=cloud` 시 OpenRouter 분기 코드 포함) |
-| `llm_dispatch.py` | 번역·요약 → `pipeline.translate_summarize.translate_and_summarize` (Ollama `qwen3.5:4b` 등) |
+| `llm_dispatch.py` | 번역·요약 → `pipeline.translate_summarize.translate_and_summarize` (`MODEL_NAME=gemma4-e2b-samsun-lora` 등) |
 | `rag.py` | 실험용 RAG·유저/기사 임베딩 (`sentence_transformers` 등, 운영 경로와 별도) |
 | `save_articles.py` | 처리된 기사를 Supabase `articles` 등에 저장 |
 
 #### `pipeline/`
 
-**영→한 번역·요약** LLM 파이프라인. Ollama(Qwen 계열) 기준으로 격식체·일상체 요약을 **단일 호출**에서 생성합니다.
+**영→한 번역·요약** LLM 파이프라인. 현재 기본 모델은 Gemma 4 E2B fine-tuned (`MODEL_NAME=gemma4-e2b-samsun-lora`)이며, 격식체·일상체 요약을 **단일 호출**에서 생성합니다.
 
 | 파일 | 역할 |
 | --- | --- |
@@ -710,27 +715,28 @@ Samsun-Final-Project-main/
 ## ✅ MVP 체크리스트
 
 - [x] 토스 미니앱 UI (WebView 방식) ✅
-- [ ] Qwen3.5-4B 번역 + 요약 통합 파이프라인
-- [x] LoRA 파인튜닝 (RSS 크롤링으로 수집한 AI 뉴스 기사를 LLM으로 번역·요약한 자체 합성 데이터셋, epoch 8, Colab Pro A100) ✅
-- [x] Hugging Face 공개 — LoRA Adapter [`mingyu3939/samsun123`](https://huggingface.co/mingyu3939/samsun123), GGUF [`mingyu3939/samsun1234`](https://huggingface.co/mingyu3939/samsun1234) ✅
-- [x] Supabase pgvector RAG 추천 (기사) ✅
+- [x] Gemma 4 E2B fine-tuned 번역 + 요약 통합 파이프라인 구조 ✅
+- [x] LoRA 파인튜닝 (RSS 크롤링으로 수집한 AI 뉴스 기사를 LLM으로 번역·요약한 자체 합성 데이터셋, Colab Pro A100) ✅
+- [x] Hugging Face/로컬 provider 연결 구조 ✅
+- [x] Supabase pgvector RAG 추천·검색 (기사) ✅
 - [ ] BLEU / COMET / G-Eval 평가 파이프라인
 - [x] 격식체 / 일상체 복사 버튼 ✅
 - [x] 기사 클릭 기반 개인화 추천 (user_vector 업데이트) ✅
-- [ ] 부재중 요약 알림
-- [ ] 신뢰도·팩트 라벨 (미구현)
-- [ ] **신조어 RAG**
-  - [ ] 신조어 DB 구축 (Supabase pgvector, `qwen3:0.6b`, 1024차원)
-  - [ ] 신조어 검색 API (`/neologisms/search`, `/neologisms/context`, `/neologisms/format`)
-  - [ ] 번역 파이프라인 통합 (첫등장 포매팅 자동 적용)
-  - [ ] Term Preservation Rate ≥ 95%
+- [x] 부재중 요약 알림 (`/absence-summary/{user_id}`, `/user-seen/{user_id}`) ✅
+- [x] 한국어·영어 자연어 검색 + 추천 검색어 UI ✅
+- [x] 신뢰도·FACT 라벨링 저장 로직 (`fact_checker/`, `save_articles.py`) ✅
+- [x] **신조어 RAG**
+  - [x] 신조어 DB/RPC 연동 구조 (Supabase pgvector, 1024차원)
+  - [x] 신조어 검색/컨텍스트 주입 함수 (`backend/neologism_rag.py`)
+  - [x] 번역 파이프라인 통합 (첫등장 포매팅 자동 적용)
+  - [ ] Term Preservation Rate 정량 평가
 
-## ❌ 미구현 항목
+## 🔎 구현 상태 메모
 
-- 부재중 요약 알림 ❌
-- 한국어 검색 ❌
-- 추천 검색어 (언급량 기반) ❌
-- FACT 라벨링 실제 로직 ❌
+- **부재중 요약 알림**: `backend/absence_summary.py`에서 마지막 접속 이후 발행 기사 중 유저 벡터와 유사한 기사를 가져오며, `backend/main.py`의 `/absence-summary/{user_id}`와 `/user-seen/{user_id}`에서 사용합니다.
+- **한국어/영어/오타 검색**: 검색 화면의 “자연어로 검색해보세요” 입력과 추천 검색어 버튼은 `/search` API를 호출합니다. 백엔드는 쿼리 확장, pgvector 유사 검색, 제목·한국어 제목·번역·요약·본문 키워드 fallback을 함께 사용합니다.
+- **FACT 라벨링**: 수집/저장 단계에서 `fact_checker.pipeline.run_fact_check`를 사용할 수 있고, API 응답은 `credibility_score`, `fact_label`을 포함합니다. 외부 Fact Check/Gemini 키가 없으면 출처 신뢰도 기반 fallback 라벨을 저장합니다.
+- **남은 작업**: BLEU/COMET/G-Eval과 Term Preservation Rate 같은 정량 평가, 그리고 운영 DB에서 AI 상태 컬럼 마이그레이션 적용 여부 확인.
 
 ---
 

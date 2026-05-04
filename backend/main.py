@@ -13,6 +13,7 @@ API 응답 형식 (안정성):
 
 import logging
 import os
+import re
 
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
@@ -157,6 +158,74 @@ def get_article(url_hash: str):
     return result.data[0]
 
 
+SEARCH_ALIASES = {
+    "엔비디아": ["nvidia", "gpu", "blackwell", "ai chip", "ai accelerator"],
+    "nvidia": ["엔비디아", "gpu", "blackwell", "ai chip", "ai accelerator"],
+    "앤트로픽": ["anthropic", "claude"],
+    "안트로픽": ["anthropic", "claude"],
+    "anthropic": ["앤트로픽", "claude", "클로드"],
+    "오픈ai": ["openai", "chatgpt", "gpt"],
+    "오픈에이아이": ["openai", "chatgpt", "gpt"],
+    "openai": ["오픈AI", "챗GPT", "chatgpt", "gpt"],
+    "제미나이": ["gemini", "google", "deepmind"],
+    "gemini": ["제미나이", "구글", "deepmind"],
+    "반도체": ["semiconductor", "chip", "gpu", "hbm", "nvidia"],
+    "칩": ["chip", "semiconductor", "gpu", "ai accelerator"],
+    "llm": ["대규모 언어 모델", "large language model", "오픈소스 LLM"],
+    "rag": ["retrieval augmented generation", "검색 증강 생성", "vector search", "pgvector"],
+    "스타트업": ["startup", "funding", "투자"],
+    "투자": ["funding", "investment", "valuation", "startup"],
+    "규제": ["regulation", "ai act", "policy", "법안"],
+    "오타": ["typo", "misspelling"],
+}
+
+
+def _search_terms(q: str, expanded: str) -> list[str]:
+    """Build Korean/English/alias terms for robust keyword fallback."""
+    raw_terms: list[str] = [q, expanded]
+    for token in re.findall(r"[\w가-힣.+#-]{2,}", f"{q} {expanded}".lower()):
+        raw_terms.append(token)
+        raw_terms.extend(SEARCH_ALIASES.get(token, []))
+
+    terms: list[str] = []
+    seen: set[str] = set()
+    for term in raw_terms:
+        normalized = re.sub(r"\s+", " ", str(term or "").strip())
+        # PostgREST .or_ uses comma separators; skip unsafe fragments.
+        if not normalized or "," in normalized or ")" in normalized or "(" in normalized:
+            continue
+        key = normalized.lower()
+        if key not in seen:
+            seen.add(key)
+            terms.append(normalized)
+    return terms[:12]
+
+
+def _keyword_search_articles(db, cols: str, q: str, expanded: str, top_k: int) -> list[dict]:
+    """Keyword fallback over Korean/English title, translation, summaries, and content."""
+    rows: list[dict] = []
+    for term in _search_terms(q, expanded):
+        filters = ",".join(
+            f"{field}.ilike.%{term}%"
+            for field in (
+                "title",
+                "title_ko",
+                "translation",
+                "summary_formal",
+                "summary_casual",
+                "content",
+                "source",
+                "category",
+            )
+        )
+        try:
+            result = db.table("articles").select(cols).or_(filters).limit(top_k).execute()
+            rows.extend(result.data or [])
+        except Exception as err:
+            logger.debug("keyword search fallback failed for term=%r: %s", term, err)
+    return rows
+
+
 @app.post("/articles")
 def save_articles_endpoint(req: ArticleRequest):
     """
@@ -189,33 +258,30 @@ def search(q: str, top_k: int = 10, threshold: float = 0.4):
         "translation, summary_formal, summary_casual"
     )
 
-    # 1. LLM 쿼리 확장
+    # 1. LLM 쿼리 확장. 실패해도 원본 쿼리로 검색한다.
     expanded = expand_query(q)
 
-    # 2. 벡터 검색
+    # 2. 벡터 검색. local embedding/Ollama가 꺼져 있어도 키워드 fallback은 반드시 동작한다.
     db = require_supabase()
-    query_vector = make_embedding(expanded)
-    vec_result = db.rpc("match_articles", {
-        "query_vector": query_vector,
-        "top_k":        top_k * 2,
-    }).execute()
-
     seen: dict = {}
-    for r in (vec_result.data or []):
-        if r.get("similarity", 0) >= threshold:
-            seen[r["url_hash"]] = r
-
-    # 3. 키워드 폴백: 제목(영문) 또는 한국어 번역에 검색어 포함 여부
     try:
-        kw_result = db.table("articles").select(COLS).or_(
-            f"title.ilike.%{q}%,title_ko.ilike.%{q}%,translation.ilike.%{q}%"
-        ).limit(top_k).execute()
-        for r in (kw_result.data or []):
-            h = r["url_hash"]
-            if h not in seen:
-                seen[h] = {**r, "similarity": 0.65}  # 키워드 직접 매칭 = 신뢰도 0.65
-    except Exception:
-        pass  # 키워드 검색 실패해도 벡터 결과는 반환
+        query_vector = make_embedding(expanded)
+        vec_result = db.rpc("match_articles", {
+            "query_vector": query_vector,
+            "top_k":        top_k * 2,
+        }).execute()
+
+        for r in (vec_result.data or []):
+            if r.get("similarity", 0) >= threshold:
+                seen[r["url_hash"]] = r
+    except Exception as err:
+        logger.warning("vector search failed; using keyword fallback only: %s", err)
+
+    # 3. 키워드/별칭 폴백: 한국어·영어·흔한 표기 차이를 같이 검색한다.
+    for r in _keyword_search_articles(db, COLS, q, expanded, top_k):
+        h = r["url_hash"]
+        if h not in seen:
+            seen[h] = {**r, "similarity": 0.65}  # 키워드 직접 매칭 = 신뢰도 0.65
 
     results = sorted(seen.values(), key=lambda x: x.get("similarity", 0), reverse=True)
     return {
@@ -294,7 +360,7 @@ def debug():
 @app.post("/translate")
 def translate(req: LlmTextRequest):
     """
-    영문 원문을 한국어로 번역합니다 (Ollama `qwen3.5:4b`, `pipeline.translate_summarize`).
+    영문 원문을 한국어로 번역합니다 (`MODEL_NAME` 기본: Gemma 4 E2B fine-tuned, `pipeline.translate_summarize`).
     응답은 translation 필드만 채웁니다.
     """
     from backend.llm_dispatch import translate_and_summarize_dispatch

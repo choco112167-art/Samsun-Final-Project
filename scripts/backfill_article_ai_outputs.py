@@ -355,7 +355,7 @@ def main() -> int:
         "mock": "mock-static-v1",
         "openrouter": os.getenv("OPENROUTER_TRANSLATION_MODEL", "google/gemini-2.5-flash"),
         "gemini": os.getenv("GEMINI_TRANSLATION_MODEL", "gemini-2.5-flash"),
-        "local": os.getenv("MODEL_NAME", "qwen3.5:4b"),
+        "local": os.getenv("MODEL_NAME", "gemma4-e2b-samsun-lora"),
     }[provider]
     endpoint_label = {
         "mock": "mock",

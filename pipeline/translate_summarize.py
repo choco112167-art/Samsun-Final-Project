@@ -1,9 +1,9 @@
 """
-Qwen3.5 4B - 격식체·일상체 번역 + 요약 단일 호출 파이프라인
+Gemma 4 E2B fine-tuned - 격식체·일상체 번역 + 요약 단일 호출 파이프라인
 한 번의 LLM 호출로 격식체 번역, 일상체 번역, 요약을 동시에 처리.
 
 Setup:
-  1. ollama pull qwen3.5:4b
+  1. MODEL_NAME=gemma4-e2b-samsun-lora
   2. pip install ollama python-dotenv
 
 Usage:
@@ -32,7 +32,7 @@ load_dotenv()
 
 logger = logging.getLogger(__name__)
 
-MODEL = os.getenv("MODEL_NAME", "qwen3.5:4b")
+MODEL = os.getenv("MODEL_NAME", "gemma4-e2b-samsun-lora")
 LLM_PROVIDER = (os.getenv("LLM_PROVIDER") or os.getenv("MODE") or "local").strip().lower()
 DISABLE_LOCAL_FALLBACK = os.getenv("LLM_DISABLE_LOCAL_FALLBACK", "").strip().lower() in {"1", "true", "yes"}
 OPENROUTER_MODEL = os.getenv("OPENROUTER_TRANSLATION_MODEL", "openai/gpt-4.1-mini")
@@ -215,7 +215,7 @@ def translate_and_summarize(
                 "num_predict": -1,   # 무제한 — EOS 토큰까지 생성
                 "num_gpu": 99,
             },
-            think=False,  # thinking 모드 비활성화 (qwen3.5:4b 전용)
+            think=False,  # 지원 모델에서는 thinking 모드 비활성화
         )
         result = _extract_json(response.message.content)
         if "(파싱 실패)" not in result.get("summary_formal", ""):

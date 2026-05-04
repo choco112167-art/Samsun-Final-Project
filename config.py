@@ -20,7 +20,7 @@ class Settings(BaseSettings):
     )
     llm_provider: str = "openrouter"
     embedding_provider: str = "openrouter"
-    model_name: str = "qwen3.5:4b"
+    model_name: str = "gemma4-e2b-samsun-lora"
     ollama_base_url: str = "http://localhost:11434"
     custom_model_mode: str = "off"
     custom_model_server_url: str = ""
