@@ -7,10 +7,18 @@ MODE=cloud  → OpenRouter API (배포 시)
 .env에서 MODE 한 줄만 바꾸면 전체 전환됩니다.
 """
 
+import logging
 import os
+from pathlib import Path
+
 from dotenv import load_dotenv
 
-load_dotenv()
+_repo_root = Path(__file__).resolve().parents[1]
+# README 기준 backend/.env + 루트 .env (중복 키는 먼저 로드된 값 유지)
+load_dotenv(_repo_root / "backend" / ".env")
+load_dotenv(_repo_root / ".env")
+
+logger = logging.getLogger(__name__)
 
 EMBEDDING_PROVIDER = os.getenv("EMBEDDING_PROVIDER") or os.getenv("MODE", "local")
 
@@ -55,10 +63,16 @@ def _embed_cloud(text: str) -> list[float]:
         )
         body = resp.json()
         if "data" in body:
+            logger.info(
+                "OpenRouter embedding ok (attempt %s, dim=%s)",
+                attempt + 1,
+                len(body["data"][0]["embedding"]),
+            )
             return body["data"][0]["embedding"][:1024]
         # 429 rate limit 또는 일시 오류 → 재시도
         if attempt < 2:
             time.sleep(2 ** attempt)
+    logger.warning("OpenRouter embedding failed after retries: %s", body)
     raise RuntimeError(f"OpenRouter 임베딩 실패: {body}")
 
 
@@ -75,17 +89,29 @@ def expand_query(q: str) -> str:
     EMBEDDING_PROVIDER/MODE=local이거나 실패하면 원본 쿼리를 그대로 반환.
     """
     if EMBEDDING_PROVIDER not in ("cloud", "openrouter"):
+        logger.debug(
+            "expand_query skipped (EMBEDDING_PROVIDER=%r not cloud)",
+            EMBEDDING_PROVIDER,
+        )
         return q
 
     import requests
     api_key = os.getenv("OPENROUTER_API_KEY", "")
     if not api_key:
+        logger.warning("expand_query skipped: OPENROUTER_API_KEY is empty")
         return q
 
-    prompt = (
-        "Expand this search query for an AI/tech news engine.\n"
-        "Output ONLY 8-12 unique keywords (Korean + English), space-separated, one line, no repetition.\n\n"
-        f"Query: {q}"
+    system = (
+        "You expand user search queries into indexing keywords. "
+        "Output NOTHING except one single line of keywords. "
+        "No greetings, no explanations, no labels (e.g. do not write 'Keywords:', 'Here:', 'Output:'). "
+        "No bullet points, numbering, quotes, or markdown. "
+        "8-12 unique Korean and/or English terms, space-separated only."
+    )
+    user_prompt = (
+        "Turn the following user query into keywords for an AI/tech news search.\n\n"
+        f"Query: {q}\n\n"
+        "Respond with exactly one line: space-separated keywords only."
     )
 
     try:
@@ -97,18 +123,58 @@ def expand_query(q: str) -> str:
             },
             json={
                 "model":      "meta-llama/llama-3.1-8b-instruct",
-                "messages":   [{"role": "user", "content": prompt}],
+                "messages":   [
+                    {"role": "system", "content": system},
+                    {"role": "user", "content": user_prompt},
+                ],
                 "max_tokens": 120,
-                "temperature": 0.2,
+                "temperature": 0.1,
             },
             timeout=10,
         )
         body = resp.json()
-        expanded = body["choices"][0]["message"]["content"].strip()
-        # LLM이 원본 쿼리도 포함하도록 앞에 붙여줌
-        return f"{q} {expanded}"
-    except Exception:
-        # 실패하면 원본 쿼리 그대로 사용 (검색은 항상 동작해야 함)
+        raw = (body["choices"][0]["message"]["content"] or "").strip()
+        # 한 줄만 사용 (모델이 여러 줄 안내를 붙인 경우)
+        expanded = raw.splitlines()[0].strip() if raw else ""
+
+        prefixes = (
+            "keywords:",
+            "keyword:",
+            "출력:",
+            "결과:",
+            "expanded:",
+            "expanded query:",
+            "검색어:",
+            "키워드:",
+            "here are the keywords:",
+            "here are keywords:",
+            "here are",
+            "here is",
+            "output:",
+            "sure!",
+            "okay!",
+        )
+        changed = True
+        while expanded and changed:
+            changed = False
+            expanded = expanded.strip()
+            el = expanded.lower()
+            for p in prefixes:
+                pl = p.lower()
+                if el.startswith(pl):
+                    expanded = expanded[len(pl) :].strip().strip(":\"'-, ")
+                    changed = True
+                    break
+        out = f"{q} {expanded}".strip()
+        logger.info(
+            "expand_query: LLM ok (chars in=%s out=%s preview=%s)",
+            len(q),
+            len(out),
+            (out[:120] + "…") if len(out) > 120 else out,
+        )
+        return out
+    except Exception as exc:
+        logger.warning("expand_query: LLM failed, using raw query: %s", exc)
         return q
 
 

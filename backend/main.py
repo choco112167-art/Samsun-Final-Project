@@ -14,6 +14,7 @@ API 응답 형식 (안정성):
 import logging
 import os
 import re
+import unicodedata
 
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
@@ -158,32 +159,140 @@ def get_article(url_hash: str):
     return result.data[0]
 
 
+# 한/영 검색 폴백용 동의어·확장 키 (토큰은 소문자로 조회되므로 키도 소문자 위주).
 SEARCH_ALIASES = {
-    "엔비디아": ["nvidia", "gpu", "blackwell", "ai chip", "ai accelerator"],
-    "nvidia": ["엔비디아", "gpu", "blackwell", "ai chip", "ai accelerator"],
+    # ── 반도체 / GPU ──
+    "엔비디아": ["nvidia", "gpu", "blackwell", "grace", "rubin", "h100", "b200", "gb200"],
+    "nvidia": ["엔비디아", "gpu", "blackwell", "accelerator"],
+    "amd": ["에이엠디", "라데온", "mi300", "instinct"],
+    "인텔": ["intel", "cpu", "gaudi", "xeon"],
+    "intel": ["인텔", "cpu", "gaudi"],
+    "tsmc": ["반도체", "파운드리", "대만"],
+    "삼성전자": ["samsung", "hbm", "반도체", "foundry", "평택"],
+    "samsung": ["삼성", "galaxy", "hbm", "exynos"],
+    "하이닉스": ["sk hynix", "hbm", "dram", "메모리"],
+    "반도체": ["semiconductor", "chip", "gpu", "hbm", "foundry"],
+    "칩": ["chip", "semiconductor", "gpu", "soc"],
+    "gpu": ["엔비디아", "nvidia", "cuda", "ai accelerator"],
+    "hbm": ["memory", "sk hynix", "삼성", "dram"],
+    "파운드리": ["foundry", "tsmc", "삼성"],
+    # ── 거대 플랫폼 기업 ──
+    "애플": ["apple", "iphone", "m4", "siri"],
+    "apple": ["애플", "iphone", "ios", "swift"],
+    "구글": ["google", "gemini", "deepmind", "alphabet", "tpu"],
+    "google": ["구글", "gemini", "deepmind"],
+    "마이크로소프트": ["microsoft", "azure", "copilot", "ms"],
+    "microsoft": ["마이크로소프트", "copilot", "azure"],
+    "메타": ["meta", "llama", "facebook", "faiss"],
+    "meta": ["메타", "llama"],
+    "아마존": ["amazon", "aws", "bedrock", "sagemaker"],
+    "amazon": ["아마존", "aws"],
+    "네이버": ["naver", "hyperclova", "클로바"],
+    "카카오": ["kakao", "카카오브레인"],
+    # ── AI 스타트업 / 라보 ──
+    "오픈ai": ["openai", "chatgpt", "gpt", "gpt-4", "sora"],
+    "오픈에이아이": ["openai", "chatgpt", "gpt"],
+    "openai": ["오픈ai", "챗gpt", "chatgpt", "gpt"],
     "앤트로픽": ["anthropic", "claude"],
     "안트로픽": ["anthropic", "claude"],
     "anthropic": ["앤트로픽", "claude", "클로드"],
-    "오픈ai": ["openai", "chatgpt", "gpt"],
-    "오픈에이아이": ["openai", "chatgpt", "gpt"],
-    "openai": ["오픈AI", "챗GPT", "chatgpt", "gpt"],
+    "클로드": ["claude", "anthropic"],
+    "claude": ["클로드", "anthropic"],
+    "xai": ["grok", "musk"],
+    "머스크": ["elon musk", "테슬라", "xai"],
+    "코히어": ["cohere"],
+    "미스트랄": ["mistral ai", "mistral"],
+    "허깅페이스": ["hugging face", "transformers"],
+    "스태빌리티": ["stability", "stable diffusion"],
+    "런웨이": ["runway", "영상 생성"],
+    "퍼플렉시티": ["perplexity", "인용"],
+    "스케일ai": ["scale ai", "데이터 라벨"],
+    # ── 모델 / 제품명 ──
+    "챗gpt": ["chatgpt", "openai", "gpt-4"],
+    "chatgpt": ["챗gpt", "openai", "gpt"],
+    "gpt": ["openai", "chatgpt", "gpt-4", "gpt-4o"],
+    "gpt-4": ["gpt4", "openai"],
+    "gpt4": ["gpt-4"],
     "제미나이": ["gemini", "google", "deepmind"],
-    "gemini": ["제미나이", "구글", "deepmind"],
-    "반도체": ["semiconductor", "chip", "gpu", "hbm", "nvidia"],
-    "칩": ["chip", "semiconductor", "gpu", "ai accelerator"],
-    "llm": ["대규모 언어 모델", "large language model", "오픈소스 LLM"],
-    "rag": ["retrieval augmented generation", "검색 증강 생성", "vector search", "pgvector"],
-    "스타트업": ["startup", "funding", "투자"],
-    "투자": ["funding", "investment", "valuation", "startup"],
-    "규제": ["regulation", "ai act", "policy", "법안"],
-    "오타": ["typo", "misspelling"],
+    "gemini": ["제미나이", "구글", "바드", "bard"],
+    "바드": ["bard", "gemini"],
+    "라마": ["llama", "meta"],
+    "llama": ["라마", "meta", "open weights"],
+    "그록": ["grok"],
+    "grok": ["그록", "xai"],
+    "소라": ["sora", "openai", "비디오"],
+    "dall-e": ["dalle", "openai"],
+    # ── AI 기술 용어 ──
+    "llm": ["large language model", "대규모 언어 모델", "foundation model"],
+    "파인튜닝": ["fine-tuning", "finetuning", "rlhf"],
+    "embedding": ["임베딩", "벡터", "embedding model"],
+    "임베딩": ["embedding", "vector", "pgvector"],
+    "rag": ["retrieval augmented generation", "검색 증강", "vector search"],
+    "에이전트": ["agent", "agentic", "autonomous"],
+    "agent": ["에이전트", "agentic"],
+    "멀티모달": ["multimodal", "vision", "이미지"],
+    "추론": ["inference", "reasoning"],
+    "프롬프트": ["prompt", "engineering"],
+    "컨텍스트": ["context", "long context", "context window"],
+    "토큰": ["token", "tokenizer"],
+    "할루시네이션": ["hallucination"],
+    # ── 이슈 / 비즈 ──
+    "스타트업": ["startup", "seed", "series", "유니콘"],
+    "투자": ["funding", "investment", "valuation", "vc"],
+    "규제": ["regulation", "eu ai act", "policy", "compliance"],
+    "저작권": ["copyright", "gpl", "license"],
+    "해고": ["layoff", "workforce reduction"],
 }
 
+_QUERY_NORMALIZATION_REGEX: tuple[tuple[str, str], ...] = (
+    (r"\bchat\s+gpt\b", "chatgpt"),
+    (r"\bgpt\s*-\s*4\b", "gpt-4"),
+    (r"\bgpt\s*-\s*5\b", "gpt-5"),
+    (r"\bgpt\s*-\s*4o\b", "gpt-4o"),
+    (r"\bc\+\+\b", "cpp"),
+    (r"dall\s*-\s*e", "dall-e"),
+    (r"dall\s*e", "dall-e"),
+    (r"챗\s*gpt\b", "chatgpt"),
+    (r"\bchai\s+gpt\b", "chatgpt"),
+    (r"오픈\s*ai\b", "openai"),
+    (r"오픈\s*에이아이\b", "openai"),
+    (r"gpt\s*4\b", "gpt-4"),
+    (r"gpt\s*5\b", "gpt-5"),
+    (r"제\s*미나이\b", "gemini"),
+    (r"딥\s*마인드\b", "deepmind"),
+)
 
-def _search_terms(q: str, expanded: str) -> list[str]:
+_QUERY_NORMALIZATION_LITERAL: tuple[tuple[str, str], ...] = (
+    ("오픈ai", "openai"),
+    ("챗gpt", "chatgpt"),
+    ("오픈에이아이", "openai"),
+    ("제미나이", "gemini"),
+    ("딥마인드", "deepmind"),
+    ("머스크", "musk"),
+)
+
+
+def normalize_query(raw: str) -> str:
+    """
+    검색어 전처리: NFC, 소문자, 다중 공백 제거, 자주 나오는 띄어쓰기·표기 통일.
+    """
+    q = unicodedata.normalize("NFC", (raw or "").strip())
+    if not q:
+        return ""
+    q = q.lower()
+    for pattern, repl in _QUERY_NORMALIZATION_REGEX:
+        q = re.sub(pattern, repl, q, flags=re.IGNORECASE)
+    q = re.sub(r"\s+", " ", q.strip())
+    for a, b in _QUERY_NORMALIZATION_LITERAL:
+        q = q.replace(a, b)
+    return q.strip()
+
+
+def _search_terms(q: str, expanded: str, max_terms: int = 24) -> list[str]:
     """Build Korean/English/alias terms for robust keyword fallback."""
-    raw_terms: list[str] = [q, expanded]
-    for token in re.findall(r"[\w가-힣.+#-]{2,}", f"{q} {expanded}".lower()):
+    combined = normalize_query(f"{q} {expanded}")
+    raw_terms: list[str] = [q, expanded, combined]
+    for token in re.findall(r"[\w가-힣.+#-]{2,}", combined):
         raw_terms.append(token)
         raw_terms.extend(SEARCH_ALIASES.get(token, []))
 
@@ -191,38 +300,75 @@ def _search_terms(q: str, expanded: str) -> list[str]:
     seen: set[str] = set()
     for term in raw_terms:
         normalized = re.sub(r"\s+", " ", str(term or "").strip())
-        # PostgREST .or_ uses comma separators; skip unsafe fragments.
         if not normalized or "," in normalized or ")" in normalized or "(" in normalized:
             continue
         key = normalized.lower()
         if key not in seen:
             seen.add(key)
             terms.append(normalized)
-    return terms[:12]
+    return terms[:max_terms]
+
+
+def _keywords_array_search_variants(term: str) -> list[str]:
+    """
+    keywords TEXT[]의 @> (contains) 는 대소문자 구분.
+    라틴 위주 토큰은 흔한 케이스 변형까지 조회한다.
+    """
+    t = term.strip()
+    if not t:
+        return []
+    variants: list[str] = [t]
+    if re.search(r"[a-zA-Z]", t):
+        variants.extend(
+            {
+                t.lower(),
+                t.upper(),
+                t.capitalize(),
+                t.swapcase(),
+            }
+        )
+    out: list[str] = []
+    seen: set[str] = set()
+    for v in variants:
+        v = v.strip()
+        if v and "," not in v and "(" not in v and ")" not in v and v not in seen:
+            seen.add(v)
+            out.append(v)
+    return out
 
 
 def _keyword_search_articles(db, cols: str, q: str, expanded: str, top_k: int) -> list[dict]:
-    """Keyword fallback over Korean/English title, translation, summaries, and content."""
+    """Keyword fallback: 텍스트 ilike + keywords 배열 contains(PostgreSQL @>)."""
     rows: list[dict] = []
+
+    kw_fields = (
+        "title",
+        "title_ko",
+        "translation",
+        "summary_formal",
+        "summary_casual",
+        "content",
+        "source",
+        "category",
+    )
+
     for term in _search_terms(q, expanded):
-        filters = ",".join(
-            f"{field}.ilike.%{term}%"
-            for field in (
-                "title",
-                "title_ko",
-                "translation",
-                "summary_formal",
-                "summary_casual",
-                "content",
-                "source",
-                "category",
-            )
-        )
+        filters = ",".join(f"{field}.ilike.%{term}%" for field in kw_fields)
         try:
             result = db.table("articles").select(cols).or_(filters).limit(top_k).execute()
             rows.extend(result.data or [])
         except Exception as err:
-            logger.debug("keyword search fallback failed for term=%r: %s", term, err)
+            logger.debug("keyword ilike fallback failed for term=%r: %s", term, err)
+
+        for kt in _keywords_array_search_variants(term):
+            try:
+                # Supabase/postgrest: contains → column @> value (배열에 해당 원소 존재)
+                arr_q = db.table("articles").select(cols).contains("keywords", [kt]).limit(top_k)
+                result_k = arr_q.execute()
+                rows.extend(result_k.data or [])
+            except Exception as err:
+                logger.debug("keywords array contains failed kt=%r: %s", kt, err)
+
     return rows
 
 
@@ -249,8 +395,9 @@ def search(q: str, top_k: int = 10, threshold: float = 0.4):
          → 벡터 점수가 낮아도 직접 언급되면 결과에 포함
       4. 중복 제거 후 유사도 내림차순 반환
     """
-    if not q.strip():
-        return {"results": []}
+    q_norm = normalize_query(q)
+    if not q_norm:
+        return {"results": [], "expanded_query": ""}
 
     COLS = (
         "url_hash, url, title, title_ko, source, source_type, category, country, "
@@ -258,14 +405,15 @@ def search(q: str, top_k: int = 10, threshold: float = 0.4):
         "translation, summary_formal, summary_casual"
     )
 
-    # 1. LLM 쿼리 확장. 실패해도 원본 쿼리로 검색한다.
-    expanded = expand_query(q)
+    # 1. LLM 쿼리 확장(local/cloud 정책은 embedder). 표시용은 expanded 그대로 유지.
+    expanded = expand_query(q_norm)
+    expanded_for_embed = normalize_query(expanded)
 
     # 2. 벡터 검색. local embedding/Ollama가 꺼져 있어도 키워드 fallback은 반드시 동작한다.
     db = require_supabase()
     seen: dict = {}
     try:
-        query_vector = make_embedding(expanded)
+        query_vector = make_embedding(expanded_for_embed)
         vec_result = db.rpc("match_articles", {
             "query_vector": query_vector,
             "top_k":        top_k * 2,
@@ -274,11 +422,19 @@ def search(q: str, top_k: int = 10, threshold: float = 0.4):
         for r in (vec_result.data or []):
             if r.get("similarity", 0) >= threshold:
                 seen[r["url_hash"]] = r
+        n_vec = len(vec_result.data or [])
+        n_pass = len(seen)
+        logger.info(
+            "vector search: match_articles returned %s rows, %s above threshold=%s",
+            n_vec,
+            n_pass,
+            threshold,
+        )
     except Exception as err:
         logger.warning("vector search failed; using keyword fallback only: %s", err)
 
-    # 3. 키워드/별칭 폴백: 한국어·영어·흔한 표기 차이를 같이 검색한다.
-    for r in _keyword_search_articles(db, COLS, q, expanded, top_k):
+    # 3. 키워드/별칭 폴백: 텍스트 ilike + keywords 배열 contains
+    for r in _keyword_search_articles(db, COLS, q_norm, expanded_for_embed, top_k):
         h = r["url_hash"]
         if h not in seen:
             seen[h] = {**r, "similarity": 0.65}  # 키워드 직접 매칭 = 신뢰도 0.65
