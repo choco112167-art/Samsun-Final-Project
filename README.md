@@ -531,6 +531,32 @@ ollama serve
 ngrok http 11434
 ```
 
+Windows PowerShell에서 Hugging Face GGUF를 내려받아 Ollama에 자동 등록:
+
+```powershell
+# 공개 repo면 토큰 없이 실행됩니다.
+# private/gated repo 권한 오류가 나면 먼저:
+# $env:HF_TOKEN="<your-huggingface-token>"
+
+powershell -ExecutionPolicy Bypass -File scripts\download_and_register_ollama.ps1
+
+# 기본값
+# Repo: mingyu3939/gemma4-e4b-6ep-samsun-gguf
+# Download dir: C:\samsun_models\gemma4-e4b-6ep-samsun
+# Ollama model: samsun-gemma4
+ollama run samsun-gemma4
+```
+
+스크립트가 처리하는 실패 원인:
+
+- Python 없음
+- `huggingface_hub` 설치 실패
+- Hugging Face repo 권한 오류 또는 `*.gguf` 파일 없음
+- Ollama 명령어 없음
+- `ollama create` 실패
+
+모델 파일은 git에 커밋하지 않습니다. `.gitignore`는 `models/`, `*.gguf`, `*.gguf.*`, `samsun_models/`를 제외하며, 기본 다운로드 경로 `C:\samsun_models\...`는 저장소 밖입니다.
+
 ### POC 사이클
 
 ```bash

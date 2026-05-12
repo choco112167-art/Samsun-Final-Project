@@ -42,3 +42,7 @@ dist/
 
 # 로컬 파인튜닝 모델 가중치 (용량 대형)
 samsunmodel*/
+models/
+*.gguf
+*.gguf.*
+samsun_models/
