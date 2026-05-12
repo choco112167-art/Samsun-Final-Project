@@ -12,22 +12,13 @@ Last checked: 2026-05-12
 | App name | `samsun-newsapp` |
 | Display name | `삼선뉴스` |
 | Vite dev port | `5173` |
-| Backend dev port | `8000` |
+| Runtime backend | None. Frontend reads Supabase directly. |
 | Build output | `frontend/dist` |
 | AIT bundle | `frontend/samsun-newsapp.ait` |
 
 TDS Mobile official start guide requires `@toss/tds-mobile`, `@toss/tds-mobile-ait`, `@emotion/react@^11`, React 18, and `TDSMobileAITProvider`. The current package and `frontend/src/components/TossAppProvider.tsx` match that shape.
 
 ## Local Browser Development
-
-Terminal 1:
-
-```bash
-copy .env.example .env
-python -m uvicorn backend.main:app --host 0.0.0.0 --port 8000 --reload
-```
-
-Terminal 2:
 
 ```bash
 cd frontend
@@ -40,8 +31,6 @@ Open:
 
 ```text
 http://localhost:5173
-http://localhost:8000/health
-http://localhost:8000/articles?limit=5
 ```
 
 ## Real Device / Toss App Testing
@@ -61,10 +50,9 @@ macOS/Linux:
 ip addr
 ```
 
-3. Start the frontend and backend on all interfaces.
+3. Start the frontend on all interfaces.
 
 ```bash
-python -m uvicorn backend.main:app --host 0.0.0.0 --port 8000 --reload
 cd frontend
 npm run dev
 ```
@@ -72,7 +60,8 @@ npm run dev
 4. Set mobile frontend env before starting Vite:
 
 ```text
-VITE_API_BASE_URL=http://<PC_INTERNAL_IP>:8000
+VITE_SUPABASE_URL=https://srdvlalyucbokdwfkmcf.supabase.co
+VITE_SUPABASE_ANON_KEY=<PASTE_SUPABASE_ANON_KEY_HERE>
 VITE_ENABLE_TDS_PROVIDER=0
 ```
 
@@ -80,10 +69,9 @@ VITE_ENABLE_TDS_PROVIDER=0
 
 ```text
 http://<PC_INTERNAL_IP>:5173
-http://<PC_INTERNAL_IP>:8000/health
 ```
 
-If the phone cannot open these URLs, check Windows Firewall or macOS firewall for ports `5173` and `8000`.
+If the phone cannot open this URL, check Windows Firewall or macOS firewall for port `5173`.
 
 ## `.ait` Bundle
 
@@ -114,38 +102,29 @@ Do not commit `.ait`; it is a build artifact and is ignored by `.gitignore`.
    - Age requirement satisfied.
    - At least one test execution before review/release.
 
-## Backend URL / CORS
+## Supabase Runtime
 
-Local browser:
+The Apps in Toss bundle does not call Railway, Vercel Functions, or a FastAPI server at runtime. It reads:
 
 ```text
-http://localhost:8000
+VITE_SUPABASE_URL=https://srdvlalyucbokdwfkmcf.supabase.co
+VITE_SUPABASE_ANON_KEY=<anon key>
 ```
 
-Phone on same Wi-Fi:
+Supabase RLS must allow anon read access to the fields used by the app:
 
 ```text
-http://<PC_INTERNAL_IP>:8000
+id, url_hash, title, title_ko, source, category, published_at,
+summary_formal, summary_casual, translation, fact_label, url
 ```
 
-Toss uploaded bundle:
+Backend/FastAPI CORS is deprecated for the app runtime. It can remain for local batch/admin debugging only.
+
+The frontend must never contain service-role keys. For final upload use:
 
 ```text
-https://<YOUR_HTTPS_BACKEND_DOMAIN>
-```
-
-Backend `CORS_ORIGINS` must include:
-
-```text
-http://localhost:5173
-https://samsun-newsapp.private-apps.tossmini.com
-https://samsun-newsapp.apps.tossmini.com
-```
-
-The frontend must never contain service-role keys. For final upload use only:
-
-```text
-VITE_API_BASE_URL=https://<YOUR_HTTPS_BACKEND_DOMAIN>
+VITE_SUPABASE_URL=https://srdvlalyucbokdwfkmcf.supabase.co
+VITE_SUPABASE_ANON_KEY=<anon key>
 VITE_ENABLE_TDS_PROVIDER=1
 ```
 

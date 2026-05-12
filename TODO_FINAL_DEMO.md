@@ -6,9 +6,9 @@ Last checked: 2026-05-12
 
 - React 18 + Vite frontend has `npm run dev`, `npm run build`, and `npm run ait:build`.
 - Apps in Toss WebView config exists at `frontend/granite.config.ts`.
-- FastAPI backend exposes article list/detail/search/feed/absence-summary routes.
+- FastAPI backend remains for batch/admin debugging only; app runtime no longer depends on it.
 - Supabase project URL is configured as `https://srdvlalyucbokdwfkmcf.supabase.co`.
-- Frontend uses `VITE_API_BASE_URL` and does not require service-role keys.
+- Frontend uses `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY`; service-role keys are not exposed.
 - Article detail uses stored `title_ko`, `translation`, `summary_formal`, and `summary_casual`; empty fields show preparation text instead of repeating the title.
 - API failure mock fallback exists in `frontend/src/data/mock-articles.ts`.
 - RSS/community collection, dedupe, fact labeling, neologism RAG, and AI backfill scripts exist.
@@ -16,14 +16,10 @@ Last checked: 2026-05-12
 
 ## P0 - Must Finish Before Final Presentation
 
-- [ ] Put real backend env in `.env` on the demo machine:
-  - `SUPABASE_URL`
-  - `SUPABASE_KEY` or `SUPABASE_ANON_KEY`
-  - `SUPABASE_SERVICE_ROLE_KEY` only for backend/batch if writes are needed
-  - `MODEL_NAME=gemma4-e4b-samsun`
-- [ ] Confirm article API:
-  - `python -m uvicorn backend.main:app --host 0.0.0.0 --port 8000 --reload`
-  - `curl http://localhost:8000/articles?limit=5`
+- [ ] Put real frontend env in `frontend/.env.local` on the demo machine:
+  - `VITE_SUPABASE_URL=https://srdvlalyucbokdwfkmcf.supabase.co`
+  - `VITE_SUPABASE_ANON_KEY=<anon key>`
+- [ ] Confirm Supabase RLS allows anon read on `articles`.
 - [ ] Confirm frontend:
   - `cd frontend`
   - `npm run dev`
@@ -47,11 +43,8 @@ Last checked: 2026-05-12
 
 ## P1 - Important But Demo Can Survive With Fallback
 
-- [ ] Decide final backend deployment URL with HTTPS for Toss QR/upload testing.
-- [ ] Set `VITE_API_BASE_URL=https://<backend-domain>` before final `.ait` build.
-- [ ] Add deployed backend CORS origins:
-  - `https://samsun-newsapp.private-apps.tossmini.com`
-  - `https://samsun-newsapp.apps.tossmini.com`
+- [ ] Keep FastAPI/Railway references deprecated in demo docs.
+- [ ] If batch writes are needed, put service-role key only in root `.env`, never in `frontend/.env*`.
 - [ ] Run fresh RSS quick ingest:
   - `python scripts/ingest_latest_titles.py --limit 20`
 - [ ] Run small AI processing batches only:

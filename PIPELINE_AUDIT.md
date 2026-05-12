@@ -25,7 +25,7 @@ Last checked: 2026-05-12
 | 6. Existing neologism DB lookup | Implemented | `backend/neologism_rag.py`, `backend/save_articles.py` | Requires Supabase `neologisms` table and embedding dimensions to match. |
 | 7. New neologism grounding search | Implemented, key dependent | `backend/neologism_rag.py` | Uses Gemini Google Search grounding when Gemini/Google key is configured. |
 | 8. Save article outputs to Supabase | Implemented | `backend/save_articles.py`, `scripts/backfill_article_ai_outputs.py` | Saves title, title_ko, url, translation, summaries, fact label, optional AI status fields. |
-| 9. Frontend reads stored data | Implemented | `frontend/src/data/api.ts`, `frontend/src/data/notices.ts` | Frontend uses backend API by `VITE_API_BASE_URL`. It does not call LLMs directly. |
+| 9. Frontend reads stored data | Implemented | `frontend/src/lib/supabase.ts`, `frontend/src/data/api.ts` | Frontend reads `articles` directly through Supabase JS with the anon key. It does not call LLMs directly. |
 | 10. Home/category/search/detail/feed | Implemented with fallback | `frontend/src/pages/`, `frontend/src/data/mock-articles.ts` | Search has API path plus keyword fallback. UI should still be tested on mobile. |
 | 11. Frontend no direct LLM | Implemented | `frontend/src/data/api.ts` | No Gemini/OpenRouter/Ollama secret usage in frontend runtime. |
 | 12. API failure mock fallback | Implemented | `frontend/src/data/mock-articles.ts` | Dev/demo fallback keeps screens alive when API is down. |

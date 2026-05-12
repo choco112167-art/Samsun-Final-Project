@@ -17,6 +17,7 @@
   "dependencies": {
     "@apps-in-toss/web-framework": "^2.4.7",
     "@emotion/react": "^11.14.0",
+    "@supabase/supabase-js": "^2.105.4",
     "@toss/tds-mobile": "^2.3.0",
     "@toss/tds-mobile-ait": "^2.3.0",
     "react": "^18.3.1",

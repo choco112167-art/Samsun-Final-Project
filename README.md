@@ -7,7 +7,7 @@
 
 ## 🚀 최종 발표용 1분 로컬 셋팅 가이드
 
-> 클론부터 로컬 실행까지 한 번에. 프론트는 FastAPI만 호출하고, Supabase 쓰기와 LLM 호출은 백엔드/배치에서만 수행합니다.
+> 클론부터 로컬 실행까지 한 번에. 발표용 런타임은 **토스 콘솔 + Supabase only** 구조입니다. 프론트는 Supabase anon key로 `articles`를 직접 읽고, FastAPI/Railway 상시 서버를 호출하지 않습니다.
 
 추가 점검 문서:
 
@@ -18,7 +18,7 @@
 
 ### 0. 사전 준비
 - Python **3.11** (`runtime.txt` 기준), Node.js **20+**, npm
-- Supabase anon/publishable key, 백엔드 쓰기용 service role key는 운영 담당자에게 별도 전달받기
+- Supabase anon key는 프론트 `.env.local`에 넣고, service role key는 로컬 배치/관리 작업에만 별도 사용
 - 로컬 모델 테스트 시 Ollama 또는 Transformers/PEFT 모델 서버
 
 ### 1. 클론 & 진입
@@ -37,7 +37,9 @@ npm install
 cd ..
 ```
 
-### 3. 백엔드 의존성 설치 (가상환경 권장)
+### 3. 백엔드/배치 의존성 설치 (선택)
+
+앱 실행에는 필요 없습니다. RSS 수집, Ollama/Gemma4 번역·요약, 팩트라벨링, 신조어 보강처럼 Supabase에 사전 결과를 쓰는 배치 작업을 할 때만 설치합니다.
 
 ```bash
 python3.11 -m venv .venv
@@ -55,14 +57,7 @@ pip install -r requirements.txt
 copy .env.example .env
 ```
 
-```env
-SUPABASE_URL=https://srdvlalyucbokdwfkmcf.supabase.co
-SUPABASE_KEY=<Supabase anon/publishable key>
-SUPABASE_SERVICE_ROLE_KEY=<backend/batch only, optional>
-MODE=cloud
-MODEL_NAME=gemma4-e4b-samsun
-OLLAMA_BASE_URL=http://localhost:11434
-```
+백엔드/배치 `.env`는 앱 실행에는 필요 없습니다. 실제 RSS/AI 처리 배치를 실행할 때만 `.env.example`을 복사해 `SUPABASE_SERVICE_ROLE_KEY`, `MODEL_NAME`, `OLLAMA_BASE_URL` 등을 채웁니다.
 
 프론트:
 
@@ -73,29 +68,19 @@ cd ..
 ```
 
 ```env
-VITE_API_BASE_URL=http://localhost:8000
+VITE_SUPABASE_URL=https://srdvlalyucbokdwfkmcf.supabase.co
+VITE_SUPABASE_ANON_KEY=<Supabase anon key>
 VITE_ENABLE_TDS_PROVIDER=0
 ```
 
 프론트에는 `SUPABASE_SERVICE_ROLE_KEY`, `OPENROUTER_API_KEY`, `GEMINI_API_KEY`, `GOOGLE_API_KEY`를 절대 넣지 않습니다.
 
-### 5. 실행 — 서버 두 개 (백엔드 + 프론트엔드)
-
-**터미널 ① — 백엔드 (FastAPI :8000)**
-
-```bash
-source .venv/bin/activate
-uvicorn backend.main:app --host 0.0.0.0 --port 8000 --reload
-# 헬스체크: curl http://localhost:8000/debug | python3 -m json.tool
-#   → "sdk_ok": true  ✓
-```
-
-**터미널 ② — 프론트엔드 (Vite :5173)**
+### 5. 실행 — 프론트엔드만
 
 ```bash
 cd frontend
 npm run dev
-# → http://localhost:5173 접속
+# http://localhost:5173 접속
 ```
 
 ### 5-1. Apps in Toss 실기기 / 토스앱 WebView 테스트
@@ -106,7 +91,7 @@ npm run dev
 - `frontend/granite.config.ts`: `appName: "samsun-newsapp"`, `brand.displayName: "삼선뉴스"`, `web.port: 5173`, `outdir: "dist"`
 - `.ait` 업로드 번들은 `npm run ait:build`로 생성합니다. 일반 `npm run build`는 Vite 정적 빌드만 수행합니다.
 
-실기기에서 PC 개발 서버를 보려면 휴대폰과 PC가 같은 Wi-Fi에 있어야 하고, `localhost` 대신 PC 내부 IP를 사용해야 합니다.
+실기기에서 PC 개발 서버를 보려면 휴대폰과 PC가 같은 Wi-Fi에 있어야 하고, `localhost` 대신 PC 내부 IP로 프론트 dev server에 접속합니다. API 서버 포트는 필요 없습니다.
 
 ```powershell
 # Windows: PC 내부 IP 확인
@@ -115,14 +100,9 @@ ipconfig
 # 예: Wi-Fi IPv4가 192.168.45.27이라면
 cd frontend
 Copy-Item .env.mobile.example .env.development
-# .env.development의 VITE_API_BASE_URL을 http://192.168.45.27:8000 으로 수정
-
-# 백엔드도 외부 기기에서 접근 가능하게 실행
-cd ..
-uvicorn backend.main:app --host 0.0.0.0 --port 8000
+# .env.development에 VITE_SUPABASE_URL, VITE_SUPABASE_ANON_KEY 설정
 
 # 프론트도 외부 기기에서 접근 가능하게 실행
-cd frontend
 npm run dev
 ```
 
@@ -137,10 +117,10 @@ npm run ait:dev
 점검할 네트워크 조건:
 
 - 휴대폰과 PC가 같은 Wi-Fi에 연결되어 있어야 함
-- Windows 방화벽에서 `5173`, `8000` 포트 접근 허용
-- 프론트 `VITE_API_BASE_URL`은 `http://PC내부IP:8000`
-- 최종 업로드/출시용 `VITE_API_BASE_URL`은 외부 HTTPS API URL
-- 프론트에는 Supabase service role key를 절대 넣지 않음. 프론트는 FastAPI만 호출하고, Supabase 쓰기는 백엔드/배치 스크립트가 담당
+- Windows 방화벽에서 `5173` 포트 접근 허용
+- 프론트는 `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`만 사용
+- 프론트에는 Supabase service role key를 절대 넣지 않음
+- Supabase RLS에서 `articles` 공개 읽기 또는 anon read policy가 필요함
 
 토스 콘솔 업로드 흐름:
 
@@ -171,9 +151,9 @@ WebView 디버깅:
 - [ ] `http://localhost:5173` 접속 시 흰 화면 없이 메인 렌더 ✓
 - [ ] 하단 탭 5개(홈/카테고리/핫이슈/검색/내 피드) 아이콘 정상 표시 ✓
 - [ ] 카테고리 탭 7개(`AI 연구`/`AI 심층`/`AI 스타트업`/`AI 비즈니스`/`AI 윤리`/`AI 커뮤니티`/`테크 전반`) 모두 기사가 채워짐 ✓
-- [ ] `curl 'http://localhost:8000/articles?limit=5'` 가 운영과 동일한 카테고리 분포를 반환
+- [ ] Supabase anon key로 `articles` 목록이 보임
 
-위 4개가 통과하면 셋업 완료. 백엔드를 켜지 않고 프론트만 띄워도 DEV 모드 mock 폴백(`mock-articles.ts`) 이 동작해 7개 탭이 채워집니다.
+위 항목이 통과하면 셋업 완료. Supabase 조회가 실패해도 DEV 모드 mock 폴백(`mock-articles.ts`)이 동작해 7개 탭이 채워집니다.
 
 ---
 
@@ -225,10 +205,10 @@ AI 종사자·학습자들은 수십 개의 해외 전문 매체에 흩어진 �
 - 토스 미니앱 (Apps in Toss) — WebView 방식
 - Granite 프레임워크 + TDS (Toss Design System)
 
-### Backend
+### Data / Batch
 
-- FastAPI (Railway 배포)
-- Supabase (PostgreSQL + pgvector)
+- Supabase (PostgreSQL + pgvector) — 앱 런타임 직접 조회
+- FastAPI / Python scripts — 발표 전 수집·번역·요약·관리용, 런타임 서버 아님
 - Python **3.11**
 
 ### AI/ML
@@ -245,8 +225,8 @@ AI 종사자·학습자들은 수십 개의 해외 전문 매체에 흩어진 �
 - ngrok — 로컬 모델 외부 접속 터널링
 - Google Colab Pro (A100) — LoRA 파인튜닝 (자체 합성 데이터)
 - Hugging Face — fine-tuned adapter/model 배포 경로
-- Railway — FastAPI 서버 배포
-- Supabase — DB + pgvector 벡터 검색
+- Supabase — 앱 런타임 DB + pgvector 벡터 검색
+- FastAPI — 상시 서버가 아니라 로컬/관리용 배치 API로만 유지
 
 ### 데이터 수집
 
@@ -302,29 +282,18 @@ AI 종사자·학습자들은 수십 개의 해외 전문 매체에 흩어진 �
 
 ```
 [토스 미니앱 - WebView]             frontend/
-        ↓ HTTP 요청
-[FastAPI - Railway]                 backend/
-   ├── RSS 수집 (크론·main.py)       collect/
-   │     └── RSS → Gemma 4 E4B fine-tuned AI worker
-   ├── 번역/요약                     pipeline/
-   │     ├── translate_and_summarize()
-   │     └── 신조어 RAG 컨텍스트 주입
-   │           ├── neologism DB 유사도 검색
-   │           └── 첫등장: Term(음차, 설명) 포매팅
-   ├── 검색/추천 API
-   │     ├── 자연어 쿼리 확장 + pgvector 유사 검색
-   │     └── 한국어/영어/오타/표기 차이 키워드 fallback
-   └── 유저 API
-         ├── 내피드 저장/조회
-         └── 부재중 요약 알림
-        ↓
+        ↓ Supabase anon read
 [Supabase - DB + pgvector]
    ├── articles
    ├── embeddings
    ├── user_feeds
    └── neologisms                   ← 신조어 DB (`qwen3:0.6b`, 1024차원)
-        ↓
-[Gemma 4 E4B fine-tuned - local provider or external worker]
+
+[로컬/관리 배치]                    backend/ collect/ pipeline/ scripts/
+   ├── RSS/커뮤니티 수집
+   ├── Gemma 4 E4B fine-tuned 번역/요약
+   ├── 팩트라벨링/신조어 Grounding
+   └── Supabase service role write
 ```
 
 ---
@@ -357,18 +326,16 @@ npm install
 npm run dev
 ```
 
-### 백엔드 (FastAPI)
+### 백엔드 (FastAPI, deprecated runtime)
 
-저장소 **루트**에서 의존성 설치 후, 모듈 경로가 맞도록 루트에서 uvicorn을 실행합니다.
+FastAPI는 더 이상 앱 실행에 필요한 상시 서버가 아닙니다. 발표용 앱 런타임은 Supabase direct read입니다. 아래 명령은 관리/디버깅용으로만 남깁니다.
 
 ```bash
 pip install -r requirements.txt
 uvicorn backend.main:app --reload
 ```
 
-Railway 배포 시 `Procfile`은 `uvicorn backend.main:app` 기준입니다.
-
-**Railway 배포 주소:** https://sansunver2-production.up.railway.app
+Railway 배포 주소와 `VITE_API_BASE_URL` 방식은 deprecated입니다.
 
 ### 신조어 DB 초기화
 
@@ -419,7 +386,6 @@ DB 필드 기준:
 ```bash
 python scripts/ingest_latest_titles.py --max 20
 python scripts/check_articles_health.py
-curl "http://localhost:8000/articles?limit=15"
 ```
 
 기존 `title_ko` 보강:
@@ -530,7 +496,7 @@ backend/sql/add_article_ai_status.sql
 5. provider가 `translation`, `summary_formal`, `summary_casual`을 생성합니다.
 6. 성공 시 `ai_status=completed`, 실패 시 `ai_status=failed`와 `ai_error`를 저장합니다.
 
-프론트는 실시간 모델 호출을 하지 않습니다. Supabase/API의 `translation`, `summary_formal`, `summary_casual` 값만 표시하고, 비어 있으면 준비 중 문구를 보여줍니다. `ai_status`가 API에 내려오면 상세 페이지에서 “AI 처리 중”, “처리 실패” 같은 상태 뱃지를 추가할 수 있도록 타입은 준비되어 있습니다.
+프론트는 실시간 모델 호출을 하지 않습니다. Supabase `articles`의 `translation`, `summary_formal`, `summary_casual` 값만 표시하고, 비어 있으면 준비 중 문구를 보여줍니다.
 
 느려질 수 있는 이유:
 
@@ -545,12 +511,12 @@ backend/sql/add_article_ai_status.sql
 - 빈 번역/요약은 “아직 준비 중입니다” 상태로 표시합니다.
 - 원문 보기는 `articles.url`만 사용하며, 빈 URL이나 `http/https`가 아닌 값은 링크를 비활성화합니다.
 
-배치 후 확인 엔드포인트:
+배치 후 확인:
 
 ```bash
-curl "http://localhost:8000/health"
-curl "http://localhost:8000/articles?limit=15"
-curl "http://localhost:8000/debug"
+python scripts/check_articles_health.py
+cd frontend
+npm run dev
 ```
 
 ### LLM 서버 (로컬)
@@ -579,8 +545,8 @@ python poc_cycle.py
 
 ```
 Samsun-Final-Project-main/
-├── backend/                     # FastAPI (Railway: uvicorn backend.main:app)
-│   ├── main.py                  # 온보딩·피드·기사·검색·/health·/translate·/summarize
+├── backend/                     # FastAPI 관리/배치 보조용 (앱 런타임 의존 없음)
+│   ├── main.py                  # 레거시/관리 API. 토스 앱 런타임은 직접 호출하지 않음
 │   ├── embedder.py              # 임베딩 (Ollama qwen3-embedding:4b → 1024차원, MODE에 따라 OpenRouter 분기 가능)
 │   ├── llm_dispatch.py          # /translate·/summarize → pipeline.translate_summarize (Ollama)
 │   ├── rag.py                   # 실험용 RAG·임베딩 (SentenceTransformer 등)
@@ -735,10 +701,10 @@ Samsun-Final-Project-main/
 - [x] Gemma 4 E4B fine-tuned 번역 + 요약 통합 파이프라인 구조 ✅
 - [x] LoRA 파인튜닝 (RSS 크롤링으로 수집한 AI 뉴스 기사를 LLM으로 번역·요약한 자체 합성 데이터셋, Colab Pro A100) ✅
 - [x] Hugging Face/로컬 provider 연결 구조 ✅
-- [x] Supabase pgvector RAG 추천·검색 (기사) ✅
+- [x] Supabase 저장 기사 기반 추천·검색 (런타임은 Supabase direct read, 배치는 pgvector 활용) ✅
 - [ ] BLEU / COMET / G-Eval 평가 파이프라인
 - [x] 격식체 / 일상체 복사 버튼 ✅
-- [x] 기사 클릭 기반 개인화 추천 (user_vector 업데이트) ✅
+- [x] 기사 클릭 기반 개인화 추천 UI (런타임은 localStorage 기반, 고급 user_vector 업데이트는 배치/관리 경로) ✅
 - [x] 부재중 요약 알림 (`/absence-summary/{user_id}`, `/user-seen/{user_id}`) ✅
 - [x] 한국어·영어 자연어 검색 + 추천 검색어 UI ✅
 - [x] 신뢰도·FACT 라벨링 저장 로직 (`fact_checker/`, `save_articles.py`) ✅
@@ -750,8 +716,8 @@ Samsun-Final-Project-main/
 
 ## 🔎 구현 상태 메모
 
-- **부재중 요약 알림**: `backend/absence_summary.py`에서 마지막 접속 이후 발행 기사 중 유저 벡터와 유사한 기사를 가져오며, `backend/main.py`의 `/absence-summary/{user_id}`와 `/user-seen/{user_id}`에서 사용합니다.
-- **한국어/영어/오타 검색**: 검색 화면의 “자연어로 검색해보세요” 입력과 추천 검색어 버튼은 `/search` API를 호출합니다. 백엔드는 쿼리 확장, pgvector 유사 검색, 제목·한국어 제목·번역·요약·본문 키워드 fallback을 함께 사용합니다.
+- **부재중 요약 알림**: 앱 런타임에서는 localStorage의 마지막 접속 시각과 Supabase 최신 기사로 표시합니다. 기존 `backend/absence_summary.py`는 관리/고도화용으로 남깁니다.
+- **한국어/영어/오타 검색**: 검색 화면의 “자연어로 검색해보세요” 입력과 추천 검색어 버튼은 Supabase에서 읽은 기사 제목·한국어 제목·번역·요약·본문을 클라이언트에서 키워드 매칭합니다. pgvector/RAG 고도화는 배치/관리 경로로 분리합니다.
 - **FACT 라벨링**: 수집/저장 단계에서 `fact_checker.pipeline.run_fact_check`를 사용할 수 있고, API 응답은 `credibility_score`, `fact_label`을 포함합니다. 외부 Fact Check/Gemini 키가 없으면 출처 신뢰도 기반 fallback 라벨을 저장합니다.
 - **남은 작업**: BLEU/COMET/G-Eval과 Term Preservation Rate 같은 정량 평가, 그리고 운영 DB에서 AI 상태 컬럼 마이그레이션 적용 여부 확인.
 
