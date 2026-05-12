@@ -557,6 +557,8 @@ ollama run samsun-gemma4
 
 모델 파일은 git에 커밋하지 않습니다. `.gitignore`는 `models/`, `*.gguf`, `*.gguf.*`, `samsun_models/`를 제외하며, 기본 다운로드 경로 `C:\samsun_models\...`는 저장소 밖입니다.
 
+주의: Hugging Face repo가 `GGUF` 태그를 달고 있어도 Files 탭에 실제 `*.gguf` 파일이 있어야 Ollama 등록이 가능합니다. `model.safetensors`만 있으면 Ollama가 직접 사용할 수 없으므로, 먼저 GGUF로 변환해 같은 repo에 업로드하거나 별도 GGUF 파일 경로를 사용해야 합니다.
+
 ### POC 사이클
 
 ```bash

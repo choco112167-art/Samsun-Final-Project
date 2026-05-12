@@ -92,7 +92,29 @@ $gguf = Get-ChildItem -Path $ModelDir -Recurse -Filter "*.gguf" -File |
   Select-Object -First 1
 
 if (-not $gguf) {
-  Fail "No GGUF file was found after download." "Check that repo '$RepoId' contains at least one *.gguf file."
+  Info "No local GGUF file found. Listing files currently published in the Hugging Face repo..."
+  $listScript = @'
+import os
+from huggingface_hub import HfApi
+
+repo_id = os.environ["HF_REPO_ID"]
+token = os.environ.get("HF_TOKEN") or None
+files = HfApi().list_repo_files(repo_id=repo_id, repo_type="model", token=token)
+for name in files:
+    print(name)
+'@
+  $tempListScript = Join-Path $env:TEMP "samsun_list_hf_files.py"
+  try {
+    $env:HF_REPO_ID = $RepoId
+    Set-Content -LiteralPath $tempListScript -Value $listScript -Encoding utf8
+    python $tempListScript
+  } catch {
+    Write-Host "[WARN] Could not list repo files: $($_.Exception.Message)" -ForegroundColor Yellow
+  } finally {
+    Remove-Item Env:\HF_REPO_ID -ErrorAction SilentlyContinue
+    Remove-Item -LiteralPath $tempListScript -ErrorAction SilentlyContinue
+  }
+  Fail "No GGUF file was found after download." "Ollama cannot create a model from safetensors directly. Upload a *.gguf file to '$RepoId' or convert the safetensors model to GGUF first."
 }
 Ok "GGUF found: $($gguf.FullName) ($([math]::Round($gguf.Length / 1GB, 2)) GB)"
 
