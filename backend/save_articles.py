@@ -12,7 +12,7 @@ Supabase에 저장하는 모든 함수를 담당한다.
 
 팩트체크 (feat/dongwoo `fact_checker/` 통합):
   - 저장 직전 `fact_checker.pipeline.run_fact_check` 로 라벨·신뢰도 산출
-  - `pipeline.translate_summarize`(Gemma 4 E2B fine-tuned 등 `MODEL_NAME`)와 별도 경로 — 충돌 없음
+  - `pipeline.translate_summarize`(Gemma 4 E4B fine-tuned 등 `MODEL_NAME`)와 별도 경로 — 충돌 없음
   - 비활성: 환경변수 FACTCHECK_ENABLED=0
 """
 
@@ -129,7 +129,10 @@ def _attach_ai_meta(payload: dict, article: dict) -> None:
 _settings = get_settings()
 sb = create_client(
     (os.getenv("SUPABASE_URL") or _settings.supabase_url).rstrip("/"),
-    os.getenv("SUPABASE_KEY") or os.getenv("SUPABASE_ANON_KEY") or _settings.effective_supabase_key,
+    os.getenv("SUPABASE_SERVICE_ROLE_KEY")
+    or os.getenv("SUPABASE_KEY")
+    or os.getenv("SUPABASE_ANON_KEY")
+    or _settings.effective_supabase_key,
 )
 
 
@@ -188,7 +191,7 @@ def save_articles(articles: list[dict]) -> int:
 
     팩트체크:
         FACTCHECK_ENABLED=1 (기본) 일 때 `fact_checker.pipeline.run_fact_check` 실행.
-        번역 파이프라인(Gemma 4 E2B fine-tuned 등 `MODEL_NAME`)과는 별도 프로세스이며 모델 충돌 없음.
+        번역 파이프라인(Gemma 4 E4B fine-tuned 등 `MODEL_NAME`)과는 별도 프로세스이며 모델 충돌 없음.
     """
     run_fact_check = None
     skip_fc: bool = True

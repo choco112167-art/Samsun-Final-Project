@@ -5,20 +5,28 @@
 
 ---
 
-## 🚀 팀원용 1분 로컬 셋팅 가이드
+## 🚀 최종 발표용 1분 로컬 셋팅 가이드
 
-> 클론부터 로컬 실행까지 한 번에. **운영(Railway) 과 동일한 팀 공용 Supabase 를 그대로 바라봄** — 더미 DB 없이 실제 데이터로 개발합니다.
+> 클론부터 로컬 실행까지 한 번에. 프론트는 FastAPI만 호출하고, Supabase 쓰기와 LLM 호출은 백엔드/배치에서만 수행합니다.
+
+추가 점검 문서:
+
+- [`PIPELINE_AUDIT.md`](./PIPELINE_AUDIT.md) — 수집/전처리/팩트라벨링/신조어/Supabase/프론트 상태표
+- [`DEPLOYMENT_APPS_IN_TOSS.md`](./DEPLOYMENT_APPS_IN_TOSS.md) — `.ait` 번들, 콘솔 업로드, QR 테스트 절차
+- [`MODEL_SERVING_OLLAMA.md`](./MODEL_SERVING_OLLAMA.md) — Gemma 4 E4B LoRA/GGUF/Ollama/터널링 연동
+- [`TODO_FINAL_DEMO.md`](./TODO_FINAL_DEMO.md) — 발표 전 P0/P1 체크리스트
 
 ### 0. 사전 준비
 - Python **3.11** (`runtime.txt` 기준), Node.js **20+**, npm
-- Railway 대시보드 접근 권한 (Supabase anon key 복사를 위해 1회 필요)
+- Supabase anon/publishable key, 백엔드 쓰기용 service role key는 운영 담당자에게 별도 전달받기
+- 로컬 모델 테스트 시 Ollama 또는 Transformers/PEFT 모델 서버
 
 ### 1. 클론 & 진입
 
 ```bash
 git clone https://github.com/choco112167-art/Samsun-Final-Project.git
 cd Samsun-Final-Project
-git switch feat/joochan       # 자동 배포 브랜치 (필요 시)
+git switch main
 ```
 
 ### 2. 프론트엔드 의존성 설치
@@ -37,30 +45,39 @@ source .venv/bin/activate           # Windows: .venv\Scripts\activate
 pip install -r requirements.txt
 ```
 
-### 4. 🔑 환경 변수 셋팅 — **`backend/.env` 한 파일로 끝**
+### 4. 🔑 환경 변수 셋팅
 
-> ⚠️ **단일 `.env` 정책** (이슈 #18 청소 시 `.env.example` 폐기). `.gitignore` 에 등재되어 커밋되지 않습니다.
+루트 `.env`는 백엔드/배치용, `frontend/.env.local`은 프론트용입니다. 둘 다 `.gitignore` 대상입니다.
 
-`backend/.env` 가 이미 placeholder 상태로 존재합니다. **`SUPABASE_KEY` 만 실제 값으로 채우면 끝**입니다.
+백엔드/배치:
 
 ```bash
-# Railway 대시보드에서 anon key 복사:
-#   https://railway.app  →  samsun-production  →  Variables  →  SUPABASE_KEY  →  Copy
-# 그런 다음 placeholder 치환:
-sed -i '' 's|<PASTE_TEAM_ANON_KEY_HERE>|<여기에_복사한_KEY>|' backend/.env
+copy .env.example .env
 ```
-
-치환 후 `backend/.env` 의 모습:
 
 ```env
-SUPABASE_URL=https://srdvlalyucbokdwfkmcf.supabase.co     # 운영 Railway 와 동일 인스턴스
-SUPABASE_KEY=eyJhbGc...실제_anon_key...                    # 위에서 복사한 값
+SUPABASE_URL=https://srdvlalyucbokdwfkmcf.supabase.co
+SUPABASE_KEY=<Supabase anon/publishable key>
+SUPABASE_SERVICE_ROLE_KEY=<backend/batch only, optional>
 MODE=cloud
+MODEL_NAME=gemma4-e4b-samsun
 OLLAMA_BASE_URL=http://localhost:11434
-OPENROUTER_API_KEY=sk-or-v1-...
 ```
 
-> 새 머신에서 `.env` 가 없다면 위 5줄을 직접 작성하면 됩니다 (자세한 운영은 `HANDOFF.md` §9 참조).
+프론트:
+
+```bash
+cd frontend
+copy .env.example .env.local
+cd ..
+```
+
+```env
+VITE_API_BASE_URL=http://localhost:8000
+VITE_ENABLE_TDS_PROVIDER=0
+```
+
+프론트에는 `SUPABASE_SERVICE_ROLE_KEY`, `OPENROUTER_API_KEY`, `GEMINI_API_KEY`, `GOOGLE_API_KEY`를 절대 넣지 않습니다.
 
 ### 5. 실행 — 서버 두 개 (백엔드 + 프론트엔드)
 
@@ -68,7 +85,7 @@ OPENROUTER_API_KEY=sk-or-v1-...
 
 ```bash
 source .venv/bin/activate
-uvicorn backend.main:app --reload --port 8000
+uvicorn backend.main:app --host 0.0.0.0 --port 8000 --reload
 # 헬스체크: curl http://localhost:8000/debug | python3 -m json.tool
 #   → "sdk_ok": true  ✓
 ```
@@ -186,8 +203,8 @@ AI 종사자·학습자들은 수십 개의 해외 전문 매체에 흩어진 �
 
 | 기능 | 설명 | 기술 |
 | --- | --- | --- |
-| 📝 번역 + 3줄 요약 | 영문 기사를 단일 LLM 호출로 번역 및 3줄 요약 동시 생성 | Gemma 4 E2B fine-tuned (`MODEL_NAME=gemma4-e2b-samsun-lora`) |
-| 🎨 격식체 / 일상체 | 동일 기사에 대해 격식체·일상체 요약을 제공 | Gemma 4 E2B fine-tuned |
+| 📝 번역 + 3줄 요약 | 영문 기사를 단일 LLM 호출로 번역 및 3줄 요약 동시 생성 | Gemma 4 E4B fine-tuned (`MODEL_NAME=gemma4-e4b-samsun`) |
+| 🎨 격식체 / 일상체 | 동일 기사에 대해 격식체·일상체 요약을 제공 | Gemma 4 E4B fine-tuned |
 | 🔍 개인화 추천·검색 (RAG) | 관심 주제 기반 맞춤 피드와 자연어 검색. 한국어·영어·일부 오타/표기 차이를 쿼리 확장 + pgvector + 키워드 fallback으로 처리 | `qwen3:0.6b` (1024차원) + pgvector |
 | 🔤 신조어 처리 (RAG) | AI 신조어를 DB에서 검색해 첫 등장 시 `Term(음차, 설명)` 형식으로 자동 포매팅 | `qwen3:0.6b` (1024차원) + pgvector |
 | 📋 즉시 공유 포맷 | 복사 버튼 → 사내 메신저 바로 붙여넣기 | — |
@@ -216,15 +233,15 @@ AI 종사자·학습자들은 수십 개의 해외 전문 매체에 흩어진 �
 
 ### AI/ML
 
-- **Gemma 4 E2B fine-tuned (`MODEL_NAME=gemma4-e2b-samsun-lora`)** — 번역 전문 + 격식체/일상체 3줄 요약 통합 생성. 팀 내에서 “gamma4 e2b”로 부르는 파인튜닝 모델을 기본값으로 둡니다.
+- **Gemma 4 E4B fine-tuned (`MODEL_NAME=gemma4-e4b-samsun`)** — 번역 전문 + 격식체/일상체 3줄 요약 통합 생성. 발표용 기본 로컬 모델명입니다. 실험 중인 E2B/E4B LoRA 또는 GGUF 산출물은 `.env`의 `MODEL_NAME`으로 교체할 수 있습니다.
 - **LoRA 파인튜닝** — **데이터셋:** RSS·크롤링으로 수집한 AI 뉴스 기사를 LLM으로 번역·요약해 만든 **자체 합성 데이터**. **학습:** Google Colab Pro (A100). (실험·평가는 `eval/`·파이프라인 기본 경로와 별도.)
 - **공개 모델 (Hugging Face)** — 최신 LoRA Adapter는 `MODEL_NAME`/`LOCAL_LLM_ENDPOINT`로 연결합니다. 이전 실험 산출물은 [`mingyu3939/samsun123`](https://huggingface.co/mingyu3939/samsun123), [`mingyu3939/samsun1234`](https://huggingface.co/mingyu3939/samsun1234)를 참고합니다.
-- **로컬 접근** — Ollama GGUF 또는 Transformers/PEFT/FastAPI 서버. 외부에서 붙을 때는 ngrok 등으로 모델 서버 포트를 터널링합니다.
+- **로컬 접근** — Ollama GGUF 또는 Transformers/PEFT/FastAPI 서버. 외부에서 붙을 때는 ngrok/Cloudflare Tunnel 등으로 모델 서버 포트를 터널링하되, 프론트가 아니라 백엔드/배치가 호출합니다.
 - **`qwen3:0.6b` (Ollama `/api/embeddings`)** — 임베딩 전용 소형 모델, **출력 차원 1024**. 기사 번역문·신조어 텍스트 임베딩을 **동일 모델**로 통일. Supabase `pgvector`와 조합해 기사 추천 RAG 및 신조어 DB 유사도 검색에 사용.
 
 ### 인프라
 
-- Local GPU/Ollama 또는 Transformers/PEFT/FastAPI — Gemma 4 E2B fine-tuned 모델 서빙
+- Local GPU/Ollama 또는 Transformers/PEFT/FastAPI — Gemma 4 E4B fine-tuned 모델 서빙
 - ngrok — 로컬 모델 외부 접속 터널링
 - Google Colab Pro (A100) — LoRA 파인튜닝 (자체 합성 데이터)
 - Hugging Face — fine-tuned adapter/model 배포 경로
@@ -288,7 +305,7 @@ AI 종사자·학습자들은 수십 개의 해외 전문 매체에 흩어진 �
         ↓ HTTP 요청
 [FastAPI - Railway]                 backend/
    ├── RSS 수집 (크론·main.py)       collect/
-   │     └── RSS → Gemma 4 E2B fine-tuned AI worker
+   │     └── RSS → Gemma 4 E4B fine-tuned AI worker
    ├── 번역/요약                     pipeline/
    │     ├── translate_and_summarize()
    │     └── 신조어 RAG 컨텍스트 주입
@@ -307,7 +324,7 @@ AI 종사자·학습자들은 수십 개의 해외 전문 매체에 흩어진 �
    ├── user_feeds
    └── neologisms                   ← 신조어 DB (`qwen3:0.6b`, 1024차원)
         ↓
-[Gemma 4 E2B fine-tuned - local provider or external worker]
+[Gemma 4 E4B fine-tuned - local provider or external worker]
 ```
 
 ---
@@ -467,12 +484,12 @@ python scripts/backfill_article_ai_outputs.py --limit 1 --provider local --run
 ollama list
 set LOCAL_LLM_CONFIGURED=1
 set OLLAMA_BASE_URL=http://localhost:11434
-python scripts/backfill_article_ai_outputs.py --limit 1 --provider local --model gemma4-e2b-samsun-lora --run
+python scripts/backfill_article_ai_outputs.py --limit 1 --provider local --model gemma4-e4b-samsun --run
 
 # Transformers/PEFT/FastAPI 등 별도 서버를 쓸 때
 set LOCAL_LLM_CONFIGURED=1
 set LOCAL_LLM_ENDPOINT=http://localhost:8001/generate
-python scripts/backfill_article_ai_outputs.py --limit 1 --provider local --model gemma4-e2b-samsun-lora --run
+python scripts/backfill_article_ai_outputs.py --limit 1 --provider local --model gemma4-e4b-samsun --run
 ```
 
 `provider=local`은 `LOCAL_LLM_CONFIGURED=1`이 없으면 `local provider not configured`로 실패합니다. OpenRouter/Gemini로 몰래 fallback하지 않습니다. 아직 local fine-tuned model이 안정적으로 연결되지 않았다면 mock으로 DB 저장 흐름만 검증하고, 외부 provider 테스트 결과는 “fine-tuned model 결과가 아니라 external provider 결과”로 표시해야 합니다.
@@ -541,7 +558,7 @@ curl "http://localhost:8000/debug"
 ```bash
 # Ollama에 GGUF로 등록한 경우의 예시입니다. 실제 로컬 태그명은 `ollama list` 기준으로 맞춥니다.
 ollama list
-set MODEL_NAME=gemma4-e2b-samsun-lora
+set MODEL_NAME=gemma4-e4b-samsun
 ollama serve
 
 # 외부에서 붙일 때
@@ -627,13 +644,13 @@ Samsun-Final-Project-main/
 | --- | --- |
 | `main.py` | 앱 진입점. 온보딩·피드·기사·검색·`/health`·`/translate`·`/summarize` 등 API 라우트 정의 |
 | `embedder.py` | 텍스트 임베딩 (기본: Ollama `qwen3-embedding:4b`, 1024차원; `MODE=cloud` 시 OpenRouter 분기 코드 포함) |
-| `llm_dispatch.py` | 번역·요약 → `pipeline.translate_summarize.translate_and_summarize` (`MODEL_NAME=gemma4-e2b-samsun-lora` 등) |
+| `llm_dispatch.py` | 번역·요약 → `pipeline.translate_summarize.translate_and_summarize` (`MODEL_NAME=gemma4-e4b-samsun` 등) |
 | `rag.py` | 실험용 RAG·유저/기사 임베딩 (`sentence_transformers` 등, 운영 경로와 별도) |
 | `save_articles.py` | 처리된 기사를 Supabase `articles` 등에 저장 |
 
 #### `pipeline/`
 
-**영→한 번역·요약** LLM 파이프라인. 현재 기본 모델은 Gemma 4 E2B fine-tuned (`MODEL_NAME=gemma4-e2b-samsun-lora`)이며, 격식체·일상체 요약을 **단일 호출**에서 생성합니다.
+**영→한 번역·요약** LLM 파이프라인. 현재 기본 모델은 Gemma 4 E4B fine-tuned (`MODEL_NAME=gemma4-e4b-samsun`)이며, 격식체·일상체 요약을 **단일 호출**에서 생성합니다.
 
 | 파일 | 역할 |
 | --- | --- |
@@ -715,7 +732,7 @@ Samsun-Final-Project-main/
 ## ✅ MVP 체크리스트
 
 - [x] 토스 미니앱 UI (WebView 방식) ✅
-- [x] Gemma 4 E2B fine-tuned 번역 + 요약 통합 파이프라인 구조 ✅
+- [x] Gemma 4 E4B fine-tuned 번역 + 요약 통합 파이프라인 구조 ✅
 - [x] LoRA 파인튜닝 (RSS 크롤링으로 수집한 AI 뉴스 기사를 LLM으로 번역·요약한 자체 합성 데이터셋, Colab Pro A100) ✅
 - [x] Hugging Face/로컬 provider 연결 구조 ✅
 - [x] Supabase pgvector RAG 추천·검색 (기사) ✅

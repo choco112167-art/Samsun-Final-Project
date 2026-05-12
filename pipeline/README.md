@@ -1,4 +1,4 @@
-# pipeline — 번역·요약 (Ollama + Qwen 3.5)
+# pipeline — 번역·요약 (Ollama + Gemma 4 E4B)
 
 외부 뉴스 원문을 **한국어 번역**과 **격식체·일상체 요약**으로 가공하는 모듈입니다.
 
@@ -18,10 +18,10 @@
 | 구분 | 내용 |
 |------|------|
 | 런타임 | [Ollama](https://ollama.com) (`ollama.chat`) |
-| 기본 모델 | **`qwen3.5:4b`** (환경변수 `MODEL_NAME`으로 태그 변경) |
+| 기본 모델 | **`gemma4-e4b-samsun`** (환경변수 `MODEL_NAME`으로 태그 변경) |
 | 의존성 | `ollama`, `python-dotenv` (`requirements.txt` 기준) |
 
-- `think=False`로 thinking 모드를 끕니다 (`qwen3.5:4b`).
+- `think=False`로 thinking 모드를 끕니다. Ollama 태그가 다르면 `MODEL_NAME`만 교체합니다.
 - `options`에 `num_gpu` 등이 설정되어 있으므로, 환경에 맞게 Ollama 설정을 조정하세요.
 
 ## 파일 역할
@@ -41,13 +41,14 @@
 1. Ollama에 모델 설치:
 
    ```bash
-   ollama pull qwen3.5:4b
+   ollama list
+   ollama run gemma4-e4b-samsun
    ```
 
 2. (선택) 다른 태그를 쓰려면 환경 변수:
 
    ```bash
-   set MODEL_NAME=qwen3.5:7b
+   set MODEL_NAME=gemma4-e4b-samsun
    ```
 
 3. 프로젝트 루트에서 의존성 설치 후 CLI 샘플 실행:

@@ -1,9 +1,9 @@
 """
-Gemma 4 E2B fine-tuned - 격식체·일상체 번역 + 요약 단일 호출 파이프라인
+Gemma 4 fine-tuned - 격식체·일상체 번역 + 요약 단일 호출 파이프라인
 한 번의 LLM 호출로 격식체 번역, 일상체 번역, 요약을 동시에 처리.
 
 Setup:
-  1. MODEL_NAME=gemma4-e2b-samsun-lora
+  1. MODEL_NAME=gemma4-e4b-samsun
   2. pip install ollama python-dotenv
 
 Usage:
@@ -32,7 +32,7 @@ load_dotenv()
 
 logger = logging.getLogger(__name__)
 
-MODEL = os.getenv("MODEL_NAME", "gemma4-e2b-samsun-lora")
+MODEL = os.getenv("MODEL_NAME", "gemma4-e4b-samsun")
 LLM_PROVIDER = (os.getenv("LLM_PROVIDER") or os.getenv("MODE") or "local").strip().lower()
 DISABLE_LOCAL_FALLBACK = os.getenv("LLM_DISABLE_LOCAL_FALLBACK", "").strip().lower() in {"1", "true", "yes"}
 OPENROUTER_MODEL = os.getenv("OPENROUTER_TRANSLATION_MODEL", "openai/gpt-4.1-mini")

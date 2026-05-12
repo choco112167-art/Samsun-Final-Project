@@ -69,9 +69,15 @@ def require_env(name: str) -> str:
 def get_supabase_client():
     load_project_env()
     supabase_url = require_env("SUPABASE_URL")
-    supabase_key = os.getenv("SUPABASE_KEY") or os.getenv("SUPABASE_ANON_KEY", "")
+    supabase_key = (
+        os.getenv("SUPABASE_SERVICE_ROLE_KEY")
+        or os.getenv("SUPABASE_KEY")
+        or os.getenv("SUPABASE_ANON_KEY", "")
+    )
     if not supabase_key.strip():
-        raise RuntimeError("Missing required env: SUPABASE_KEY or SUPABASE_ANON_KEY")
+        raise RuntimeError(
+            "Missing required env: SUPABASE_SERVICE_ROLE_KEY, SUPABASE_KEY, or SUPABASE_ANON_KEY"
+        )
     return create_client(supabase_url, supabase_key)
 
 

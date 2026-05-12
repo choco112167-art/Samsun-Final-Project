@@ -12,6 +12,7 @@ class Settings(BaseSettings):
     supabase_url: str = ""
     supabase_key: str = ""
     supabase_anon_key: str = ""
+    supabase_service_role_key: str = ""
     log_level: str = "info"
     cors_origins: str = (
         "http://localhost:5173,"
@@ -20,7 +21,7 @@ class Settings(BaseSettings):
     )
     llm_provider: str = "openrouter"
     embedding_provider: str = "openrouter"
-    model_name: str = "gemma4-e2b-samsun-lora"
+    model_name: str = "gemma4-e4b-samsun"
     ollama_base_url: str = "http://localhost:11434"
     custom_model_mode: str = "off"
     custom_model_server_url: str = ""
@@ -28,7 +29,9 @@ class Settings(BaseSettings):
 
     @property
     def effective_supabase_key(self) -> str:
-        return self.supabase_key or self.supabase_anon_key
+        # Backend/batch workers may use the service role key. Frontend env files
+        # must never expose this value; Vite only receives publishable keys.
+        return self.supabase_service_role_key or self.supabase_key or self.supabase_anon_key
 
     def cors_origins_list(self) -> list[str]:
         raw = (self.cors_origins or "*").strip()

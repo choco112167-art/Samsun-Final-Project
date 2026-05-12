@@ -33,7 +33,12 @@ _settings = get_settings()
 
 def supabase_client() -> Client:
     """main.py 의 `sb` 생성 규칙과 동일."""
-    key = os.getenv("SUPABASE_KEY") or os.getenv("SUPABASE_ANON_KEY") or _settings.effective_supabase_key
+    key = (
+        os.getenv("SUPABASE_SERVICE_ROLE_KEY")
+        or os.getenv("SUPABASE_KEY")
+        or os.getenv("SUPABASE_ANON_KEY")
+        or _settings.effective_supabase_key
+    )
     return create_client(_settings.supabase_url, key)
 
 

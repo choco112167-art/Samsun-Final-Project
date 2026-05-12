@@ -40,7 +40,12 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-_sb_key = os.getenv("SUPABASE_KEY") or os.getenv("SUPABASE_ANON_KEY") or _settings.effective_supabase_key
+_sb_key = (
+    os.getenv("SUPABASE_SERVICE_ROLE_KEY")
+    or os.getenv("SUPABASE_KEY")
+    or os.getenv("SUPABASE_ANON_KEY")
+    or _settings.effective_supabase_key
+)
 _sb_url = (_settings.supabase_url or os.getenv("SUPABASE_URL", "")).rstrip("/")
 if _sb_url and _sb_key:
     sb = create_client(_sb_url, _sb_key)
@@ -303,7 +308,12 @@ def debug():
     """Supabase 연결 및 환경변수 확인용 (임시)"""
     import requests as _req
     supabase_url = (_settings.supabase_url or os.getenv("SUPABASE_URL", "")).rstrip("/")
-    sb_key = os.getenv("SUPABASE_KEY", "") or os.getenv("SUPABASE_ANON_KEY", "") or _settings.effective_supabase_key
+    sb_key = (
+        os.getenv("SUPABASE_SERVICE_ROLE_KEY", "")
+        or os.getenv("SUPABASE_KEY", "")
+        or os.getenv("SUPABASE_ANON_KEY", "")
+        or _settings.effective_supabase_key
+    )
 
     # URL 형식 진단
     url_issues = []
@@ -360,7 +370,7 @@ def debug():
 @app.post("/translate")
 def translate(req: LlmTextRequest):
     """
-    영문 원문을 한국어로 번역합니다 (`MODEL_NAME` 기본: Gemma 4 E2B fine-tuned, `pipeline.translate_summarize`).
+    영문 원문을 한국어로 번역합니다 (`MODEL_NAME` 기본: Gemma 4 E4B fine-tuned, `pipeline.translate_summarize`).
     응답은 translation 필드만 채웁니다.
     """
     from backend.llm_dispatch import translate_and_summarize_dispatch
@@ -485,10 +495,14 @@ def log_view(
 # ── 프론트엔드 정적 파일 서빙 (SPA) ────────────────────────
 # API 라우트 정의 후 맨 마지막에 마운트해야 API가 우선됨
 _DIST = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "frontend", "dist")
-if os.path.isdir(_DIST):
-    app.mount("/assets", StaticFiles(directory=os.path.join(_DIST, "assets")), name="assets")
+_DIST_WEB = os.path.join(_DIST, "web")
+_STATIC_ROOT = _DIST_WEB if os.path.isfile(os.path.join(_DIST_WEB, "index.html")) else _DIST
+_ASSETS_DIR = os.path.join(_STATIC_ROOT, "assets")
+if os.path.isfile(os.path.join(_STATIC_ROOT, "index.html")):
+    if os.path.isdir(_ASSETS_DIR):
+        app.mount("/assets", StaticFiles(directory=_ASSETS_DIR), name="assets")
 
     @app.get("/{full_path:path}", include_in_schema=False)
     def serve_spa(full_path: str = ""):
         """React SPA — 모든 미매칭 경로를 index.html로 돌려줌"""
-        return FileResponse(os.path.join(_DIST, "index.html"))
+        return FileResponse(os.path.join(_STATIC_ROOT, "index.html"))
