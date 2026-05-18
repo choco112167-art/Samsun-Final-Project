@@ -27,8 +27,8 @@ PARAMETER num_ctx 4096
 Save it as `Modelfile`, then run:
 
 ```bash
-ollama create gemma4-e4b-samsun -f Modelfile
-ollama run gemma4-e4b-samsun
+ollama create samsun-gemma4 -f Modelfile
+ollama run samsun-gemma4
 ```
 
 Check:
@@ -42,13 +42,13 @@ Backend/batch env:
 ```text
 LOCAL_LLM_CONFIGURED=1
 OLLAMA_BASE_URL=http://localhost:11434
-MODEL_NAME=gemma4-e4b-samsun
+MODEL_NAME=samsun-gemma4
 ```
 
 One-article test:
 
 ```bash
-python scripts/backfill_article_ai_outputs.py --limit 1 --provider local --model gemma4-e4b-samsun --run
+python scripts/backfill_article_ai_outputs.py --limit 1 --provider local --model samsun-gemma4 --run
 ```
 
 ## Transformers / PEFT Server Path
@@ -60,7 +60,7 @@ Minimal contract expected by the batch script:
 ```text
 POST <LOCAL_LLM_ENDPOINT>
 {
-  "model": "gemma4-e4b-samsun",
+  "model": "samsun-gemma4",
   "prompt": "...",
   "text": "...",
   "max_tokens": 4096
@@ -84,13 +84,13 @@ Backend/batch env:
 ```text
 LOCAL_LLM_CONFIGURED=1
 LOCAL_LLM_ENDPOINT=http://localhost:8001/generate
-MODEL_NAME=gemma4-e4b-samsun
+MODEL_NAME=samsun-gemma4
 ```
 
 One-article test:
 
 ```bash
-python scripts/backfill_article_ai_outputs.py --limit 1 --provider local --model gemma4-e4b-samsun --run
+python scripts/backfill_article_ai_outputs.py --limit 1 --provider local --model samsun-gemma4 --run
 ```
 
 ## External Access For Demo

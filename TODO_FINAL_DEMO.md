@@ -32,10 +32,10 @@ Last checked: 2026-05-12
 - [ ] Confirm `.ait` upload file exists:
   - `frontend/samsun-newsapp.ait`
 - [ ] Register or serve the local fine-tuned model:
-  - `ollama list` must show `gemma4-e4b-samsun`, or
+  - `ollama list` must show `samsun-gemma4`, or
   - `LOCAL_LLM_ENDPOINT` must point to a Transformers/PEFT server.
 - [ ] Run one local-provider DB update after model server is ready:
-  - `python scripts/backfill_article_ai_outputs.py --limit 1 --provider local --model gemma4-e4b-samsun --run`
+  - `python scripts/backfill_article_ai_outputs.py --limit 1 --provider local --model samsun-gemma4 --run`
 - [ ] Clear mock DB outputs before demo:
   - `python scripts/check_articles_health.py`
   - `python scripts/clear_mock_ai_outputs.py --dry-run`

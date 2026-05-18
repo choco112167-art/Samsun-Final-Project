@@ -18,7 +18,7 @@
 | 구분 | 내용 |
 |------|------|
 | 런타임 | [Ollama](https://ollama.com) (`ollama.chat`) |
-| 기본 모델 | **`gemma4-e4b-samsun`** (환경변수 `MODEL_NAME`으로 태그 변경) |
+| 기본 모델 | **`samsun-gemma4`** (환경변수 `MODEL_NAME`으로 태그 변경) |
 | 의존성 | `ollama`, `python-dotenv` (`requirements.txt` 기준) |
 
 - `think=False`로 thinking 모드를 끕니다. Ollama 태그가 다르면 `MODEL_NAME`만 교체합니다.
@@ -42,13 +42,13 @@
 
    ```bash
    ollama list
-   ollama run gemma4-e4b-samsun
+   ollama run samsun-gemma4
    ```
 
 2. (선택) 다른 태그를 쓰려면 환경 변수:
 
    ```bash
-   set MODEL_NAME=gemma4-e4b-samsun
+   set MODEL_NAME=samsun-gemma4
    ```
 
 3. 프로젝트 루트에서 의존성 설치 후 CLI 샘플 실행:

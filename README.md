@@ -234,7 +234,7 @@ AI 종사자·학습자들은 수십 개의 해외 전문 매체에 흩어진 �
 
 | 기능 | 설명 | 기술 |
 | --- | --- | --- |
-| 📝 번역 + 3줄 요약 | 영문 기사를 단일 LLM 호출로 번역 및 3줄 요약 동시 생성 | Gemma 4 E4B fine-tuned (`MODEL_NAME=gemma4-e4b-samsun`) |
+| 📝 번역 + 3줄 요약 | 영문 기사를 단일 LLM 호출로 번역 및 3줄 요약 동시 생성 | Gemma 4 E4B fine-tuned (`MODEL_NAME=samsun-gemma4`) |
 | 🎨 격식체 / 일상체 | 동일 기사에 대해 격식체·일상체 요약을 제공 | Gemma 4 E4B fine-tuned |
 | 🔍 개인화 추천·검색 (RAG) | 관심 주제 기반 맞춤 피드와 자연어 검색. 한국어·영어·일부 오타/표기 차이를 쿼리 확장 + pgvector + 키워드 fallback으로 처리 | `qwen3:0.6b` (1024차원) + pgvector |
 | 🔤 신조어 처리 (RAG) | AI 신조어를 DB에서 검색해 첫 등장 시 `Term(음차, 설명)` 형식으로 자동 포매팅 | `qwen3:0.6b` (1024차원) + pgvector |
@@ -264,7 +264,7 @@ AI 종사자·학습자들은 수십 개의 해외 전문 매체에 흩어진 �
 
 ### AI/ML
 
-- **Gemma 4 E4B fine-tuned (`MODEL_NAME=gemma4-e4b-samsun`)** — 번역 전문 + 격식체/일상체 3줄 요약 통합 생성. 발표용 기본 로컬 모델명입니다. 실험 중인 E2B/E4B LoRA 또는 GGUF 산출물은 `.env`의 `MODEL_NAME`으로 교체할 수 있습니다.
+- **Gemma 4 E4B fine-tuned (`MODEL_NAME=samsun-gemma4`)** — 번역 전문 + 격식체/일상체 3줄 요약 통합 생성. 발표용 기본 로컬 모델명입니다. 실험 중인 E2B/E4B LoRA 또는 GGUF 산출물은 `.env`의 `MODEL_NAME`으로 교체할 수 있습니다.
 - **LoRA 파인튜닝** — **데이터셋:** RSS·크롤링으로 수집한 AI 뉴스 기사를 LLM으로 번역·요약해 만든 **자체 합성 데이터**. **학습:** Google Colab Pro (A100). (실험·평가는 `eval/`·파이프라인 기본 경로와 별도.)
 - **공개 모델 (Hugging Face)** — 최신 LoRA Adapter는 `MODEL_NAME`/`LOCAL_LLM_ENDPOINT`로 연결합니다. 이전 실험 산출물은 [`mingyu3939/samsun123`](https://huggingface.co/mingyu3939/samsun123), [`mingyu3939/samsun1234`](https://huggingface.co/mingyu3939/samsun1234)를 참고합니다.
 - **로컬 접근** — Ollama GGUF 또는 Transformers/PEFT/FastAPI 서버. 외부에서 붙을 때는 ngrok/Cloudflare Tunnel 등으로 모델 서버 포트를 터널링하되, 프론트가 아니라 백엔드/배치가 호출합니다.
@@ -451,6 +451,17 @@ python scripts/audit_demo_readiness.py
 
 전체 데모 준비 절차는 `docs/DEMO_RUNBOOK.md`를 기준으로 실행합니다.
 
+Sangjun SQLite 기사 import/backfill은 2026-05-01부터 2026-05-18까지만 처리합니다. 로컬 Ollama 모델명은 `samsun-gemma4`입니다.
+
+```bash
+python scripts/audit_sangjun_sqlite.py --db-path samsun_345.db --since 2026-05-01 --until 2026-05-18
+python scripts/process_sangjun_sqlite_with_ollama.py --db-path samsun_345.db --since 2026-05-01 --until 2026-05-18 --limit 3 --dry-run
+python scripts/process_sangjun_sqlite_with_ollama.py --db-path samsun_345.db --since 2026-05-01 --until 2026-05-18 --limit 20 --write-sqlite
+python scripts/process_sangjun_sqlite_with_ollama.py --db-path samsun_345.db --since 2026-05-01 --until 2026-05-18 --limit 20 --upsert-supabase
+```
+
+Supabase Edge Function은 데모 노트북의 로컬 Ollama에 접근할 수 없습니다. Edge/production refresh는 OpenRouter/Gemini 경로를 사용하고, SQLite import/backfill만 로컬 Ollama를 사용합니다.
+
 선택 마이그레이션: 숨김/시연 우선순위 필드를 쓰려면 Supabase SQL Editor에서 먼저 실행합니다.
 
 ```sql
@@ -490,8 +501,8 @@ python scripts/seed_demo_articles.py --replace-demo --confirm-delete
 ```bash
 python scripts/mark_incomplete_articles_hidden.py --limit 100
 python scripts/mark_incomplete_articles_hidden.py --limit 100 --run
-python scripts/prepare_demo_feed.py --limit 1000
-python scripts/prepare_demo_feed.py --limit 1000 --run
+python scripts/prepare_demo_feed.py --since 2026-05-01 --until 2026-05-18
+python scripts/prepare_demo_feed.py --since 2026-05-01 --until 2026-05-18 --run
 ```
 
 기존 `title_ko` 보강:
@@ -565,12 +576,12 @@ python scripts/backfill_article_ai_outputs.py --limit 1 --provider local --run
 ollama list
 set LOCAL_LLM_CONFIGURED=1
 set OLLAMA_BASE_URL=http://localhost:11434
-python scripts/backfill_article_ai_outputs.py --limit 1 --provider local --model gemma4-e4b-samsun --run
+python scripts/backfill_article_ai_outputs.py --limit 1 --provider local --model samsun-gemma4 --run
 
 # Transformers/PEFT/FastAPI 등 별도 서버를 쓸 때
 set LOCAL_LLM_CONFIGURED=1
 set LOCAL_LLM_ENDPOINT=http://localhost:8001/generate
-python scripts/backfill_article_ai_outputs.py --limit 1 --provider local --model gemma4-e4b-samsun --run
+python scripts/backfill_article_ai_outputs.py --limit 1 --provider local --model samsun-gemma4 --run
 ```
 
 `provider=local`은 `LOCAL_LLM_CONFIGURED=1`이 없으면 `local provider not configured`로 실패합니다. OpenRouter/Gemini로 몰래 fallback하지 않습니다. 아직 local fine-tuned model이 안정적으로 연결되지 않았다면 mock으로 DB 저장 흐름만 검증하고, 외부 provider 테스트 결과는 “fine-tuned model 결과가 아니라 external provider 결과”로 표시해야 합니다.
@@ -640,7 +651,7 @@ npm run dev
 ```bash
 # Ollama에 GGUF로 등록한 경우의 예시입니다. 실제 로컬 태그명은 `ollama list` 기준으로 맞춥니다.
 ollama list
-set MODEL_NAME=gemma4-e4b-samsun
+set MODEL_NAME=samsun-gemma4
 ollama serve
 
 # 외부에서 붙일 때
@@ -780,13 +791,13 @@ Samsun-Final-Project-main/
 | --- | --- |
 | `main.py` | 앱 진입점. 온보딩·피드·기사·검색·`/health`·`/translate`·`/summarize` 등 API 라우트 정의 |
 | `embedder.py` | 텍스트 임베딩 (기본: Ollama `qwen3-embedding:4b`, 1024차원; `MODE=cloud` 시 OpenRouter 분기 코드 포함) |
-| `llm_dispatch.py` | 번역·요약 → `pipeline.translate_summarize.translate_and_summarize` (`MODEL_NAME=gemma4-e4b-samsun` 등) |
+| `llm_dispatch.py` | 번역·요약 → `pipeline.translate_summarize.translate_and_summarize` (`MODEL_NAME=samsun-gemma4` 등) |
 | `rag.py` | 실험용 RAG·유저/기사 임베딩 (`sentence_transformers` 등, 운영 경로와 별도) |
 | `save_articles.py` | 처리된 기사를 Supabase `articles` 등에 저장 |
 
 #### `pipeline/`
 
-**영→한 번역·요약** LLM 파이프라인. 현재 기본 모델은 Gemma 4 E4B fine-tuned (`MODEL_NAME=gemma4-e4b-samsun`)이며, 격식체·일상체 요약을 **단일 호출**에서 생성합니다.
+**영→한 번역·요약** LLM 파이프라인. 현재 기본 모델은 Gemma 4 E4B fine-tuned (`MODEL_NAME=samsun-gemma4`)이며, 격식체·일상체 요약을 **단일 호출**에서 생성합니다.
 
 | 파일 | 역할 |
 | --- | --- |

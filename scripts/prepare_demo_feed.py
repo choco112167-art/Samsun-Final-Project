@@ -12,8 +12,8 @@ Rows are only updated with --run. Production rows are never deleted.
 
 Usage:
     python scripts/export_articles_backup.py
-    python scripts/prepare_demo_feed.py --limit 1000
-    python scripts/prepare_demo_feed.py --limit 1000 --run
+    python scripts/prepare_demo_feed.py --since 2026-05-01 --until 2026-05-18
+    python scripts/prepare_demo_feed.py --since 2026-05-01 --until 2026-05-18 --run
 """
 
 from __future__ import annotations
@@ -24,6 +24,7 @@ from typing import Any
 
 from article_pipeline_common import configure_stdio, get_supabase_client, supported_article_columns
 from demo_quality import has_fact, has_korean, has_valid_summary, is_demo_ready
+from sangjun_sqlite_common import DEFAULT_SINCE, DEFAULT_UNTIL, parse_bound, parse_published_at
 
 
 BASE_FIELDS = [
@@ -78,11 +79,16 @@ def protected_by_priority(row: dict[str, Any]) -> bool:
     return is_demo(row) or 0 < priority <= 20
 
 
-def hide_reason(row: dict[str, Any], max_age_days: int) -> str:
+def hide_reason(row: dict[str, Any], since: datetime, until: datetime) -> str:
     if protected_by_priority(row):
         return ""
-    if age_days(row) > max_age_days:
-        return f"older_than_{max_age_days}d"
+    published = parse_published_at(row.get("published_at"))
+    if published is None:
+        return "missing_published_at"
+    if published < since:
+        return f"before_{since.date().isoformat()}"
+    if published > until:
+        return f"after_{until.date().isoformat()}"
     if not has_korean(row.get("title_ko")):
         return "missing_title_ko"
     if not has_valid_summary(row):
@@ -111,7 +117,9 @@ def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--run", action="store_true", help="Actually update visibility fields.")
     parser.add_argument("--limit", type=int, default=1000)
-    parser.add_argument("--max-age-days", type=int, default=30)
+    parser.add_argument("--since", default=DEFAULT_SINCE)
+    parser.add_argument("--until", default=DEFAULT_UNTIL)
+    parser.add_argument("--confirm-delete", action="store_true", help="Reserved for destructive modes; this script does not delete rows.")
     args = parser.parse_args()
 
     sb = get_supabase_client()
@@ -122,13 +130,18 @@ def main() -> int:
         print("[prepare-demo-feed] Run SQL in Supabase SQL Editor: backend/sql/add_demo_readiness_fields.sql")
         return 2
 
+    since = parse_bound(args.since)
+    until = parse_bound(args.until, end_of_day=True)
+    if args.confirm_delete:
+        print("[prepare-demo-feed] --confirm-delete was provided, but this script never hard-deletes rows.")
+
     rows = fetch_rows(sb, BASE_FIELDS + sorted(optional), args.limit)
     targets: list[tuple[dict[str, Any], str]] = []
     ready = 0
     for row in rows:
         if is_demo_ready(row):
             ready += 1
-        reason = hide_reason(row, max(args.max_age_days, 1))
+        reason = hide_reason(row, since, until)
         if reason:
             targets.append((row, reason))
 

@@ -19,7 +19,7 @@
 - **Frontend**: React + TypeScript + Vite, **순수 React 컴포넌트** (TDS 의존 제거 — 이슈 #13 참조)
 - **Backend**: FastAPI (Python)
 - **DB**: Supabase + pgvector (RAG 추천)
-- **LLM**: OpenRouter 또는 로컬 Ollama (`qwen3.5:4b`)
+- **LLM**: OpenRouter 또는 로컬 Ollama (`samsun-gemma4`)
 - **배포**: Railway (백엔드 + 프론트엔드 정적 파일 통합 서빙)
 
 ---

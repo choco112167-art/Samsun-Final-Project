@@ -43,6 +43,8 @@ const ARTICLE_FIELDS = [
 ].join(',');
 
 const DEMO_POLISHED_FEED = import.meta.env.VITE_DEMO_POLISHED_FEED === '1';
+const DEMO_RANGE_START = new Date('2026-05-01T00:00:00+09:00').getTime();
+const DEMO_RANGE_END = new Date('2026-05-18T23:59:59+09:00').getTime();
 
 export class ApiError extends Error {
   status: number;
@@ -166,6 +168,13 @@ function isDemoReadyArticle(article: Article): boolean {
     && Boolean(article.factLabel);
 }
 
+function isDemoRangeArticle(article: Article): boolean {
+  if (isDemoArticle(article)) return true;
+  const published = new Date(article.publishedAt).getTime();
+  if (!Number.isFinite(published)) return false;
+  return published >= DEMO_RANGE_START && published <= DEMO_RANGE_END;
+}
+
 export async function fetchArticles(params: FetchArticlesParams = {}): Promise<Article[]> {
   requireSupabase();
   const { data, error } = await buildArticleQuery(params);
@@ -184,9 +193,10 @@ export async function fetchArticles(params: FetchArticlesParams = {}): Promise<A
     : articles;
   const sorted = filtered.sort(polishedFeedSort);
   if (!DEMO_POLISHED_FEED) return sorted;
-  const ready = sorted.filter(isDemoReadyArticle);
+  const demoScoped = sorted.filter(isDemoRangeArticle);
+  const ready = demoScoped.filter(isDemoReadyArticle);
   if (ready.length === 0) return [];
-  const incomplete = sorted.filter(article => !isDemoReadyArticle(article) && !isOldIncompleteDemoFeedArticle(article));
+  const incomplete = demoScoped.filter(article => !isDemoReadyArticle(article) && !isOldIncompleteDemoFeedArticle(article));
   return [...ready, ...incomplete];
 }
 
