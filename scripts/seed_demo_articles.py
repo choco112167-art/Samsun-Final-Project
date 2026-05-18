@@ -25,6 +25,7 @@ from article_pipeline_common import configure_stdio, get_supabase_client, suppor
 OPTIONAL_ARTICLE_COLUMNS = (
     "source_url",
     "fact_status",
+    "fact_confidence",
     "is_demo",
     "demo_visible",
     "demo_priority",
@@ -102,6 +103,22 @@ def demo_articles() -> list[dict[str, Any]]:
             ],
         },
         {
+            "slug": "verified-robotics-vision",
+            "title": "[DEMO] Verified robotics vision model deployment",
+            "title_ko": "[시연용] 로봇 비전 모델 현장 적용, 검증 자료로 확인",
+            "category": "2",
+            "credibility_score": 0.86,
+            "fact_label": "FACT",
+            "published_at": now_iso(48),
+            "summary_formal": "1. 로봇 비전 모델이 물류 검수 공정에 적용된 시연용 검증 기사입니다.\n2. 적용 범위와 평가 기준이 함께 제공되어 검증됨 상태로 분류했습니다.\n3. 데모에서는 신뢰도 높은 기술 뉴스가 카드에서 어떻게 보이는지 확인할 수 있습니다.",
+            "summary_casual": "1. 로봇 비전 모델을 물류 검수에 적용한 시연용 기사예요.\n2. 평가 기준과 적용 범위가 있어서 검증됨으로 표시했어요.\n3. 데모에서 안정적인 기술 뉴스 카드 모습을 볼 수 있어요.",
+            "translation": "이 시연용 검증 기사는 로봇 비전 모델이 물류 검수 공정에 적용되는 상황을 다룹니다. 모델은 제품 외관 결함을 탐지하고 담당자가 최종 확인하는 흐름으로 구성되어 있으며, 평가 기준과 제한 조건이 함께 제시됩니다.\n\n이 항목은 실제 기업 발표가 아니라 데모 화면에서 검증됨 배지, 한국어 제목, 3줄 요약, 번역 전문을 안정적으로 보여주기 위한 합성 샘플입니다.",
+            "content": "Synthetic verified robotics vision deployment article. This is not real news.",
+            "claims": [
+                {"claim": "로봇 비전 모델 적용 범위와 평가 기준이 제시된 시연용 검증 기사입니다.", "verdict": "FACT", "confidence": 0.86},
+            ],
+        },
+        {
             "slug": "rumor-lab-acquisition",
             "title": "[DEMO] Rumor about a lab acquisition",
             "title_ko": "[시연용] 미확인 인수설 확산, 루머 의심으로 표시",
@@ -115,6 +132,22 @@ def demo_articles() -> list[dict[str, Any]]:
             "content": "Synthetic demo rumor article. It is intentionally unverified and does not describe a real acquisition.",
             "claims": [
                 {"claim": "이 항목은 실제 인수 사실이 아니라 시연용 루머 데이터입니다.", "verdict": "RUMOR", "confidence": 0.32},
+            ],
+        },
+        {
+            "slug": "rumor-fake-dataset-leak",
+            "title": "[DEMO] Rumor about a leaked training dataset",
+            "title_ko": "[시연용] 학습 데이터 유출설 확산, 루머 의심으로 분류",
+            "category": "3",
+            "credibility_score": 0.29,
+            "fact_label": "RUMOR",
+            "published_at": now_iso(58),
+            "summary_formal": "1. 익명 게시글에서 시작된 학습 데이터 유출설을 다루는 시연용 루머 사례입니다.\n2. 원문 증거와 교차검증 자료가 없어 루머 의심 상태로 표시했습니다.\n3. 이 항목은 검증된 실제 뉴스가 아니라 데모용 미확인 데이터입니다.",
+            "summary_casual": "1. 익명 글에서 학습 데이터가 유출됐다는 말이 퍼진 시연용 사례예요.\n2. 증거나 다른 출처 확인이 없어서 루머 의심으로 표시했어요.\n3. 실제 뉴스가 아니라 데모용 미확인 데이터예요.",
+            "translation": "이 항목은 루머 탐지 UI를 보여주기 위한 시연용 데이터입니다. 익명 게시글에서 시작된 학습 데이터 유출설이라는 설정을 사용하지만, 실제 유출이나 특정 기업의 사고를 주장하지 않습니다.\n\n앱은 이 항목을 루머 의심으로 표시하고, 상세 화면에서 검증되지 않은 시연용 루머 데이터라는 안내를 제공합니다. 사용자는 이 정보가 확인된 뉴스가 아니라는 점을 바로 알 수 있어야 합니다.",
+            "content": "Synthetic demo rumor article about a training dataset leak. It is not real news.",
+            "claims": [
+                {"claim": "이 항목은 실제 유출 사실이 아니라 시연용 루머 데이터입니다.", "verdict": "RUMOR", "confidence": 0.29},
             ],
         },
         {
@@ -135,6 +168,22 @@ def demo_articles() -> list[dict[str, Any]]:
             ],
         },
         {
+            "slug": "unverified-gpu-supply",
+            "title": "[DEMO] Unverified GPU supply chain update",
+            "title_ko": "[시연용] GPU 공급 확대설, 공식 확인 전 미검증 단계",
+            "category": "1",
+            "credibility_score": 0.54,
+            "fact_label": "UNVERIFIED",
+            "published_at": now_iso(66),
+            "summary_formal": "1. GPU 공급 확대 가능성이 업계 관계자 발언으로 먼저 전해진 시연용 기사입니다.\n2. 공식 자료와 수치가 확인되지 않아 미검증 상태로 분류했습니다.\n3. 데모에서는 확인 전 단계의 정보가 어떻게 구분되는지 보여줍니다.",
+            "summary_casual": "1. GPU 공급이 늘 수 있다는 이야기가 먼저 퍼진 시연용 기사예요.\n2. 아직 공식 수치가 없어서 미검증으로 표시했어요.\n3. 확인 전 정보가 카드에서 어떻게 보이는지 보여줘요.",
+            "translation": "이 시연용 미검증 기사는 GPU 공급 확대 가능성이 업계 발언을 통해 알려졌다는 설정을 사용합니다. 아직 공식 발표나 검증 가능한 수치가 확인되지 않았기 때문에 앱은 이 항목을 미검증으로 표시합니다.\n\n사용자는 요약과 번역을 볼 수 있지만, 신뢰도 배지와 안내 문구를 통해 확정된 뉴스가 아니라는 점을 확인할 수 있습니다. 이 항목은 실제 공급 계약을 주장하지 않습니다.",
+            "content": "Synthetic unverified GPU supply chain article. This is not real news.",
+            "claims": [
+                {"claim": "공식 수치가 확인되지 않은 시연용 GPU 공급 확대 소식입니다.", "verdict": "UNVERIFIED", "confidence": 0.54},
+            ],
+        },
+        {
             "slug": "hitl-policy-review",
             "title": "[DEMO] HITL policy review needed",
             "title_ko": "[시연용] AI 정책 해석 차이, 사람 검토 필요",
@@ -148,6 +197,23 @@ def demo_articles() -> list[dict[str, Any]]:
             "content": "Synthetic demo HITL article for human review required state. This is not real news.",
             "claims": [
                 {"claim": "정책 해석이 갈리는 시연용 사례로, 사람 검토 필요 상태를 보여줍니다.", "verdict": "HITL_REQUIRED", "confidence": 0.48},
+            ],
+        },
+        {
+            "slug": "hitl-benchmark-dispute",
+            "title": "[DEMO] HITL benchmark dispute review needed",
+            "title_ko": "[시연용] AI 벤치마크 해석 충돌, HITL 검토 필요",
+            "category": "4",
+            "credibility_score": 0.46,
+            "fact_label": "HITL_REQUIRED",
+            "published_at": now_iso(78),
+            "summary_formal": "1. 같은 AI 벤치마크 결과를 두고 서로 다른 해석이 제시된 시연용 사례입니다.\n2. 자동 판별만으로 결론을 내리기 어려워 HITL 검토 필요로 표시했습니다.\n3. 데모에서는 사람 검토가 필요한 기사 상태를 명확하게 확인할 수 있습니다.",
+            "summary_casual": "1. 같은 AI 벤치마크를 두고 해석이 갈리는 시연용 사례예요.\n2. 자동으로 결론 내리기 애매해서 HITL 검토 필요로 표시했어요.\n3. 데모에서 사람 검토 상태가 어떻게 보이는지 확인할 수 있어요.",
+            "translation": "이 시연용 항목은 벤치마크 해석 충돌 상황에서 Human-in-the-Loop 검토가 필요한 상태를 보여줍니다. 서로 다른 출처가 같은 결과를 다르게 해석하는 설정이며, 자동 요약만으로는 최종 판단을 내리기 어렵다는 점을 표현합니다.\n\n앱은 이 항목을 HITL 검토 필요로 표시합니다. 이는 사용자가 신뢰도 지표를 참고하되 최종 판단에는 사람의 검토가 필요하다는 의미입니다.",
+            "content": "Synthetic demo HITL benchmark dispute article. This is not real news.",
+            "slang_terms": ["HITL"],
+            "claims": [
+                {"claim": "벤치마크 해석 충돌을 보여주는 시연용 HITL 기사입니다.", "verdict": "HITL_REQUIRED", "confidence": 0.46},
             ],
         },
     ]
@@ -180,6 +246,7 @@ def article_payloads(sb) -> list[dict[str, Any]]:
         extras: dict[str, Any] = {
             "source_url": url,
             "fact_status": item["fact_label"],
+            "fact_confidence": item["credibility_score"],
             "is_demo": True,
             "demo_visible": True,
             "demo_priority": index,

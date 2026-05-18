@@ -60,6 +60,7 @@ export interface Article {
   // 신뢰도
   credibilityScore: number;
   factLabel:        'FACT' | 'VERIFIED' | 'UNVERIFIED' | 'RUMOR' | 'HITL_REQUIRED' | 'INSIGHT' | 'FACT_INSIGHT';
+  factConfidence?:  number;
 
   // 번역 / 요약
   translation:   string;   // 한국어 번역 전문 — DetailPage 신조어 하이라이트에 사용
@@ -189,6 +190,29 @@ export function isDemoArticle(article: Pick<Article, 'source' | 'title' | 'title
     || article.title.includes('[DEMO]');
 }
 
+export function factStatusWeight(label: string | null | undefined): number {
+  const status = normalizeFactStatus(label);
+  if (status === 'VERIFIED' || status === 'INSIGHT') return 4;
+  if (status === 'UNVERIFIED') return 3;
+  if (status === 'HITL_REQUIRED') return 2;
+  if (status === 'RUMOR') return 1;
+  return 0;
+}
+
+export function demoFeedRankScore(article: Article): number {
+  const demoBoost = isDemoArticle(article) ? 1000 : 0;
+  const quality = articleCompletenessScore(article) * 20;
+  const status = factStatusWeight(article.factLabel) * 8;
+  const recencyDays = Math.max(0, (Date.now() - new Date(article.publishedAt).getTime()) / 86_400_000);
+  const recency = Math.max(0, 30 - Math.min(recencyDays, 30));
+  return demoBoost + quality + status + recency + (article.credibilityScore ?? 0);
+}
+
+export function isOldIncompleteDemoFeedArticle(article: Article): boolean {
+  const ageDays = (Date.now() - new Date(article.publishedAt).getTime()) / 86_400_000;
+  return ageDays > 30 && articleCompletenessScore(article) < 10 && !isDemoArticle(article);
+}
+
 
 export function formatTimeAgo(publishedAt: string): string {
   if (!publishedAt) return '';
@@ -242,6 +266,7 @@ export function toArticle(api: ApiArticle): Article {
 
     credibilityScore: api.credibility_score ?? 0,
     factLabel:        api.fact_label ?? 'UNVERIFIED',
+    factConfidence:   api.fact_confidence,
 
     translation:   api.translation    ?? '',
     summaryFormal: api.summary_formal ?? '',

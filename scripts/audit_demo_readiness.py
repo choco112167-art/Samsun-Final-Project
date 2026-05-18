@@ -31,7 +31,17 @@ BASE_FIELDS = [
     "translation",
     "fact_label",
 ]
-OPTIONAL_FIELDS = ["fact_status", "slang_terms", "neologism_terms", "is_demo", "is_hidden", "demo_visible"]
+OPTIONAL_FIELDS = [
+    "fact_status",
+    "fact_confidence",
+    "slang_terms",
+    "neologism_terms",
+    "is_demo",
+    "is_hidden",
+    "demo_visible",
+    "demo_priority",
+    "hitl_required",
+]
 
 
 def fetch_all(sb, fields: list[str]) -> list[dict]:

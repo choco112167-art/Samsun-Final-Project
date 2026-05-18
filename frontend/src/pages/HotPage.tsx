@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { fetchHot } from '../data/api';
-import { articleDisplayTitle, hasKoreanTitle, normalizeFactStatus, type Article } from '../data/articles';
+import { articleDisplayTitle, factStatusWeight, hasKoreanTitle, normalizeFactStatus, type Article } from '../data/articles';
 import { FactStatusBadge } from '../components/FactStatusBadge';
 import DetailPage from './DetailPage';
 import type { BookmarkHook } from '../hooks/useBookmarks';
@@ -33,7 +33,14 @@ export default function HotPage({ bm, userId: _userId, onArticleClick, tone, onT
   useEffect(() => {
     setLoading(true);
     fetchHot(dateStr)
-      .then(data => { setTops(data); setLoading(false); })
+      .then(data => {
+        setTops([...data].sort((a, b) => {
+          const statusDelta = factStatusWeight(b.factLabel) - factStatusWeight(a.factLabel);
+          if (statusDelta !== 0) return statusDelta;
+          return (b.credibilityScore ?? 0) - (a.credibilityScore ?? 0);
+        }));
+        setLoading(false);
+      })
       .catch(() => setLoading(false));
   }, [dateStr]);
 
@@ -134,7 +141,9 @@ export default function HotPage({ bm, userId: _userId, onArticleClick, tone, onT
               const rankColor = i < 3 ? 'var(--color-primary)' : 'var(--color-text-tertiary)';
               const barColor = status === 'RUMOR'
                 ? '#F59E0B'
-                : status === 'UNVERIFIED' || status === 'HITL_REQUIRED'
+                : status === 'HITL_REQUIRED'
+                  ? '#8B5CF6'
+                  : status === 'UNVERIFIED'
                   ? '#8B95A1'
                   : i < 3 ? 'var(--color-primary)' : 'var(--color-text-tertiary)';
               const viewCount = article.view_count ?? 0;

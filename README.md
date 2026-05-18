@@ -449,6 +449,8 @@ python scripts/check_articles_health.py
 python scripts/audit_demo_readiness.py
 ```
 
+전체 데모 준비 절차는 `docs/DEMO_RUNBOOK.md`를 기준으로 실행합니다.
+
 선택 마이그레이션: 숨김/시연 우선순위 필드를 쓰려면 Supabase SQL Editor에서 먼저 실행합니다.
 
 ```sql
@@ -488,6 +490,8 @@ python scripts/seed_demo_articles.py --replace-demo --confirm-delete
 ```bash
 python scripts/mark_incomplete_articles_hidden.py --limit 100
 python scripts/mark_incomplete_articles_hidden.py --limit 100 --run
+python scripts/prepare_demo_feed.py --limit 1000
+python scripts/prepare_demo_feed.py --limit 1000 --run
 ```
 
 기존 `title_ko` 보강:

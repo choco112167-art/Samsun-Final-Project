@@ -3,6 +3,10 @@ import {
   articleCompletenessScore,
   articleSummaryForTone,
   articleTranslationForDisplay,
+  demoFeedRankScore,
+  factStatusWeight,
+  isDemoArticle,
+  isOldIncompleteDemoFeedArticle,
   toArticle,
   normalizeCategory,
 } from './articles';
@@ -65,6 +69,7 @@ export interface ApiArticle {
   collected_at: string;
   content: string;
   credibility_score: number;
+  fact_confidence?: number;
   fact_label: 'FACT' | 'VERIFIED' | 'UNVERIFIED' | 'RUMOR' | 'HITL_REQUIRED' | 'INSIGHT' | 'FACT_INSIGHT';
   translation: string;
   summary_formal: string;
@@ -141,6 +146,14 @@ function toArticleList(rows: ApiArticle[] | null): Article[] {
 }
 
 function polishedFeedSort(a: Article, b: Article): number {
+  if (DEMO_POLISHED_FEED) {
+    const demoDelta = Number(isDemoArticle(b)) - Number(isDemoArticle(a));
+    if (demoDelta !== 0) return demoDelta;
+    const demoRankDelta = demoFeedRankScore(b) - demoFeedRankScore(a);
+    if (demoRankDelta !== 0) return demoRankDelta;
+    const statusDelta = factStatusWeight(b.factLabel) - factStatusWeight(a.factLabel);
+    if (statusDelta !== 0) return statusDelta;
+  }
   const qualityDelta = articleCompletenessScore(b) - articleCompletenessScore(a);
   if (qualityDelta !== 0) return qualityDelta;
   return new Date(b.publishedAt).getTime() - new Date(a.publishedAt).getTime();
@@ -172,7 +185,8 @@ export async function fetchArticles(params: FetchArticlesParams = {}): Promise<A
   const sorted = filtered.sort(polishedFeedSort);
   if (!DEMO_POLISHED_FEED) return sorted;
   const ready = sorted.filter(isDemoReadyArticle);
-  const incomplete = sorted.filter(article => !isDemoReadyArticle(article));
+  if (ready.length === 0) return [];
+  const incomplete = sorted.filter(article => !isDemoReadyArticle(article) && !isOldIncompleteDemoFeedArticle(article));
   return [...ready, ...incomplete];
 }
 

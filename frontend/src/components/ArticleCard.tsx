@@ -3,7 +3,7 @@ import { Badge } from './Badge';
 import { isValidSummary, hasKoreanTitle, type Article } from '../data/articles';
 import type { ApiArticle } from '../data/api';
 import type { SummaryTone } from '../hooks/useTonePreference';
-import { FactStatusBadge } from './FactStatusBadge';
+import { FactStatusBadge, factStatusColor } from './FactStatusBadge';
 
 export type CardArticle = Article | ApiArticle;
 
@@ -12,8 +12,7 @@ function cardHeadline(article: CardArticle): string {
   let ko = '';
   if ('titleKo' in article) ko = ((article as Article).titleKo ?? '').trim();
   else ko = ((article as ApiArticle).title_ko ?? '').trim();
-  const fb = (article.title ?? '').trim();
-  return ko || fb;
+  return ko || '제목 번역 중입니다.';
 }
 
 function pickSummary(article: CardArticle, tone: SummaryTone): string {
@@ -36,12 +35,6 @@ function pickFactLabel(article: CardArticle): string | undefined {
   return undefined;
 }
 
-function pickSourceColor(article: CardArticle): string {
-  if ('sourceColor' in article && article.sourceColor) return article.sourceColor;
-  if ('source_color' in article && article.source_color) return article.source_color;
-  return '#6B7280';
-}
-
 function pickTimeAgo(article: CardArticle): string {
   if ('timeAgo' in article && article.timeAgo) return article.timeAgo;
   if ('time_ago' in article && article.time_ago) return article.time_ago;
@@ -62,7 +55,7 @@ export default function ArticleCard({ article, bookmarked = false, onBookmark, o
 
   const summary = pickSummary(article, tone);
   const factLabel = pickFactLabel(article);
-  const sourceColor = pickSourceColor(article);
+  const sourceColor = factStatusColor(factLabel);
   const localizedHeadline = hasLocalizedHeadline(article);
   const urlHash = 'urlHash' in article && article.urlHash
     ? article.urlHash
@@ -129,6 +122,15 @@ export default function ArticleCard({ article, bookmarked = false, onBookmark, o
           flexShrink: 0, whiteSpace: 'nowrap',
         }}>{pickTimeAgo(article)}</span>
       </div>
+      <p style={{
+        fontSize: 10,
+        color: 'var(--color-text-tertiary)',
+        lineHeight: 1.45,
+        margin: '-2px 0 7px',
+        paddingLeft: 8,
+      }}>
+        신뢰도는 출처, 교차검증 여부, AI 판별 결과를 종합한 참고 지표입니다.
+      </p>
 
       <h2 style={{
         fontSize: 15, fontWeight: localizedHeadline ? 600 : 500,

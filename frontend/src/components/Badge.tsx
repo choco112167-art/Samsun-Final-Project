@@ -2,12 +2,12 @@
  * Badge.tsx — `@toss/tds-mobile` 의 <Badge> 대체.
  *
  * 호출처 호환을 위해 동일한 props 시그니처 유지:
- *   <Badge badgeStyle="fill"|"weak" type="blue"|"red"|"green" size="tiny"|"small">…</Badge>
+ *   <Badge badgeStyle="fill"|"weak" type="blue"|"red"|"green"|"grey"|"purple"|"orange" size="tiny"|"small">…</Badge>
  */
 
 import type { PropsWithChildren } from 'react';
 
-type Tone = 'blue' | 'red' | 'green' | 'grey';
+type Tone = 'blue' | 'red' | 'green' | 'grey' | 'purple' | 'orange';
 type Style = 'fill' | 'weak';
 type Size = 'tiny' | 'small';
 
@@ -22,6 +22,8 @@ const PALETTE: Record<Tone, { fillBg: string; fillFg: string; weakBg: string; we
   red:   { fillBg: '#F04452', fillFg: '#FFFFFF', weakBg: '#FEEAEC', weakFg: '#D5283A' },
   green: { fillBg: '#21C284', fillFg: '#FFFFFF', weakBg: '#E0F7EE', weakFg: '#138759' },
   grey:  { fillBg: '#8B95A1', fillFg: '#FFFFFF', weakBg: '#F2F4F6', weakFg: '#4E5968' },
+  purple: { fillBg: '#8B5CF6', fillFg: '#FFFFFF', weakBg: '#F1EDFF', weakFg: '#6D3FD1' },
+  orange: { fillBg: '#F97316', fillFg: '#FFFFFF', weakBg: '#FFF4E5', weakFg: '#C2410C' },
 };
 
 export function Badge({

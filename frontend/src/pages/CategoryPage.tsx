@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { ApiError, fetchArticles } from '../data/api';
-import { CATEGORIES, filterByCategory, articleCompletenessScore, articleDisplayTitle, hasKoreanTitle, normalizeFactStatus, type Article, type Category } from '../data/articles';
+import { CATEGORIES, filterByCategory, articleCompletenessScore, articleDisplayTitle, factStatusWeight, hasKoreanTitle, normalizeFactStatus, type Article, type Category } from '../data/articles';
 import { FactStatusBadge } from '../components/FactStatusBadge';
 import DetailPage from './DetailPage';
 import type { BookmarkHook } from '../hooks/useBookmarks';
@@ -40,6 +40,8 @@ export default function CategoryPage({ bm, onArticleClick, tone, onToneChange }:
   // HomePage 와 동일한 공유 유틸을 통해 두 화면의 결과가 완전히 일치하도록 보장한다.
   const filtered = filterByCategory(articles, tab);
   const sorted   = [...filtered].sort((a, b) => {
+    const statusDelta = factStatusWeight(b.factLabel) - factStatusWeight(a.factLabel);
+    if (statusDelta !== 0) return statusDelta;
     const qualityDelta = articleCompletenessScore(b) - articleCompletenessScore(a);
     if (qualityDelta !== 0) return qualityDelta;
     return (b.credibilityScore ?? 0) - (a.credibilityScore ?? 0);
@@ -85,7 +87,9 @@ export default function CategoryPage({ bm, onArticleClick, tone, onToneChange }:
           const rankColor = i < 3 ? 'var(--color-primary)' : 'var(--color-text-tertiary)';
           const barColor = status === 'RUMOR'
             ? '#F59E0B'
-            : status === 'UNVERIFIED' || status === 'HITL_REQUIRED'
+            : status === 'HITL_REQUIRED'
+              ? '#8B5CF6'
+              : status === 'UNVERIFIED'
               ? '#8B95A1'
               : i < 3 ? 'var(--color-primary)' : 'var(--color-text-tertiary)';
           const maxScore  = sorted[0]?.credibilityScore ?? 1;

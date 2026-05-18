@@ -263,7 +263,7 @@ export default function HomePage({ bm, onNavigateToFeed, onArticleClick, absence
                 <span style={{ fontSize: 10, color: 'var(--color-text-tertiary)' }}>{article.source}</span>
               </div>
               <p style={{ fontSize: 13, fontWeight: 600, color: 'var(--color-text-primary)', lineHeight: 1.45, marginBottom: 6 }}>
-                {article.title_ko?.trim() || article.title}
+                  {article.title_ko?.trim() || '제목 번역 중입니다.'}
               </p>
               {isValidSummary(article.summary_formal) && (
                 <p style={{ fontSize: 12, color: 'var(--color-text-secondary)', lineHeight: 1.6 }}>
@@ -433,7 +433,7 @@ export default function HomePage({ bm, onNavigateToFeed, onArticleClick, absence
                   표시할 기사가 아직 없어요
                 </p>
                 <p>
-                  Supabase 연결은 성공했지만 articles 조회 결과가 0건입니다.
+                  Supabase 연결은 성공했지만 데모-ready 기사가 없습니다. `python scripts/seed_demo_articles.py` 실행 후 다시 확인해주세요.
                 </p>
               </>
             ) : (
