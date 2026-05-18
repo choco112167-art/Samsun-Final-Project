@@ -211,7 +211,7 @@ export default function SearchPage({ bm, onArticleClick }: Props) {
                       </div>
                       <p style={{ fontSize: 13, fontWeight: 600, color: 'var(--color-text-primary)', lineHeight: 1.4, marginBottom: 5 }}>{articleDisplayTitle(article)}</p>
                       <p style={{ fontSize: 12, color: 'var(--color-text-secondary)', lineHeight: 1.5, display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
-                        {article.summaryFormal || '요약은 아직 준비 중입니다.'}
+                        {article.summaryFormal || '요약이 아직 없습니다.'}
                       </p>
                       <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 8 }}>
                         <button onClick={e => { e.stopPropagation(); bm.toggle(article.urlHash, article); }} style={{

@@ -104,7 +104,7 @@ Do not commit `.ait`; it is a build artifact and is ignored by `.gitignore`.
 
 ## Supabase Runtime
 
-The Apps in Toss bundle does not call Railway, Vercel Functions, or a FastAPI server at runtime. It reads:
+The Apps in Toss bundle does not call a hosted server, Vercel Functions, or a FastAPI server at runtime. It reads:
 
 ```text
 VITE_SUPABASE_URL=https://srdvlalyucbokdwfkmcf.supabase.co

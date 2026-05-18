@@ -5,7 +5,7 @@ const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY as string | und
 
 if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
   console.warn(
-    '[supabase] Missing VITE_SUPABASE_URL or VITE_SUPABASE_ANON_KEY. Dev mock fallback will be used when queries fail.',
+    '[supabase] Missing VITE_SUPABASE_URL or VITE_SUPABASE_ANON_KEY. Supabase reads will fail until env is configured.',
   );
 }
 

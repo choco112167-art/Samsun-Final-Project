@@ -145,7 +145,7 @@ export default function ArticleCard({ article, bookmarked = false, onBookmark, o
           fontSize: 13, color: 'var(--color-text-tertiary)', lineHeight: 1.6,
           marginBottom: 12, paddingLeft: 8,
         }}>
-          요약은 아직 준비 중입니다.
+          요약이 아직 없습니다.
         </p>
       )}
 

@@ -5,9 +5,59 @@
 
 ---
 
+## Apps in Toss Console Upload
+
+최종 산출물은 Apps in Toss 콘솔에 업로드할 `.ait` 앱 번들입니다. 런타임은 **Supabase only** 구조이며, 프론트는 Supabase anon key로 `articles`를 직접 읽습니다. Railway, Vercel Functions, FastAPI 서버, 로컬 Ollama/GGUF 모델은 `.ait` 번들 실행에 필요하지 않습니다.
+
+1. 프론트 환경 파일을 준비합니다.
+
+```bash
+cd frontend
+copy .env.example .env.local
+```
+
+```env
+VITE_SUPABASE_URL=https://srdvlalyucbokdwfkmcf.supabase.co
+VITE_SUPABASE_ANON_KEY=<Supabase anon key>
+VITE_ENABLE_TDS_PROVIDER=1
+```
+
+For same-Wi-Fi Toss WebView testing with Granite dev, set `AIT_WEB_HOST` in the shell before running `npm run ait:dev`.
+
+```powershell
+$env:AIT_WEB_HOST="192.168.45.27"
+npm run ait:dev
+```
+
+2. 의존성을 설치하고 정적 빌드를 확인합니다.
+
+```bash
+npm install
+npm run build
+```
+
+3. Apps in Toss 번들을 생성합니다.
+
+```bash
+npm run ait:build
+```
+
+4. 생성된 `.ait` 파일을 Apps in Toss 콘솔의 앱 출시/번들 업로드 메뉴에 업로드합니다.
+
+```text
+frontend/samsun-newsapp.ait
+```
+
+주의:
+
+- `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`만 프론트 번들에 넣습니다.
+- `SUPABASE_SERVICE_ROLE_KEY`, LLM provider key, `.env.local`, `.gguf`, `.ait` 파일은 커밋하지 않습니다.
+- Supabase RLS는 anon key가 `articles` 목록/detail에 필요한 컬럼을 읽을 수 있어야 합니다.
+- Supabase에 기사가 0건이면 앱은 빈 상태를 보여줍니다. 요약이 비어 있으면 제목으로 대체하지 않고 “요약이 아직 없습니다.”를 표시합니다.
+
 ## 🚀 최종 발표용 1분 로컬 셋팅 가이드
 
-> 클론부터 로컬 실행까지 한 번에. 발표용 런타임은 **토스 콘솔 + Supabase only** 구조입니다. 프론트는 Supabase anon key로 `articles`를 직접 읽고, FastAPI/Railway 상시 서버를 호출하지 않습니다.
+> 클론부터 로컬 실행까지 한 번에. 발표용 런타임은 **토스 콘솔 + Supabase only** 구조입니다. 프론트는 Supabase anon key로 `articles`를 직접 읽고, 상시 서버를 호출하지 않습니다.
 
 추가 점검 문서:
 
@@ -153,7 +203,7 @@ WebView 디버깅:
 - [ ] 카테고리 탭 7개(`AI 연구`/`AI 심층`/`AI 스타트업`/`AI 비즈니스`/`AI 윤리`/`AI 커뮤니티`/`테크 전반`) 모두 기사가 채워짐 ✓
 - [ ] Supabase anon key로 `articles` 목록이 보임
 
-위 항목이 통과하면 셋업 완료. Supabase 조회가 실패해도 DEV 모드 mock 폴백(`mock-articles.ts`)이 동작해 7개 탭이 채워집니다.
+위 항목이 통과하면 셋업 완료. Supabase에 기사가 없으면 빈 상태가 표시되고, 조회 자체가 실패하면 재시도 화면이 표시됩니다.
 
 ---
 
@@ -335,7 +385,7 @@ pip install -r requirements.txt
 uvicorn backend.main:app --reload
 ```
 
-Railway 배포 주소와 `VITE_API_BASE_URL` 방식은 deprecated입니다.
+상시 서버 배포 주소와 `VITE_API_BASE_URL` 방식은 deprecated입니다.
 
 ### 신조어 DB 초기화
 
@@ -559,6 +609,32 @@ ollama run samsun-gemma4
 
 주의: Hugging Face repo가 `GGUF` 태그를 달고 있어도 Files 탭에 실제 `*.gguf` 파일이 있어야 Ollama 등록이 가능합니다. `model.safetensors`만 있으면 Ollama가 직접 사용할 수 없으므로, 먼저 GGUF로 변환해 같은 repo에 업로드하거나 별도 GGUF 파일 경로를 사용해야 합니다.
 
+수동으로 내려받은 GGUF를 이 저장소의 로컬 Ollama 모델로 등록:
+
+```powershell
+# 1. Hugging Face 모델 repo의 Files 탭에서 GGUF 파일을 다운로드합니다.
+# 2. 아래 경로와 파일명으로 저장합니다. GGUF는 대용량이므로 git에 커밋하지 않습니다.
+mkdir ollama-model
+# ollama-model\gemma4-samsun-q4_k_m.gguf
+
+# 3. Ollama에 로컬 모델 등록
+powershell -ExecutionPolicy Bypass -File scripts\register_ollama.ps1
+
+# 4. 등록 확인 및 테스트
+ollama list
+ollama run samsun-gemma4
+```
+
+`ollama-model/Modelfile`은 다음 로컬 GGUF를 기준으로 합니다.
+
+```text
+FROM ./gemma4-samsun-q4_k_m.gguf
+PARAMETER temperature 0.7
+PARAMETER top_p 0.9
+PARAMETER num_ctx 4096
+TEMPLATE """{{ .Prompt }}"""
+```
+
 ### POC 사이클
 
 ```bash
@@ -621,7 +697,7 @@ Samsun-Final-Project-main/
 ├── Procfile
 ├── README.md
 ├── requirements.txt
-├── runtime.txt                  # Railway 등 Python 런타임 버전
+├── runtime.txt                  # Python 런타임 버전
 ├── supabase_schema.sql          # Supabase 스키마 참고용 SQL
 ├── .gitattributes
 ├── .gitignore
