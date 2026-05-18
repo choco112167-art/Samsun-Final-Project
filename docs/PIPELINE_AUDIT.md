@@ -140,7 +140,7 @@ Likely causes:
 
 - No scheduler has run the root `python main.py` pipeline recently.
 - The previous refresh may have used `ingest_latest_titles.py`, which updates titles only and leaves AI fields pending.
-- There is no active Supabase Cron/Edge Function wiring yet; only a plan exists.
+- Supabase Edge Function support now has two documented modes: `mode=direct` for a minimal Supabase-only TypeScript refresh, and `mode=queue` for queueing work that still needs a trusted Python runner.
 - If root `main.py` was run without provider keys or local Ollama, translation/fact-check stages can fail or be skipped.
 
 ## Operator Commands
@@ -172,5 +172,5 @@ python scripts/pipeline_health_check.py
 ## TODO
 
 - Apply `backend/sql/add_pipeline_tracking_fields.sql` if per-article slang status and precise `updated_at` freshness are required.
-- Enable Supabase Cron to invoke the planned Edge Function or queue a trusted Python worker.
+- Enable Supabase Cron in `mode=direct` for Supabase-only automatic refresh, or use `mode=queue` with a non-Railway trusted Python runner for full canonical pipeline parity.
 - Decide whether `source_url` should be a real column or whether `url` remains the canonical source URL.

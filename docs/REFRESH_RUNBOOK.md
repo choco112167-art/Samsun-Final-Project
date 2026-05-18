@@ -125,23 +125,34 @@ backend/sql/create_pipeline_refresh_requests.sql
 Deploy:
 
 ```bash
-supabase functions deploy refresh-articles
+supabase functions deploy refresh-articles --no-verify-jwt
 supabase secrets set REFRESH_SECRET=<long-random-string>
 supabase secrets set SUPABASE_SERVICE_ROLE_KEY=<service-role-key>
+supabase secrets set EDGE_LLM_PROVIDER=openrouter
+supabase secrets set OPENROUTER_API_KEY=<openrouter-api-key>
 ```
 
-Manual invoke:
+Fully automatic Supabase-only direct invoke:
 
 ```bash
-curl -X POST "https://<project-ref>.functions.supabase.co/refresh-articles" \
+curl -X POST "https://<project-ref>.supabase.co/functions/v1/refresh-articles" \
   -H "Authorization: Bearer <REFRESH_SECRET>" \
   -H "Content-Type: application/json" \
-  -d '{"reason":"manual","limit":10}'
+  -d '{"mode":"direct","reason":"manual-direct","limit":3}'
 ```
 
-Enable Supabase Cron using the SQL in `docs/SUPABASE_EDGE_REFRESH_PLAN.md`.
+Queue-only invoke:
 
-The Edge Function queues refresh requests. A trusted Python worker still needs to poll `pipeline_refresh_requests` and run:
+```bash
+curl -X POST "https://<project-ref>.supabase.co/functions/v1/refresh-articles" \
+  -H "Authorization: Bearer <REFRESH_SECRET>" \
+  -H "Content-Type: application/json" \
+  -d '{"mode":"queue","reason":"manual-queue","limit":10}'
+```
+
+Enable Supabase Cron using the direct-mode SQL in `docs/SUPABASE_EDGE_REFRESH_PLAN.md` or the one-page `docs/SUPABASE_AUTOMATION_CHECKLIST.md`.
+
+Direct mode runs a minimal TypeScript RSS -> LLM -> Supabase refresh inside the Edge Function. Queue mode only queues refresh requests. For full Python feature parity, a trusted Python worker still needs to run:
 
 ```bash
 python main.py --limit <requested_limit>
