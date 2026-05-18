@@ -135,4 +135,4 @@ frontend/samsun-newsapp.ait
 - Rumor detail page shows: `이 항목은 검증되지 않은 시연용 루머 데이터입니다.`
 - Neologism terms such as `프롬프트 주입`, `가드레일`, and `HITL` highlight and open explanations.
 - `원문 보기` opens the safe source URL.
-- No Railway URL is required.
+- No custom backend URL is required.

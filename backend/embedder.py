@@ -1,8 +1,8 @@
 """
 backend/embedder.py — 임베딩 어댑터
 
-MODE=local  → Ollama 로컬 (개발 중)
-MODE=cloud  → OpenRouter API (배포 시)
+MODE=local  → Ollama 로컬 embedding model
+MODE=cloud  → OpenRouter API embedding model
 
 .env에서 MODE 한 줄만 바꾸면 전체 전환됩니다.
 """
@@ -13,19 +13,21 @@ from dotenv import load_dotenv
 load_dotenv()
 
 EMBEDDING_PROVIDER = os.getenv("EMBEDDING_PROVIDER") or os.getenv("MODE", "local")
+LOCAL_EMBEDDING_MODEL = os.getenv("LOCAL_EMBEDDING_MODEL", "nomic-embed-text")
+OPENROUTER_EMBEDDING_MODEL = os.getenv("OPENROUTER_EMBEDDING_MODEL", "openai/text-embedding-3-small")
 
 
 # ════════════════════════════════════════════
 # LOCAL — Ollama (개발 환경)
 # 사용: MODE=local
-# 준비: ollama pull qwen3-embedding:0.6b
+# 준비: ollama pull nomic-embed-text
 # ════════════════════════════════════════════
 
 def _embed_local(text: str) -> list[float]:
     # ollama 라이브러리로 직접 호출 (HTTP 요청보다 안정적)
     import ollama
     resp = ollama.embeddings(
-        model="qwen3-embedding:0.6b",
+        model=LOCAL_EMBEDDING_MODEL,
         prompt=text,
     )
     return resp["embedding"][:1024]
@@ -48,7 +50,7 @@ def _embed_cloud(text: str) -> list[float]:
                 "Content-Type":  "application/json",
             },
             json={
-                "model": "qwen/qwen3-embedding-4b",
+                "model": OPENROUTER_EMBEDDING_MODEL,
                 "input": text,
             },
             timeout=30,
@@ -121,8 +123,8 @@ def make_embedding(text: str) -> list[float]:
     텍스트 → 임베딩 벡터 (1024차원)
 
     .env의 EMBEDDING_PROVIDER 값으로 전환:
-      local      → Ollama qwen3-embedding:0.6b
-      openrouter → OpenRouter qwen/qwen3-embedding-4b
+      local      → Ollama LOCAL_EMBEDDING_MODEL
+      openrouter → OpenRouter OPENROUTER_EMBEDDING_MODEL
     """
     if EMBEDDING_PROVIDER in ("cloud", "openrouter"):
         return _embed_cloud(text)

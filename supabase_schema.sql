@@ -104,7 +104,7 @@ CREATE TABLE IF NOT EXISTS eval_results (
 
     id                  UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     article_url_hash    VARCHAR REFERENCES articles(url_hash) ON DELETE CASCADE,
-    model_version       VARCHAR,  -- 'qwen3-4b-base' | 'qwen3-4b-ft-v1' | 'gpt-4o'
+    model_version       VARCHAR,  -- 'samsun-gemma4' | 'openrouter/gemini'
     eval_type           VARCHAR,  -- 'translation' | 'summary_formal'
 
     -- 번역 평가 (eval_type = 'translation')

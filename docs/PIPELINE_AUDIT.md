@@ -17,7 +17,7 @@ collect/crawler/rss_crawler.py
 → Supabase articles/fact_checks/neologisms
 ```
 
-Railway is not required and was not introduced.
+A custom app server is not required and was not introduced.
 
 ## What Currently Exists
 
@@ -31,7 +31,7 @@ Railway is not required and was not introduced.
 | Korean title / translation / summaries | `pipeline/translate_summarize.py`, `scripts/backfill_article_ai_outputs.py` | Connected in root `main.py` and `ingest_latest_fast.py`; writes `title_ko`, `translation`, `summary_formal`, `summary_casual` through `save_articles()`. Backfill script can repair missing AI fields. |
 | Supabase upsert | `backend/save_articles.py`, `scripts/article_pipeline_common.py` | Connected. Upserts by `url_hash`, writes `articles`, `fact_checks`, `neologisms`, optional AI metadata columns if migrated. |
 | Health check | `scripts/pipeline_health_check.py`, `scripts/check_articles_health.py` | Connected. Prints freshness and missing-field counts. |
-| Scheduling | `docs/SUPABASE_EDGE_REFRESH_PLAN.md`, `supabase/functions/refresh-articles-plan/README.md` | Plan added. Supabase Edge Function should enqueue or trigger trusted Python execution; no Railway dependency. |
+| Scheduling | `docs/SUPABASE_EDGE_REFRESH_PLAN.md`, `supabase/functions/refresh-articles-plan/README.md` | Plan added. Supabase Edge Function should enqueue or trigger trusted Python execution; no custom app server dependency. |
 
 ## What Is Connected
 
@@ -172,5 +172,5 @@ python scripts/pipeline_health_check.py
 ## TODO
 
 - Apply `backend/sql/add_pipeline_tracking_fields.sql` if per-article slang status and precise `updated_at` freshness are required.
-- Enable Supabase Cron in `mode=direct` for Supabase-only automatic refresh, or use `mode=queue` with a non-Railway trusted Python runner for full canonical pipeline parity.
+- Enable Supabase Cron in `mode=direct` for Supabase-only automatic refresh, or use `mode=queue` with a trusted Python runner for full canonical pipeline parity.
 - Decide whether `source_url` should be a real column or whether `url` remains the canonical source URL.

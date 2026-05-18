@@ -25,7 +25,7 @@ def preprocess_text(text: str) -> str:
     """LLM 출력·학습 데이터의 표면 노이즈 제거.
 
     제거 항목:
-    - <think>...</think> 태그 (Qwen3 사고 잔재)
+    - <think>...</think> 태그 (일부 LLM의 사고 과정 잔재)
     - 마크다운 코드블록 (```json ... ```)
     - 스마트 따옴표 → 표준 따옴표
     - CRLF → LF 정규화

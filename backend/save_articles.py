@@ -498,7 +498,7 @@ def save_fact_checks(url_hash: str, claims: list[dict]) -> None:
 
 def save_eval_result(
     url_hash:      str,   # 평가 대상 기사
-    model_version: str,   # 예: 'qwen3-4b-base', 'qwen3-4b-ft-v1', 'gpt-4o'
+    model_version: str,   # 예: 'samsun-gemma4', 'openrouter/gemini'
     eval_type:     str,   # 'translation' | 'summary_formal'
     **metrics,            # 평가 지표 (아래 참고)
 ) -> None:

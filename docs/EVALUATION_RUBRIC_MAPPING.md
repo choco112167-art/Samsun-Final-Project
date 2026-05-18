@@ -74,7 +74,7 @@ Where:
 How to demonstrate:
 - Upload `frontend/samsun-newsapp.ait` to Apps in Toss console.
 - Show the app still updates when Supabase data changes.
-- Explain why `.ait` does not need a Railway backend.
+- Explain why `.ait` does not need a custom backend server.
 
 Remaining limitation:
 - Supabase visibility columns must be migrated before server-side hiding via `prepare_demo_feed.py` can update `is_hidden/demo_visible`.

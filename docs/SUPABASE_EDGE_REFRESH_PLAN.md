@@ -1,6 +1,6 @@
 # Supabase Scheduled Refresh Plan
 
-Goal: refresh RSS-to-Supabase data without Railway and without putting service-role or LLM secrets in the frontend `.ait` bundle.
+Goal: refresh RSS-to-Supabase data without a custom app server and without putting service-role or LLM secrets in the frontend `.ait` bundle.
 
 ## Decision
 
@@ -53,7 +53,7 @@ This only inserts a queued row into `pipeline_refresh_requests`. A trusted runne
 python main.py --limit 10 --summary-sentences 3
 ```
 
-Use queue-only mode when you want the full canonical Python pipeline and have a non-Railway runner.
+Use queue-only mode when you want the full canonical Python pipeline and have a trusted runner.
 
 ## Deploy
 
@@ -113,12 +113,12 @@ select cron.schedule(
 );
 ```
 
-## Non-Railway Full Pipeline Alternative
+## Full Python Pipeline Alternative
 
-If full Python feature parity is required, keep Supabase Cron in queue mode and run a non-Railway trusted runner:
+If full Python feature parity is required, keep Supabase Cron in queue mode and run a trusted runner:
 
 - Windows Task Scheduler on the demo/ops machine,
 - a small VM with systemd timer,
 - GitHub Actions scheduled workflow only as a fallback non-server runner, not the primary scheduler.
 
-Railway is not part of this plan.
+A hosted custom app server is not part of this plan.

@@ -14,7 +14,7 @@ The local demo model tag is:
 samsun-gemma4
 ```
 
-`qwen3.5:4b` is not the default local generation model.
+Legacy local model defaults were removed; the local generation model is `samsun-gemma4`.
 
 ## Local Ollama / GGUF Role
 
@@ -39,7 +39,7 @@ Supabase Edge Functions run in Supabase's hosted Deno runtime. `http://localhost
 OpenRouter/Gemini are used in the cloud refresh path because:
 - They are reachable from Supabase Edge Functions.
 - They support scheduled refresh through Supabase Cron.
-- They avoid maintaining a custom server such as Railway.
+- They avoid maintaining a custom app server.
 
 ## Model Paths
 

@@ -67,7 +67,7 @@ class DebateResult:
 
 # AI 모델명 패턴 (논문: Popat et al., EMNLP 2018 — 고유명사 밀도가 검증 난이도 지표)
 _MODEL_PATTERNS = re.compile(
-    r"\b(GPT-\d|Claude\s*\d|Gemini\s*\d|Llama\s*\d|Mistral|Qwen|Phi-\d|"
+    r"\b(GPT-\d|Claude\s*\d|Gemini\s*\d|Llama\s*\d|Mistral|Phi-\d|"
     r"DeepSeek|Grok|o\d|Falcon|Command|BLOOM|PaLM|Bard|Copilot|Sora|"
     r"Stable\s*Diffusion|DALL-E|Midjourney|Whisper|Codex)\b",
     re.IGNORECASE,

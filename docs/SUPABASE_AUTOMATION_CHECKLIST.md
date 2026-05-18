@@ -1,6 +1,6 @@
 # Supabase Automation Checklist
 
-Use this checklist to enable scheduled Samsun News refresh without Railway and without rebuilding the `.ait` bundle for data updates.
+Use this checklist to enable scheduled Samsun News refresh without a custom app server and without rebuilding the `.ait` bundle for data updates.
 
 ## 0. What Supabase Can And Cannot Run
 
@@ -227,7 +227,7 @@ python main.py --limit 10 --summary-sentences 3
 python scripts/pipeline_health_check.py
 ```
 
-Recommended non-Railway runner options for queue/full Python mode:
+Recommended trusted runner options for queue/full Python mode:
 
 - Windows Task Scheduler on a trusted machine.
 - A small VM or always-on desktop using Task Scheduler/systemd.

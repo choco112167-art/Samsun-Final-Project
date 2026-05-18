@@ -19,7 +19,7 @@ Show:
 - Korean titles only; no raw English title dominance.
 
 Say:
-- The `.ait` frontend reads Supabase directly and does not need Railway.
+- The `.ait` frontend reads Supabase directly and does not need a custom backend server.
 - Data updates happen through Supabase, so the app does not need rebuild for content refresh.
 
 ## 1:20-1:50 Tone Preference

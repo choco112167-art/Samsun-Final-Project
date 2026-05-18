@@ -1,6 +1,6 @@
 # Final Architecture
 
-Samsun News is an Apps in Toss `.ait` mini-app backed by Supabase. The frontend does not call Railway or a custom production server.
+Samsun News is an Apps in Toss `.ait` mini-app backed by Supabase. The frontend does not call a custom production server.
 
 ```mermaid
 flowchart TD

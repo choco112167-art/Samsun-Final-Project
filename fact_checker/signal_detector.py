@@ -40,7 +40,7 @@ OPINION_PATTERNS: list[str] = [
 
 # ── Insight: 의견형 글이어도 살릴 만한 정보 밀도 (모델명·수치·기술·일정 등) ────────────
 SURVIVAL_INFO_PATTERNS: list[str] = [
-    r"\b(GPT-[345]|GPT-4o|ChatGPT|OpenAI|Claude|Anthropic|Gemini|Llama|Mistral|Mixtral|DeepSeek|Qwen)\b",
+    r"\b(GPT-[345]|GPT-4o|ChatGPT|OpenAI|Claude|Anthropic|Gemini|Llama|Mistral|Mixtral|DeepSeek)\b",
     r"\b\d+(?:\.\d+)?\s*(?:billion|million)\b",
     r"\b\d+\s*(?:tokens?|parameters?)\b",
     r"\b\d+(?:\.\d+)?\s*%",

@@ -16,7 +16,7 @@ import type { Article } from './articles';
  * Samsun News frontend data adapter.
  *
  * Runtime policy:
- * - No Railway/FastAPI dependency in the Apps in Toss bundle.
+ * - No custom server dependency in the Apps in Toss bundle.
  * - No live LLM calls from the frontend.
  * - Read public article rows from Supabase with the anon key only.
  * - If Supabase has no rows, return an empty list so the UI can show an empty state.

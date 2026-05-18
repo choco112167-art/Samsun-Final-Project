@@ -5,7 +5,7 @@ feat/mingyu 브랜치 로직을 통합했습니다.
 
 흐름:
   1) 후보 영문 용어 추출 (제목+본문)
-  2) 각 후보에 대해 `make_embedding` (local: qwen3-embedding:0.6b / cloud: OpenRouter 동일 차원) → 1024차원
+  2) 각 후보에 대해 `make_embedding` (환경변수 기반 로컬/클라우드 임베딩 모델) → 1024차원
   3) Supabase RPC `match_neologisms` 로 유사도 ≥ threshold 인 행 조회
   4) 매칭된 항목을 \"Term(ko_suggestion, explanation)\" 형태로 묶어 번역 프롬프트 상단에 주입
 
