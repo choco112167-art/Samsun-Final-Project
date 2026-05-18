@@ -59,7 +59,8 @@ export const CATEGORIES = [
 ] as const;
 
 export type Interest = (typeof CATEGORIES)[number];
-export type Category = Interest | '기타';
+export type DemoCategory = '주요 뉴스' | '기술/AI' | '보안/리스크' | '커뮤니티 이슈';
+export type Category = Interest | DemoCategory | '기타';
 
 export const CATEGORY_FALLBACK: Category = '기타';
 
@@ -93,6 +94,14 @@ const EXACT_MAP: Record<string, Category> = {
 
   // ── 기타 / legacy ──────────────────────────────────────────
   'AI':            'AI 연구',       // poc_cycle.py shorthand
+
+  // ── demo / numeric priority labels ─────────────────────────
+  // Raw 1/2/3/4 labels are not meaningful to users, so normalize them
+  // into explicit Korean category labels before rendering.
+  '1':             '주요 뉴스',
+  '2':             '기술/AI',
+  '3':             '보안/리스크',
+  '4':             '커뮤니티 이슈',
 };
 
 
@@ -195,6 +204,7 @@ if (import.meta.env?.DEV) {
     'AI/반도체', 'AI 심층/기술', 'AI 커뮤니티', 'LLM 커뮤니티', 'AI 제품',
     // poc_cycle.py
     'AI',
+    '1', '2', '3', '4',
   ];
   const failed = KNOWN_RAW_LABELS.filter(l => normalizeCategory(l) === CATEGORY_FALLBACK);
   if (failed.length > 0) {

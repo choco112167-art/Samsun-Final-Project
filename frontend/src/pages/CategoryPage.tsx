@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { ApiError, fetchArticles } from '../data/api';
-import { CATEGORIES, filterByCategory, articleCompletenessScore, articleDisplayTitle, hasKoreanTitle, type Article, type Category } from '../data/articles';
+import { CATEGORIES, filterByCategory, articleCompletenessScore, articleDisplayTitle, hasKoreanTitle, normalizeFactStatus, type Article, type Category } from '../data/articles';
+import { FactStatusBadge } from '../components/FactStatusBadge';
 import DetailPage from './DetailPage';
 import type { BookmarkHook } from '../hooks/useBookmarks';
 import type { SummaryTone } from '../hooks/useTonePreference';
@@ -76,8 +77,17 @@ export default function CategoryPage({ bm, onArticleClick, tone, onToneChange }:
         background: 'var(--color-bg)', borderRadius: '32px 32px 0 0',
         padding: '16px 16px 24px', display: 'flex', flexDirection: 'column', gap: 8,
       }}>
+        <p style={{ fontSize: 11, color: 'var(--color-text-tertiary)', lineHeight: 1.55, padding: '0 2px 6px' }}>
+          신뢰도 순위는 출처, 교차검증 여부, AI 판별 결과를 종합한 참고 지표입니다.
+        </p>
         {sorted.map((article, i) => {
-          const rankColor = i === 0 ? '#B45309' : i === 1 ? '#6B7280' : i === 2 ? '#92400E' : 'var(--color-text-tertiary)';
+          const status = normalizeFactStatus(article.factLabel);
+          const rankColor = i < 3 ? 'var(--color-primary)' : 'var(--color-text-tertiary)';
+          const barColor = status === 'RUMOR'
+            ? '#F59E0B'
+            : status === 'UNVERIFIED' || status === 'HITL_REQUIRED'
+              ? '#8B95A1'
+              : i < 3 ? 'var(--color-primary)' : 'var(--color-text-tertiary)';
           const maxScore  = sorted[0]?.credibilityScore ?? 1;
           return (
             <button
@@ -92,18 +102,21 @@ export default function CategoryPage({ bm, onArticleClick, tone, onToneChange }:
               onTouchStart={e => { (e.currentTarget as HTMLElement).style.transform = 'scale(0.985)'; }}
               onTouchEnd={e => { (e.currentTarget as HTMLElement).style.transform = ''; }}
             >
-              <span style={{ fontSize: 16, fontWeight: 700, color: rankColor, minWidth: 24, paddingTop: 2, fontVariantNumeric: 'tabular-nums' }}>{i + 1}</span>
+              <span aria-label={`신뢰도 순위 ${i + 1}위`} style={{ fontSize: 11, fontWeight: 800, color: rankColor, minWidth: 30, paddingTop: 2, fontVariantNumeric: 'tabular-nums', lineHeight: 1.2 }}>
+                {i + 1}위
+              </span>
               <div style={{ flex: 1, minWidth: 0 }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 5, marginBottom: 5 }}>
                   <div style={{ width: 5, height: 5, borderRadius: '50%', background: article.sourceColor, flexShrink: 0 }} />
                   <span style={{ fontSize: 11, color: 'var(--color-text-secondary)' }}>{article.source}</span>
+                  <FactStatusBadge label={article.factLabel} />
                   {article.isBreaking && <span style={{ fontSize: 10, fontWeight: 600, color: '#EF4444' }}>속보</span>}
                   <span style={{ fontSize: 11, color: 'var(--color-text-tertiary)', marginLeft: 'auto' }}>{article.timeAgo}</span>
                 </div>
                 <p style={{ fontSize: 13, fontWeight: hasKoreanTitle(article) ? 600 : 500, color: hasKoreanTitle(article) ? 'var(--color-text-primary)' : 'var(--color-text-secondary)', lineHeight: 1.4, marginBottom: 8 }}>{articleDisplayTitle(article)}</p>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                   <div style={{ flex: 1, height: 3, borderRadius: 2, background: 'var(--color-border)', overflow: 'hidden' }}>
-                    <div style={{ height: '100%', borderRadius: 2, background: i < 3 ? 'var(--color-primary)' : 'var(--color-text-tertiary)', width: `${((article.credibilityScore ?? 0) / maxScore) * 100}%`, opacity: i < 3 ? 1 : 0.4 }} />
+                    <div style={{ height: '100%', borderRadius: 2, background: barColor, width: `${((article.credibilityScore ?? 0) / maxScore) * 100}%`, opacity: i < 3 ? 1 : 0.45 }} />
                   </div>
                   <span style={{ fontSize: 11, color: 'var(--color-text-tertiary)', whiteSpace: 'nowrap' }}>신뢰도 {Math.round((article.credibilityScore ?? 0) * 100)}%</span>
                 </div>

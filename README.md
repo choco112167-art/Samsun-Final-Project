@@ -439,6 +439,38 @@ python scripts/ingest_latest_titles.py --max 20
 python scripts/check_articles_health.py
 ```
 
+### 시연용 데이터 세트
+
+시연용 루머/미검증/HITL 사례는 실제 뉴스처럼 보이면 안 됩니다. 아래 스크립트는 모든 샘플 기사에 `source=DEMO`와 `[시연용]` 제목 접두어를 넣고, 루머 항목은 `RUMOR`, 사람 검토 항목은 `HITL_REQUIRED`로 저장합니다.
+
+백업 먼저 실행:
+
+```bash
+python scripts/export_articles_backup.py
+```
+
+기존 시연용 데이터만 확인/삭제:
+
+```bash
+python scripts/clear_demo_tables.py --dry-run
+python scripts/clear_demo_tables.py --confirm-delete
+```
+
+시연용 데이터 삽입:
+
+```bash
+python scripts/seed_demo_articles.py
+```
+
+시연용 데이터만 교체:
+
+```bash
+python scripts/export_articles_backup.py
+python scripts/seed_demo_articles.py --replace-demo --confirm-delete
+```
+
+프로덕션 데이터 전체 삭제 명령은 제공하지 않습니다. 삭제 스크립트는 `source=DEMO` 기사와 연결된 `fact_checks`만 대상으로 합니다.
+
 기존 `title_ko` 보강:
 
 ```bash

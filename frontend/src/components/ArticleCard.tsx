@@ -3,6 +3,7 @@ import { Badge } from './Badge';
 import { isValidSummary, hasKoreanTitle, type Article } from '../data/articles';
 import type { ApiArticle } from '../data/api';
 import type { SummaryTone } from '../hooks/useTonePreference';
+import { FactStatusBadge } from './FactStatusBadge';
 
 export type CardArticle = Article | ApiArticle;
 
@@ -29,7 +30,7 @@ function hasLocalizedHeadline(article: CardArticle): boolean {
   return Boolean(((article as ApiArticle).title_ko ?? '').trim());
 }
 
-function pickFactLabel(article: CardArticle): 'FACT' | 'UNVERIFIED' | 'RUMOR' | undefined {
+function pickFactLabel(article: CardArticle): string | undefined {
   if ('factLabel' in article && article.factLabel) return article.factLabel;
   if ('fact_label' in article) return article.fact_label;
   return undefined;
@@ -122,12 +123,7 @@ export default function ArticleCard({ article, bookmarked = false, onBookmark, o
         {!!('isBreaking' in article ? article.isBreaking : article.is_breaking) && (
           <Badge badgeStyle="fill" type="red" size="tiny">속보</Badge>
         )}
-        {factLabel === 'FACT' && (
-          <Badge badgeStyle="fill" type="green" size="tiny">FACT</Badge>
-        )}
-        {factLabel === 'RUMOR' && (
-          <Badge badgeStyle="weak" type="red" size="tiny">RUMOR</Badge>
-        )}
+        <FactStatusBadge label={factLabel} />
         <span style={{
           marginLeft: 'auto', fontSize: 11, color: 'var(--color-text-tertiary)',
           flexShrink: 0, whiteSpace: 'nowrap',

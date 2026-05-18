@@ -59,7 +59,7 @@ export interface Article {
 
   // 신뢰도
   credibilityScore: number;
-  factLabel:        'FACT' | 'UNVERIFIED' | 'RUMOR';  // 카드의 FACT/RUMOR 뱃지에 사용
+  factLabel:        'FACT' | 'VERIFIED' | 'UNVERIFIED' | 'RUMOR' | 'HITL_REQUIRED' | 'INSIGHT' | 'FACT_INSIGHT';
 
   // 번역 / 요약
   translation:   string;   // 한국어 번역 전문 — DetailPage 신조어 하이라이트에 사용
@@ -95,6 +95,7 @@ const SOURCE_COLORS: Record<string, string> = {
   'Reddit r/MachineLearning': '#FF4500',
   'Reddit r/LocalLLaMA':      '#FF4500',
   'Product Hunt':             '#DA552F',
+  'DEMO':                     '#6B7280',
 };
 
 // 목록에 없는 소스의 기본 컬러 (회색)
@@ -169,6 +170,23 @@ export function articleCompletenessScore(
     + (isValidSummary(article.summaryFormal) ? 2 : 0)
     + (isValidSummary(article.summaryCasual) ? 2 : 0)
     + (isValidTranslation(article.translation) ? 3 : 0);
+}
+
+export type FactStatus = 'VERIFIED' | 'UNVERIFIED' | 'RUMOR' | 'HITL_REQUIRED' | 'INSIGHT';
+
+export function normalizeFactStatus(label: string | null | undefined): FactStatus {
+  const value = (label ?? '').trim().toUpperCase();
+  if (value === 'FACT' || value === 'VERIFIED' || value === 'FACT_INSIGHT') return 'VERIFIED';
+  if (value === 'RUMOR') return 'RUMOR';
+  if (value === 'HITL_REQUIRED' || value === 'HITL' || value === 'HUMAN_REVIEW_REQUIRED') return 'HITL_REQUIRED';
+  if (value === 'INSIGHT') return 'INSIGHT';
+  return 'UNVERIFIED';
+}
+
+export function isDemoArticle(article: Pick<Article, 'source' | 'title' | 'titleKo'>): boolean {
+  return article.source.trim().toUpperCase() === 'DEMO'
+    || (article.titleKo ?? '').includes('[시연용]')
+    || article.title.includes('[DEMO]');
 }
 
 

@@ -63,7 +63,7 @@ export interface ApiArticle {
   collected_at: string;
   content: string;
   credibility_score: number;
-  fact_label: 'FACT' | 'UNVERIFIED' | 'RUMOR';
+  fact_label: 'FACT' | 'VERIFIED' | 'UNVERIFIED' | 'RUMOR' | 'HITL_REQUIRED' | 'INSIGHT' | 'FACT_INSIGHT';
   translation: string;
   summary_formal: string;
   summary_casual: string;

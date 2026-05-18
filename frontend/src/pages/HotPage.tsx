@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { fetchHot } from '../data/api';
-import { articleDisplayTitle, hasKoreanTitle, type Article } from '../data/articles';
+import { articleDisplayTitle, hasKoreanTitle, normalizeFactStatus, type Article } from '../data/articles';
+import { FactStatusBadge } from '../components/FactStatusBadge';
 import DetailPage from './DetailPage';
 import type { BookmarkHook } from '../hooks/useBookmarks';
 import type { SummaryTone } from '../hooks/useTonePreference';
@@ -110,6 +111,9 @@ export default function HotPage({ bm, userId: _userId, onArticleClick, tone, onT
             <span style={{ fontSize: 15, fontWeight: 700 }}>{month + 1}월 {day}일</span>
             <span style={{ fontSize: 12, color: 'var(--color-text-tertiary)' }}>인기 기사 Top {tops.length}</span>
           </div>
+          <p style={{ fontSize: 11, color: 'var(--color-text-tertiary)', lineHeight: 1.55, marginBottom: 12 }}>
+            신뢰도는 출처, 교차검증 여부, AI 판별 결과를 종합한 참고 지표입니다.
+          </p>
 
           {loading && (
             <div style={{ textAlign: 'center', padding: '40px 0', color: 'var(--color-text-tertiary)', fontSize: 13 }}>
@@ -126,7 +130,13 @@ export default function HotPage({ bm, userId: _userId, onArticleClick, tone, onT
 
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
             {tops.map((article, i) => {
-              const rankColor = i === 0 ? '#B45309' : i === 1 ? '#6B7280' : i === 2 ? '#92400E' : 'var(--color-text-tertiary)';
+              const status = normalizeFactStatus(article.factLabel);
+              const rankColor = i < 3 ? 'var(--color-primary)' : 'var(--color-text-tertiary)';
+              const barColor = status === 'RUMOR'
+                ? '#F59E0B'
+                : status === 'UNVERIFIED' || status === 'HITL_REQUIRED'
+                  ? '#8B95A1'
+                  : i < 3 ? 'var(--color-primary)' : 'var(--color-text-tertiary)';
               const viewCount = article.view_count ?? 0;
               const maxV = (tops[0]?.view_count ?? 1) || 1;
               return (
@@ -142,16 +152,17 @@ export default function HotPage({ bm, userId: _userId, onArticleClick, tone, onT
                   onTouchStart={e => { (e.currentTarget as HTMLElement).style.transform = 'scale(0.985)'; }}
                   onTouchEnd={e => { (e.currentTarget as HTMLElement).style.transform = ''; }}
                 >
-                  <span style={{ fontSize: 16, fontWeight: 700, color: rankColor, minWidth: 24, paddingTop: 1 }}>{i + 1}</span>
+                  <span aria-label={`신뢰도 순위 ${i + 1}위`} style={{ fontSize: 11, fontWeight: 800, color: rankColor, minWidth: 30, paddingTop: 1 }}>{i + 1}위</span>
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 5, marginBottom: 4 }}>
                       <div style={{ width: 5, height: 5, borderRadius: '50%', background: article.sourceColor ?? '#6B7280' }} />
                       <span style={{ fontSize: 11, color: 'var(--color-text-secondary)' }}>{article.source}</span>
+                      <FactStatusBadge label={article.factLabel} />
                     </div>
                     <p style={{ fontSize: 13, fontWeight: hasKoreanTitle(article) ? 600 : 500, color: hasKoreanTitle(article) ? 'var(--color-text-primary)' : 'var(--color-text-secondary)', lineHeight: 1.4, marginBottom: 8 }}>{articleDisplayTitle(article)}</p>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                       <div style={{ flex: 1, height: 3, borderRadius: 2, background: 'var(--color-border)', overflow: 'hidden' }}>
-                        <div style={{ height: '100%', borderRadius: 2, background: 'var(--color-primary)', width: viewCount > 0 ? `${(viewCount / maxV) * 100}%` : '20%' }} />
+                        <div style={{ height: '100%', borderRadius: 2, background: barColor, width: viewCount > 0 ? `${(viewCount / maxV) * 100}%` : '20%', opacity: i < 3 ? 1 : 0.45 }} />
                       </div>
                       <span style={{ fontSize: 11, color: 'var(--color-text-tertiary)', whiteSpace: 'nowrap' }}>
                         {viewCount > 0 ? `${viewCount.toLocaleString()} 조회` : '발행일 기준'}

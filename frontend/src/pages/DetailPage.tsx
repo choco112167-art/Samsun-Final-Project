@@ -4,8 +4,10 @@ import {
   articleSummaryForTone,
   articleTranslationForDisplay,
   hasKoreanTitle,
+  isDemoArticle,
   isValidSummary,
   isValidTranslation,
+  normalizeFactStatus,
   type Article,
 } from '../data/articles';
 import {
@@ -19,6 +21,7 @@ import { tossOpenURL } from '../lib/toss';
 import NeologismText from '../components/NeologismText';
 import TonePreferenceControl from '../components/TonePreferenceControl';
 import { toneLabel, type SummaryTone } from '../hooks/useTonePreference';
+import { FactStatusBadge, factStatusText } from '../components/FactStatusBadge';
 
 interface Props {
   article: Article;
@@ -95,6 +98,9 @@ export default function DetailPage({ article, bookmarked, onBookmark, onBack, to
   const hasLocalizedTitle = hasKoreanTitle(article);
   const summaryReady = isValidSummary(tone === 'formal' ? article.summaryFormal : article.summaryCasual);
   const translationReady = isValidTranslation(article.translation);
+  const factStatus = normalizeFactStatus(article.factLabel);
+  const needsCaution = factStatus === 'RUMOR' || factStatus === 'UNVERIFIED' || factStatus === 'HITL_REQUIRED';
+  const demoArticle = isDemoArticle(article);
   const visibleNeologisms = useMemo(() => {
     const haystack = `${selectedSummary}\n${translation}`.toLocaleLowerCase();
     return neologisms.filter(entry => haystack.includes(entry.term.toLocaleLowerCase()));
@@ -207,6 +213,10 @@ export default function DetailPage({ article, bookmarked, onBookmark, onBack, to
           <span style={{ display: 'inline-block', fontSize: 11, fontWeight: 500, color: 'var(--color-primary)', background: 'var(--color-primary-light)', padding: '3px 8px', borderRadius: 6, marginBottom: 10 }}>
             {article.category}
           </span>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 10, flexWrap: 'wrap' }}>
+            <FactStatusBadge label={article.factLabel} size="small" />
+            {demoArticle && <span style={{ fontSize: 11, fontWeight: 700, color: '#4E5968', background: '#F2F4F6', padding: '3px 8px', borderRadius: 6 }}>시연용 데이터</span>}
+          </div>
           <h1 style={{ fontSize: 19, fontWeight: hasLocalizedTitle ? 700 : 600, lineHeight: 1.42, letterSpacing: '-0.03em', color: hasLocalizedTitle ? 'var(--color-text-primary)' : 'var(--color-text-secondary)' }}>
             {articleDisplayTitle(article)}
           </h1>
@@ -216,6 +226,19 @@ export default function DetailPage({ article, bookmarked, onBookmark, onBack, to
             </p>
           )}
         </div>
+
+        {needsCaution && (
+          <div style={{ background: factStatus === 'RUMOR' ? '#FFF7ED' : 'var(--color-surface)', border: '0.5px solid var(--color-border)', padding: '12px 20px', marginBottom: 8 }}>
+            <p style={{ fontSize: 13, fontWeight: 700, color: factStatus === 'RUMOR' ? '#9A3412' : 'var(--color-text-primary)', marginBottom: 4 }}>
+              {factStatusText(article.factLabel)}
+            </p>
+            <p style={{ fontSize: 12, color: 'var(--color-text-secondary)', lineHeight: 1.6 }}>
+              {demoArticle && factStatus === 'RUMOR'
+                ? '이 항목은 검증되지 않은 시연용 루머 데이터입니다.'
+                : '이 항목은 아직 검증이 완료되지 않았습니다. 출처와 추가 확인 결과를 함께 확인해주세요.'}
+            </p>
+          </div>
+        )}
 
         <div style={{ background: 'var(--color-surface)', padding: '14px 20px', marginBottom: 8 }}>
           <p style={{ fontSize: 11, fontWeight: 600, color: 'var(--color-text-tertiary)', letterSpacing: '0.04em', textTransform: 'uppercase', marginBottom: 10 }}>요약 말투</p>
