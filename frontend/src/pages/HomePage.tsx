@@ -2,7 +2,7 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { BottomSheet, useToast } from '../components/Overlay';
 import ArticleCard from '../components/ArticleCard';
 import { FeedSkeleton } from '../components/Skeleton';
-import { fetchArticles } from '../data/api';
+import { ApiError, fetchArticles } from '../data/api';
 import {
   CATEGORIES,
   filterByCategory,
@@ -56,6 +56,9 @@ export default function HomePage({ bm, onNavigateToFeed, onArticleClick, absence
 
   const [absenceModalOpen, setAbsenceModalOpen] = useState(false);
 
+  const errorDetail = error?.trim() ?? '';
+  const isConfigError = /VITE_SUPABASE|Supabase env|anon/i.test(errorDetail);
+
   const handleNotif = () => {
     if (absenceData?.show) {
       setAbsenceModalOpen(true);
@@ -80,7 +83,13 @@ export default function HomePage({ bm, onNavigateToFeed, onArticleClick, absence
         initialLoadDone.current = true;
         setLoading(false);
       })
-      .catch(() => { setError('기사를 불러오지 못했어요'); setLoading(false); });
+      .catch((err: unknown) => {
+        const message = err instanceof ApiError || err instanceof Error
+          ? err.message
+          : '알 수 없는 오류가 발생했습니다.';
+        setError(message);
+        setLoading(false);
+      });
   };
 
   const loadMore = useCallback(() => {
@@ -181,7 +190,30 @@ export default function HomePage({ bm, onNavigateToFeed, onArticleClick, absence
         <h1 style={{ fontSize: 26, fontWeight: 800, letterSpacing: '-0.04em', color: 'var(--color-header-text)' }}>삼선뉴스</h1>
       </header>
       <div style={{ flex: 1, background: 'var(--color-bg)', borderRadius: '32px 32px 0 0', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 12 }}>
-        <p style={{ fontSize: 15, color: 'var(--color-text-secondary)' }}>😢 {error}</p>
+        <p style={{ fontSize: 15, color: 'var(--color-text-secondary)', fontWeight: 700 }}>
+          기사를 불러오지 못했어요
+        </p>
+        <div style={{
+          width: 'min(88%, 420px)',
+          background: 'var(--color-surface)',
+          border: '1px solid var(--color-border)',
+          borderRadius: 12,
+          padding: '12px 14px',
+          color: 'var(--color-text-secondary)',
+          fontSize: 12,
+          lineHeight: 1.6,
+          wordBreak: 'break-word',
+        }}>
+          <p style={{ fontWeight: 700, color: isConfigError ? '#B91C1C' : 'var(--color-text-primary)', marginBottom: 4 }}>
+            {isConfigError ? 'Supabase 설정 확인 필요' : 'Supabase 조회 오류'}
+          </p>
+          <p>{errorDetail || '네트워크 또는 Supabase 권한을 확인해주세요.'}</p>
+          {isConfigError && (
+            <p style={{ marginTop: 8, color: 'var(--color-text-tertiary)' }}>
+              `.ait` 빌드 전에 `VITE_SUPABASE_URL`과 `VITE_SUPABASE_ANON_KEY`를 설정해야 합니다.
+            </p>
+          )}
+        </div>
         <button onClick={load} style={{ fontSize: 13, color: 'var(--color-primary)', padding: '8px 18px', border: '1px solid var(--color-primary)', borderRadius: 20 }}>
           다시 시도
         </button>

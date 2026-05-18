@@ -1,4 +1,4 @@
-import { supabase, isSupabaseConfigured } from '../lib/supabase';
+import { supabase, isSupabaseConfigured, getSupabaseConfigIssue } from '../lib/supabase';
 import { toArticle, normalizeCategory } from './articles';
 import type { Article } from './articles';
 
@@ -98,8 +98,19 @@ export interface SearchResult extends ApiArticle { similarity?: number; }
 
 function requireSupabase(): void {
   if (!isSupabaseConfigured()) {
-    throw new ApiError(0, 'Supabase env is not configured');
+    throw new ApiError(0, getSupabaseConfigIssue() ?? 'Supabase env is not configured');
   }
+}
+
+function supabaseErrorMessage(action: string, error: { message?: string; code?: string; details?: string; hint?: string }): string {
+  const parts = [
+    action,
+    error.code ? `code=${error.code}` : '',
+    error.message ?? '',
+    error.details ? `details=${error.details}` : '',
+    error.hint ? `hint=${error.hint}` : '',
+  ].filter(Boolean);
+  return parts.join(' · ');
 }
 
 function buildArticleQuery(params: FetchArticlesParams = {}) {
@@ -124,7 +135,7 @@ function toArticleList(rows: ApiArticle[] | null): Article[] {
 export async function fetchArticles(params: FetchArticlesParams = {}): Promise<Article[]> {
   requireSupabase();
   const { data, error } = await buildArticleQuery(params);
-  if (error) throw new ApiError(500, error.message);
+  if (error) throw new ApiError(500, supabaseErrorMessage('Supabase articles query failed', error));
   const articles = toArticleList(data as unknown as ApiArticle[]);
   return params.category
     ? articles.filter(article => article.category === normalizeCategory(params.category))
@@ -138,7 +149,7 @@ export async function fetchArticleByHash(urlHash: string): Promise<ApiArticle> {
     .select(ARTICLE_FIELDS)
     .eq('url_hash', urlHash)
     .maybeSingle();
-  if (error) throw new ApiError(500, error.message);
+  if (error) throw new ApiError(500, supabaseErrorMessage('Supabase article detail query failed', error));
   if (!data) throw new ApiError(404, 'Article not found');
   return data as unknown as ApiArticle;
 }
@@ -323,7 +334,7 @@ export async function recordArticleView(userId: string, urlHash: string): Promis
 export async function healthCheck(): Promise<{ status: string }> {
   requireSupabase();
   const { error } = await supabase.from('articles').select('url_hash').limit(1);
-  if (error) throw new ApiError(500, error.message);
+  if (error) throw new ApiError(500, supabaseErrorMessage('Supabase health query failed', error));
   return { status: 'ok' };
 }
 
@@ -394,7 +405,7 @@ export async function fetchHot(date: string): Promise<(Article & { view_count: n
     .lte('published_at', end)
     .order('credibility_score', { ascending: false })
     .limit(20);
-  if (error) throw new ApiError(500, error.message);
+  if (error) throw new ApiError(500, supabaseErrorMessage('Supabase hot articles query failed', error));
   return (data as unknown as ApiArticle[]).map((article, index) => ({
     ...toArticle(article),
     view_count: Math.max(0, 100 - index * 7),
