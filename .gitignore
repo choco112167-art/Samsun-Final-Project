@@ -1,4 +1,8 @@
 .env
+.env.*
+!.env.example
+!frontend/.env.example
+!frontend/.env.mobile.example
 apps-in-toss-examples-main/
 ../unzip/
 venv/
@@ -15,12 +19,17 @@ data/
 logs/
 backups/
 backend_server.*.log
+dev-server.log
+dev-server.err
+frontend/dev-server.log
+frontend/dev-server.err
 poc_dummy.py
 articles_raw.jsonl
 articles_translated.jsonl
 *.jsonl
 samsun_345
 samsun_345.db
+*.db
 *.sqlite
 *.sqlite3
 eval/data/
@@ -47,6 +56,8 @@ dist/
 # 로컬 파인튜닝 모델 가중치 (용량 대형)
 samsunmodel*/
 models/
+ollama-model/
+scripts/register_ollama.ps1
 ollama-model/*.gguf
 ollama-model/*.gguf.*
 *.gguf

@@ -5,6 +5,161 @@
 
 ---
 
+## Project Overview
+
+**삼선뉴스 / Samsun News** is a Korean-first AI news curation mini-app for Apps in Toss. It turns raw English AI/tech RSS articles into a polished mobile feed with Korean titles, full translation, formal/casual 3-line summaries, fact-status labels, neologism explanations, and clearly marked rumor/HITL demo examples.
+
+Problem:
+
+- AI news is fast, fragmented, mostly English, and uneven in reliability.
+- A raw RSS feed does not explain terminology, trust level, or uncertainty.
+- Mobile users need a concise Korean reading experience without losing the original source.
+
+Solution:
+
+- Collect AI/tech news from RSS and the Sangjun SQLite dataset.
+- Strictly process final-demo Sangjun data from **2026-05-01 through 2026-05-18** only.
+- Use local Ollama `samsun-gemma4` for offline/demo import and backfill.
+- Use Supabase as the backend/data platform.
+- Use Supabase Edge/Cron with OpenRouter/Gemini for cloud refresh because hosted Edge Functions cannot call localhost Ollama.
+- Deliver the frontend as an Apps in Toss `.ait` bundle; no Railway backend is required for the app runtime.
+
+Core AI features:
+
+- Korean title generation and English-title suppression in the demo UI.
+- Full Korean translation, not just short summaries.
+- Formal/casual 3-line summaries with persistent tone preference.
+- Fact badges: `검증됨`, `미검증`, `루머 의심`, `HITL 검토 필요`.
+- Conservative uncertainty handling: uncertain claims become unverified or HITL, not fake certainty.
+- Neologism annotation with Supabase-backed explanations.
+- Demo-ready filtering so old/incomplete rows do not dominate the feed.
+
+Key final documents:
+
+- [`docs/EVALUATION_RUBRIC_MAPPING.md`](./docs/EVALUATION_RUBRIC_MAPPING.md)
+- [`docs/FINAL_DEMO_SCENARIO.md`](./docs/FINAL_DEMO_SCENARIO.md)
+- [`docs/FINAL_ARCHITECTURE.md`](./docs/FINAL_ARCHITECTURE.md)
+- [`docs/MODEL_STRATEGY.md`](./docs/MODEL_STRATEGY.md)
+- [`docs/DATA_PIPELINE.md`](./docs/DATA_PIPELINE.md)
+- [`docs/FINAL_TEST_CHECKLIST.md`](./docs/FINAL_TEST_CHECKLIST.md)
+
+## Evaluation Rubric Summary
+
+| Rubric category | Project evidence |
+| --- | --- |
+| AI model selection and preprocessing design | `samsun-gemma4` local model path, OpenRouter/Gemini cloud path, May-range filtering, quality gates, neologism/fact-status design |
+| Model training/evaluation/improvement strategy | Gemma/Gemma4 local serving docs, audit/backfill scripts, conservative fact labeling, documented metric limitations |
+| Real-service architecture | Apps in Toss `.ait` frontend, Supabase direct read, Edge/Cron refresh, no Railway runtime dependency |
+| Data collection/preprocessing implementation | RSS crawler, Sangjun SQLite import, body/content filtering, Supabase upsert, demo readiness filtering |
+| AI model training/tuning implementation | Ollama `samsun-gemma4` batch processing for title/translation/summaries/fact labels; local model serving path documented |
+| System stability | Build/typecheck/lint, robust missing-data UI, optional neologism lookup, retry/skip behavior for malformed model JSON |
+| Presentation/storytelling | Final demo scenario, architecture, data pipeline, model strategy, test checklist |
+| Collaboration | Clear repo structure and runbooks for frontend, model, data pipeline, Supabase, and demo QA ownership |
+
+## Quick Start
+
+Frontend setup:
+
+```bash
+cd frontend
+npm install
+copy .env.example .env.local
+```
+
+Set only frontend-safe values:
+
+```env
+VITE_SUPABASE_URL=<supabase-project-url>
+VITE_SUPABASE_ANON_KEY=<supabase-anon-key>
+VITE_DEMO_POLISHED_FEED=1
+```
+
+Local development:
+
+```bash
+npm run dev
+```
+
+Build and Apps in Toss bundle:
+
+```bash
+npm run build
+npm run ait:build
+```
+
+Upload this local artifact to Apps in Toss console:
+
+```text
+frontend/samsun-newsapp.ait
+```
+
+## Demo Operation Commands
+
+Audit final Supabase demo readiness:
+
+```bash
+python scripts/audit_demo_readiness.py
+```
+
+Audit Sangjun SQLite May range:
+
+```bash
+python scripts/audit_sangjun_sqlite.py --db-path samsun_345.db --since 2026-05-01 --until 2026-05-18
+```
+
+Run a small local Ollama batch without writing:
+
+```bash
+python scripts/process_sangjun_sqlite_with_ollama.py --db-path samsun_345.db --since 2026-05-01 --until 2026-05-18 --limit 3 --dry-run
+```
+
+Process and upsert a small batch to Supabase:
+
+```bash
+python scripts/process_sangjun_sqlite_with_ollama.py --db-path samsun_345.db --since 2026-05-01 --until 2026-05-18 --limit 20 --upsert-supabase
+```
+
+Seed clearly labeled demo rumor/HITL examples:
+
+```bash
+python scripts/seed_demo_articles.py
+```
+
+Preview demo feed cleanup:
+
+```bash
+python scripts/prepare_demo_feed.py --since 2026-05-01 --until 2026-05-18 --limit 1000
+```
+
+Apply demo feed cleanup only after backup:
+
+```bash
+python scripts/export_articles_backup.py
+python scripts/prepare_demo_feed.py --since 2026-05-01 --until 2026-05-18 --limit 1000 --run
+```
+
+Fact-status check:
+
+```bash
+python scripts/audit_demo_readiness.py
+```
+
+## Security And GitHub Safety
+
+Never commit:
+
+- `.env` or machine-specific `.env.*` files.
+- Supabase service role keys, OpenRouter/Gemini keys, or any API key.
+- `.ait` bundles.
+- `.gguf` model files.
+- `samsun_345`, `samsun_345.db`, or other local SQLite/DB files.
+- `ollama-model/`.
+- `node_modules/`, `dist/`, local logs, or generated caches.
+
+Use `.env.example` and `frontend/.env.example` as templates only.
+
+---
+
 ## Apps in Toss Console Upload
 
 최종 산출물은 Apps in Toss 콘솔에 업로드할 `.ait` 앱 번들입니다. 런타임은 **Supabase only** 구조이며, 프론트는 Supabase anon key로 `articles`를 직접 읽습니다. Railway, Vercel Functions, FastAPI 서버, 로컬 Ollama/GGUF 모델은 `.ait` 번들 실행에 필요하지 않습니다.
