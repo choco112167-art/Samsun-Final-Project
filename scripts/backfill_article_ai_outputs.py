@@ -41,6 +41,10 @@ AI_META_FIELDS = (
     "content_source",
     "content_chars",
     "translation_chars",
+    "fact_status",
+    "slang_terms",
+    "neologism_terms",
+    "slang_processed_at",
 )
 OPENROUTER_ENDPOINT = "https://openrouter.ai/api/v1/chat/completions"
 
@@ -152,8 +156,19 @@ def build_update_payload(
         "content_chars": body_chars,
         "translation_chars": len(str(generated.get("translation") or "").strip()),
     }
+    fact_label = row.get("fact_label") or row.get("fact_status")
+    if fact_label:
+        meta_values["fact_status"] = fact_label
+
+    slang_terms = detect_slang_terms(title=str(row.get("title") or row.get("title_ko") or ""), body=generated.get("translation") or "")
+    if slang_terms:
+        meta_values["slang_terms"] = slang_terms
+        meta_values["neologism_terms"] = slang_terms
+    meta_values["slang_processed_at"] = None
     if ai_status == "completed":
         meta_values["ai_generated_at"] = "now()"
+        if slang_terms:
+            meta_values["slang_processed_at"] = "now()"
     for field, value in meta_values.items():
         if field not in available_meta_fields:
             continue
@@ -162,9 +177,42 @@ def build_update_payload(
             from datetime import datetime, timezone
 
             payload[field] = datetime.now(timezone.utc).isoformat()
-        else:
+        elif field == "slang_processed_at" and value == "now()":
+            from datetime import datetime, timezone
+
+            payload[field] = datetime.now(timezone.utc).isoformat()
+        elif value is not None:
             payload[field] = value
+    if slang_terms:
+        try:
+            from backend.save_articles import save_neologisms
+
+            save_neologisms(slang_terms, str(row.get("url_hash") or ""))
+        except Exception as exc:
+            print(f"  slang_terms_save_warning={exc}", flush=True)
     return payload
+
+
+def detect_slang_terms(title: str, body: str) -> list[str]:
+    try:
+        from backend.neologism_rag import detect_neologism_terms
+
+        return detect_neologism_terms(title, body)
+    except Exception:
+        return []
+
+
+def build_llm_user_content(title: str, body: str, use_neologism_glossary: bool = False) -> str:
+    base = f"[TITLE]\n{title}\n\n[BODY]\n{body}"
+    if not use_neologism_glossary:
+        return base
+    try:
+        from backend.neologism_rag import build_neologism_glossary_prompt_section
+
+        neo_block = build_neologism_glossary_prompt_section(title, body)
+    except Exception:
+        neo_block = ""
+    return f"{neo_block}\n\n{base}" if neo_block else base
 
 
 def needs_processing(row: dict[str, Any], repair_short_translation: bool, min_translation_chars: int) -> bool:
@@ -201,7 +249,14 @@ def mock_outputs(title: str, body: str) -> dict[str, str]:
     }
 
 
-def generate_outputs(provider: str, model: str, title: str, body: str, summary_sentences: int) -> dict[str, str]:
+def generate_outputs(
+    provider: str,
+    model: str,
+    title: str,
+    body: str,
+    summary_sentences: int,
+    use_neologism_glossary: bool,
+) -> dict[str, str]:
     endpoint_log = {
         "mock": "mock",
         "openrouter": "openrouter",
@@ -221,6 +276,7 @@ def generate_outputs(provider: str, model: str, title: str, body: str, summary_s
         if not api_key:
             raise RuntimeError("OPENROUTER_API_KEY 환경변수 없음")
         system = SYSTEM_PROMPT.format(n=summary_sentences)
+        user_content = build_llm_user_content(title, body, use_neologism_glossary)
         response = requests.post(
             OPENROUTER_ENDPOINT,
             headers={
@@ -233,7 +289,7 @@ def generate_outputs(provider: str, model: str, title: str, body: str, summary_s
                 "model": model,
                 "messages": [
                     {"role": "system", "content": system},
-                    {"role": "user", "content": f"[TITLE]\n{title}\n\n[BODY]\n{body}"},
+                    {"role": "user", "content": user_content},
                 ],
                 "temperature": 0.1,
                 "max_tokens": 4096,
@@ -256,7 +312,7 @@ def generate_outputs(provider: str, model: str, title: str, body: str, summary_s
         client = genai.Client(api_key=api_key)
         response = client.models.generate_content(
             model=model,
-            contents=f"[TITLE]\n{title}\n\n[BODY]\n{body}",
+            contents=build_llm_user_content(title, body, use_neologism_glossary),
             config=types.GenerateContentConfig(
                 system_instruction=SYSTEM_PROMPT.format(n=summary_sentences),
                 temperature=0.1,
@@ -330,6 +386,14 @@ def main() -> int:
     )
     parser.add_argument("--summary-sentences", type=int, default=3)
     parser.add_argument("--show-body-preview", action="store_true")
+    parser.add_argument(
+        "--use-neologism-glossary",
+        action="store_true",
+        help=(
+            "Inject existing neologism vector glossary into the LLM prompt. "
+            "Default off for backfill speed; detected terms are still saved after generation."
+        ),
+    )
     parser.add_argument(
         "--provider",
         choices=("mock", "local", "openrouter", "gemini"),
@@ -453,6 +517,7 @@ def main() -> int:
                 title=row.get("title") or "",
                 body=body,
                 summary_sentences=args.summary_sentences,
+                use_neologism_glossary=args.use_neologism_glossary,
             )
         except Exception as exc:
             failed += 1

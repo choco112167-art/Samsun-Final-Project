@@ -94,7 +94,7 @@ Health currently reports `missing_fact_label_or_status: 0` in Supabase.
 
 Translation and summaries are written by root `main.py` and `scripts/ingest_latest_fast.py` through `backend/save_articles.py`.
 
-Current Supabase health shows:
+Pre-refresh Supabase health showed:
 
 ```text
 total_articles: 975
@@ -103,6 +103,19 @@ missing_summary_formal: 19
 missing_summary_casual: 19
 ai_completed_inferred: 956
 ai_pending_inferred: 19
+```
+
+After the local smoke refresh on 2026-05-18:
+
+```text
+total_articles: 977
+missing_translation: 17
+missing_summary_formal: 17
+missing_summary_casual: 17
+ai_completed_inferred: 960
+ai_pending_inferred: 17
+newest_published_at: 2026-05-17T20:15:00+00:00
+articles_inserted_or_updated_last_24h: 2
 ```
 
 The newest 20 rows include many `title-only/pending` articles from `2026-05-03` collection time. That means a title-only or partial refresh ran, but full translation/summarization did not complete for those latest rows.
@@ -114,6 +127,13 @@ Observed from `python scripts/pipeline_health_check.py`:
 ```text
 newest_published_at: 2026-05-02T21:54:58+00:00
 articles_inserted_or_updated_last_24h: 0
+```
+
+This improved after running:
+
+```bash
+python main.py --limit 2 --summary-sentences 3
+python scripts/backfill_article_ai_outputs.py --limit 1 --provider openrouter --run --summary-sentences 3
 ```
 
 Likely causes:
@@ -128,7 +148,7 @@ Likely causes:
 Full refresh:
 
 ```bash
-python main.py
+python main.py --limit 10 --summary-sentences 3
 ```
 
 Fast demo refresh with translation/summaries:

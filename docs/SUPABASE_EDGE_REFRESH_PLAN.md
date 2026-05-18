@@ -16,7 +16,7 @@ It performs RSS collection, AI preflight, translation/summarization, fact labeli
 
 Supabase Edge Functions are Deno/TypeScript, while this repository's crawler and AI pipeline are Python. The Edge Function should therefore be a lightweight scheduler/manual-trigger control plane, not a rewrite of the whole pipeline.
 
-Recommended function name:
+Function included in this repo:
 
 ```text
 refresh-articles
@@ -25,9 +25,19 @@ refresh-articles
 Required behavior:
 
 - Verify an `Authorization: Bearer <REFRESH_SECRET>` header.
-- Insert a row into a `pipeline_refresh_requests` table, or call a secured HTTPS endpoint that runs `python main.py` in a trusted worker.
+- Insert a row into `pipeline_refresh_requests`.
 - Return a JSON status for manual invocation.
 - Never expose Supabase service role, OpenRouter, Gemini, Google Fact Check, or Ollama tunnel secrets to the frontend.
+
+Apply the queue table first by pasting `backend/sql/create_pipeline_refresh_requests.sql` into the Supabase SQL Editor. If you move that SQL into a Supabase migration file later, `supabase db push` can apply it.
+
+Deploy the function:
+
+```bash
+supabase functions deploy refresh-articles
+supabase secrets set REFRESH_SECRET=<long-random-string>
+supabase secrets set SUPABASE_SERVICE_ROLE_KEY=<service-role-key>
+```
 
 ## Manual Invoke
 
@@ -61,7 +71,6 @@ select cron.schedule(
 
 ## TODO Before Enabling
 
-- Create `pipeline_refresh_requests` if using queue-based dispatch.
 - Decide where the trusted Python worker runs. It can be a local machine, GitHub Actions workflow dispatch, or another non-Railway runner.
 - Store `REFRESH_SECRET` and provider keys only in the trusted runner/Supabase secrets.
 - After each run, execute `python scripts/pipeline_health_check.py`.

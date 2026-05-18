@@ -63,6 +63,7 @@ frontend/samsun-newsapp.ait
 
 - [`PIPELINE_AUDIT.md`](./PIPELINE_AUDIT.md) — 수집/전처리/팩트라벨링/신조어/Supabase/프론트 상태표
 - [`DEPLOYMENT_APPS_IN_TOSS.md`](./DEPLOYMENT_APPS_IN_TOSS.md) — `.ait` 번들, 콘솔 업로드, QR 테스트 절차
+- [`docs/REFRESH_RUNBOOK.md`](./docs/REFRESH_RUNBOOK.md) — RSS 수동 refresh, AI backfill, Supabase Edge/Cron 절차
 - [`MODEL_SERVING_OLLAMA.md`](./MODEL_SERVING_OLLAMA.md) — Gemma 4 E4B LoRA/GGUF/Ollama/터널링 연동
 - [`TODO_FINAL_DEMO.md`](./TODO_FINAL_DEMO.md) — 발표 전 P0/P1 체크리스트
 
