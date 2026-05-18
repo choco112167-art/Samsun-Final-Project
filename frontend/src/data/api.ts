@@ -137,6 +137,14 @@ export async function fetchArticles(params: FetchArticlesParams = {}): Promise<A
   const { data, error } = await buildArticleQuery(params);
   if (error) throw new ApiError(500, supabaseErrorMessage('Supabase articles query failed', error));
   const articles = toArticleList(data as unknown as ApiArticle[]);
+  if (import.meta.env.DEV) {
+    console.info('[api] fetched articles', {
+      count: articles.length,
+      limit: params.limit ?? 20,
+      offset: params.offset ?? 0,
+      category: params.category ?? 'all',
+    });
+  }
   return params.category
     ? articles.filter(article => article.category === normalizeCategory(params.category))
     : articles;

@@ -160,6 +160,7 @@ export default function HomePage({ bm, onNavigateToFeed, onArticleClick, absence
   const breaking = baseArticles.filter(a => a.isBreaking);
   const filtered  = filterByCategory(baseArticles, filter);
   const newCount  = baseArticles.filter(a => a.isNew).length;
+  const isEmptyFeed = articles.length === 0;
 
   if (detail) return (
     <DetailPage
@@ -423,8 +424,19 @@ export default function HomePage({ bm, onNavigateToFeed, onArticleClick, absence
         )}
 
         {filtered.length === 0 && (
-          <div style={{ textAlign: 'center', padding: '60px 0', color: 'var(--color-text-tertiary)', fontSize: 14 }}>
-            해당 카테고리의 기사가 없어요
+          <div style={{ textAlign: 'center', padding: '60px 18px', color: 'var(--color-text-tertiary)', fontSize: 14, lineHeight: 1.65 }}>
+            {isEmptyFeed ? (
+              <>
+                <p style={{ color: 'var(--color-text-primary)', fontWeight: 700, marginBottom: 6 }}>
+                  표시할 기사가 아직 없어요
+                </p>
+                <p>
+                  Supabase 연결은 성공했지만 articles 조회 결과가 0건입니다.
+                </p>
+              </>
+            ) : (
+              '해당 카테고리의 기사가 없어요'
+            )}
           </div>
         )}
 

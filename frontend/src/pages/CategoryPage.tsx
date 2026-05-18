@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { fetchArticles } from '../data/api';
+import { ApiError, fetchArticles } from '../data/api';
 import { CATEGORIES, filterByCategory, articleDisplayTitle, type Article, type Category } from '../data/articles';
 import DetailPage from './DetailPage';
 import type { BookmarkHook } from '../hooks/useBookmarks';
@@ -19,9 +19,20 @@ export default function CategoryPage({ bm, onArticleClick, tone, onToneChange }:
   const [tab, setTab]           = useState<SubTab>('전체');
   const [detail, setDetail]     = useState<Article | null>(null);
   const [articles, setArticles] = useState<Article[]>([]);
+  const [error, setError]       = useState<string | null>(null);
 
   useEffect(() => {
-    fetchArticles({ limit: 100 }).then(setArticles).catch(() => {});
+    fetchArticles({ limit: 100 })
+      .then(data => {
+        setArticles(data);
+        setError(null);
+      })
+      .catch((err: unknown) => {
+        const message = err instanceof ApiError || err instanceof Error
+          ? err.message
+          : '기사를 불러오지 못했어요';
+        setError(message);
+      });
   }, []);
 
   // Article.category는 toArticle()에서 이미 normalizeCategory() 가 적용된 UI 카테고리.
@@ -111,9 +122,16 @@ export default function CategoryPage({ bm, onArticleClick, tone, onToneChange }:
           );
         })}
 
-        {sorted.length === 0 && (
-          <div style={{ textAlign: 'center', padding: '60px 0', color: 'var(--color-text-tertiary)', fontSize: 14 }}>
-            해당 카테고리의 기사가 없습니다
+        {error && (
+          <div style={{ textAlign: 'center', padding: '48px 14px', color: 'var(--color-text-tertiary)', fontSize: 13, lineHeight: 1.6, wordBreak: 'break-word' }}>
+            <p style={{ color: 'var(--color-text-primary)', fontWeight: 700, marginBottom: 6 }}>카테고리 기사를 불러오지 못했어요</p>
+            <p>{error}</p>
+          </div>
+        )}
+
+        {!error && sorted.length === 0 && (
+          <div style={{ textAlign: 'center', padding: '60px 14px', color: 'var(--color-text-tertiary)', fontSize: 14, lineHeight: 1.65 }}>
+            {articles.length === 0 ? 'Supabase 연결은 성공했지만 articles 조회 결과가 0건입니다.' : '해당 카테고리의 기사가 없습니다'}
           </div>
         )}
       </main>

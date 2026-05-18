@@ -91,7 +91,10 @@ export default function DetailPage({ article, bookmarked, onBookmark, onBack, to
         setNeologisms(mergeEntries(termEntries, articleEntries, dictionary));
         setSourceOverride((extras.source_url ?? '').trim());
       })
-      .catch(() => {
+      .catch((err: unknown) => {
+        if (import.meta.env.DEV) {
+          console.warn('[DetailPage] optional neologism/source lookup failed', err);
+        }
         if (!cancelled) {
           setNeologisms([]);
           setSourceOverride('');
