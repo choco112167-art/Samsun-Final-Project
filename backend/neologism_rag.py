@@ -136,6 +136,11 @@ def _extract_candidate_terms(blob: str, max_terms: int = 18) -> list[str]:
     return out[:max_terms]
 
 
+def detect_neologism_terms(title: str, body: str, max_terms: int = 18) -> list[str]:
+    """Public, no-network candidate extractor for article-level slang/new-word tracking."""
+    return _extract_candidate_terms(f"{title or ''}\n{body or ''}", max_terms=max_terms)
+
+
 def _rpc_match(embedding: list[float]) -> dict[str, Any] | None:
     if _sb is None:
         return None

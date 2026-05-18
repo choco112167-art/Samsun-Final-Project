@@ -565,6 +565,7 @@ backend/sql/add_article_ai_status.sql
 
 ```bash
 python scripts/check_articles_health.py
+python scripts/pipeline_health_check.py
 cd frontend
 npm run dev
 ```

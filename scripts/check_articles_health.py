@@ -10,6 +10,8 @@ DB field mapping:
 
 from __future__ import annotations
 
+from datetime import datetime, timedelta, timezone
+
 from article_pipeline_common import configure_stdio, get_supabase_client, supported_article_columns
 
 
@@ -19,6 +21,29 @@ def _count(sb, filter_expr: str | None = None) -> int:
         query = query.or_(filter_expr)
     result = query.execute()
     return int(result.count or 0)
+
+
+def _count_since(sb, column: str, iso_value: str) -> int:
+    result = (
+        sb.table("articles")
+        .select("url_hash", count="exact")
+        .gte(column, iso_value)
+        .execute()
+    )
+    return int(result.count or 0)
+
+
+def _newest_value(sb, column: str) -> str:
+    rows = (
+        sb.table("articles")
+        .select(column)
+        .order(column, desc=True, nullsfirst=False)
+        .limit(1)
+        .execute()
+        .data
+        or []
+    )
+    return str(rows[0].get(column) or "") if rows else ""
 
 
 def _mock_rows(sb, limit: int = 20) -> list[dict]:
@@ -51,16 +76,46 @@ def main() -> int:
             "detected_at",
             "created_at",
             "collected_at",
+            "updated_at",
+            "fact_status",
+            "slang_terms",
+            "neologism_terms",
+            "slang_processed_at",
+            "source_url",
+            "crawled_text",
+            "body",
         ),
+    )
+
+    now = datetime.now(timezone.utc)
+    since_24h = (now - timedelta(hours=24)).isoformat()
+    freshness_column = (
+        "updated_at" if "updated_at" in meta_fields
+        else "collected_at" if "collected_at" in meta_fields
+        else "created_at" if "created_at" in meta_fields
+        else ""
+    )
+    body_column = (
+        "crawled_text" if "crawled_text" in meta_fields
+        else "body" if "body" in meta_fields
+        else "content"
+    )
+    slang_column = (
+        "slang_terms" if "slang_terms" in meta_fields
+        else "neologism_terms" if "neologism_terms" in meta_fields
+        else ""
     )
 
     total = _count(sb)
     missing_title_ko = _count(sb, "title_ko.is.null,title_ko.eq.")
     missing_url = _count(sb, "url.is.null,url.eq.")
     missing_translation = _count(sb, "translation.is.null,translation.eq.")
-    missing_content = _count(sb, "content.is.null,content.eq.")
+    missing_content = _count(sb, f"{body_column}.is.null,{body_column}.eq.")
     missing_summary_formal = _count(sb, "summary_formal.is.null,summary_formal.eq.")
     missing_summary_casual = _count(sb, "summary_casual.is.null,summary_casual.eq.")
+    missing_fact = _count(sb, "fact_label.is.null,fact_label.eq.")
+    missing_slang = _count(sb, f"{slang_column}.is.null") if slang_column else None
+    inserted_or_updated_24h = _count_since(sb, freshness_column, since_24h) if freshness_column else None
     mock_rows = _mock_rows(sb)
     completed_inferred = total - _count(
         sb,
@@ -92,14 +147,21 @@ def main() -> int:
     print(f"missing_title_ko: {missing_title_ko}")
     print(f"missing_original_url(url): {missing_url}")
     print(f"missing_translation: {missing_translation}")
-    print(f"missing_original_body(content): {missing_content}")
+    print(f"body_field_checked: {body_column}")
+    print(f"missing_original_body: {missing_content}")
     print(f"missing_summary_formal: {missing_summary_formal}")
     print(f"missing_summary_casual: {missing_summary_casual}")
+    print(f"missing_fact_label_or_status: {missing_fact}")
+    print(f"slang_field_checked: {slang_column or '(not migrated; neologisms table only)'}")
+    print(f"missing_slang_processing: {missing_slang if missing_slang is not None else '(not expected: no article slang field)'}")
     print(f"mock_ai_outputs_detected: {len(mock_rows)}")
     print(f"ai_completed_inferred: {completed_inferred}")
     print(f"ai_pending_inferred: {pending_inferred}")
     print(f"ai_meta_columns: {','.join(sorted(meta_fields)) or '(not migrated)'}")
     print(f"newest_published_at: {(newest[0].get('published_at') if newest else '')}")
+    print(f"freshness_column_checked: {freshness_column or '(none)'}")
+    print(f"newest_inserted_or_updated_at: {_newest_value(sb, freshness_column) if freshness_column else ''}")
+    print(f"articles_inserted_or_updated_last_24h: {inserted_or_updated_24h if inserted_or_updated_24h is not None else '(unknown: no timestamp column)'}")
     print(f"oldest_published_at: {(oldest[0].get('published_at') if oldest else '')}")
 
     recent_select = [
@@ -121,6 +183,9 @@ def main() -> int:
         "ai_provider",
         "ai_model",
     ):
+        if optional in meta_fields:
+            recent_select.append(optional)
+    for optional in ("updated_at", "fact_status", "slang_processed_at"):
         if optional in meta_fields:
             recent_select.append(optional)
 

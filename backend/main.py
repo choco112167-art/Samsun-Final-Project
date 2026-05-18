@@ -1,9 +1,9 @@
 """
 backend/main.py — 삼선뉴스 FastAPI 서버
 
-프론트(토스 미니앱)에서 오는 모든 HTTP 요청을 받아서
-Supabase DB 조회, pgvector RAG 추천, 검색 결과를 돌려주는 백엔드 서버.
-Railway에 배포되어 24시간 돌아간다.
+관리/로컬 디버깅용 HTTP 요청을 받아서 Supabase DB 조회,
+pgvector RAG 추천, 검색 결과를 돌려주는 보조 서버.
+Apps in Toss `.ait` 런타임은 이 서버를 필요로 하지 않는다.
 
 API 응답 형식 (안정성):
   프론트엔드·클라이언트가 필드별로 파싱하므로 엔드포인트마다 바디 형태가 다릅니다.
@@ -298,7 +298,7 @@ def search(q: str, top_k: int = 10, threshold: float = 0.4):
 @app.get("/health")
 def health():
     """
-    서버 생존 확인. Railway 모니터링 등에 사용.
+    서버 생존 확인. 로컬/관리용 모니터링에 사용.
     """
     return {"status": "ok"}
 

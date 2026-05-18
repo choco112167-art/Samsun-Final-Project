@@ -31,6 +31,7 @@ load_dotenv()
 
 logger = logging.getLogger(__name__)
 _AI_META_COLUMNS: set[str] | None = None
+_ARTICLE_OPTIONAL_COLUMNS: set[str] | None = None
 
 
 def _truthy_env(name: str, default: str = "1") -> bool:
@@ -102,6 +103,32 @@ def _article_ai_meta_columns() -> set[str]:
     return available
 
 
+def _article_optional_columns() -> set[str]:
+    """Optional article columns that may exist in newer Supabase migrations."""
+    global _ARTICLE_OPTIONAL_COLUMNS
+    if _ARTICLE_OPTIONAL_COLUMNS is not None:
+        return _ARTICLE_OPTIONAL_COLUMNS
+    candidates = {
+        "source_url",
+        "crawled_text",
+        "body",
+        "slang_terms",
+        "neologism_terms",
+        "slang_processed_at",
+        "fact_status",
+        "updated_at",
+    }
+    available: set[str] = set()
+    for column in candidates:
+        try:
+            sb.table("articles").select(column).limit(1).execute()
+            available.add(column)
+        except Exception:
+            pass
+    _ARTICLE_OPTIONAL_COLUMNS = available
+    return available
+
+
 def _attach_ai_meta(payload: dict, article: dict) -> None:
     columns = _article_ai_meta_columns()
     if not columns:
@@ -124,6 +151,56 @@ def _attach_ai_meta(payload: dict, article: dict) -> None:
         payload["content_chars"] = len(str(article.get("content") or ""))
     if "translation_chars" in columns:
         payload["translation_chars"] = len(str(article.get("translation") or ""))
+
+
+def _attach_optional_article_fields(payload: dict, article: dict, url_hash: str, label_out: str) -> None:
+    columns = _article_optional_columns()
+    if not columns:
+        return
+
+    source_url = article.get("source_url") or article.get("url")
+    if "source_url" in columns and source_url:
+        payload["source_url"] = source_url
+
+    content = article.get("content")
+    if "crawled_text" in columns and content:
+        payload["crawled_text"] = content
+    if "body" in columns and content:
+        payload["body"] = content
+
+    if "fact_status" in columns:
+        payload["fact_status"] = label_out
+
+    if "updated_at" in columns:
+        payload["updated_at"] = datetime.now(timezone.utc).isoformat()
+
+    if "slang_terms" in columns:
+        payload["slang_terms"] = article.get("slang_terms") or []
+    if "neologism_terms" in columns:
+        payload["neologism_terms"] = article.get("slang_terms") or article.get("neologism_terms") or []
+    if "slang_processed_at" in columns:
+        payload["slang_processed_at"] = datetime.now(timezone.utc).isoformat()
+
+
+def _detect_article_slang_terms(article: dict) -> list[str]:
+    provided = article.get("slang_terms") or article.get("neologism_terms")
+    if isinstance(provided, str):
+        return [provided] if provided.strip() else []
+    if provided:
+        return [str(term) for term in provided if str(term).strip()]
+
+    try:
+        from backend.neologism_rag import detect_neologism_terms
+
+        return detect_neologism_terms(
+            article.get("title") or article.get("title_ko") or "",
+            "\n".join(
+                str(article.get(field) or "")
+                for field in ("content", "translation", "summary_formal", "summary_casual")
+            ),
+        )
+    except Exception:
+        return []
 
 # Supabase 클라이언트 생성
 _settings = get_settings()
@@ -207,6 +284,7 @@ def save_articles(articles: list[dict]) -> int:
 
     batch: list[dict] = []
     pending_fact_checks: list[tuple[str, list[dict]]] = []
+    pending_neologisms: list[tuple[str, list[str]]] = []
 
     for a in articles:
         url = a.get("url", "") or ""
@@ -270,6 +348,9 @@ def save_articles(articles: list[dict]) -> int:
         embedding = make_embedding(combined)
 
         uh = make_url_hash(url)
+        slang_terms = _detect_article_slang_terms(a)
+        if slang_terms:
+            a["slang_terms"] = slang_terms
 
         payload = {
             "url_hash":          uh,
@@ -291,8 +372,12 @@ def save_articles(articles: list[dict]) -> int:
             "summary_casual":    a.get("summary_casual"),
             "embedding":         embedding,
         }
+        _attach_optional_article_fields(payload, a, uh, label_out)
         _attach_ai_meta(payload, a)
         batch.append(payload)
+
+        if slang_terms:
+            pending_neologisms.append((uh, slang_terms))
 
         if claims_payload:
             pending_fact_checks.append((uh, claims_payload))
@@ -303,6 +388,9 @@ def save_articles(articles: list[dict]) -> int:
 
     sb.table("articles").upsert(batch, on_conflict="url_hash").execute()
     print(f"[DB] articles {len(batch)}건 저장 완료")
+
+    for url_hash, terms in pending_neologisms:
+        save_neologisms(terms, url_hash)
 
     for url_hash, claims in pending_fact_checks:
         save_fact_checks(url_hash, claims)
