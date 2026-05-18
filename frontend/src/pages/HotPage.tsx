@@ -3,6 +3,7 @@ import { fetchHot } from '../data/api';
 import { articleDisplayTitle, type Article } from '../data/articles';
 import DetailPage from './DetailPage';
 import type { BookmarkHook } from '../hooks/useBookmarks';
+import type { SummaryTone } from '../hooks/useTonePreference';
 
 type HotArticle = Article & { view_count?: number };
 
@@ -10,9 +11,11 @@ interface Props {
   bm: BookmarkHook;
   userId?: string;
   onArticleClick?: (urlHash: string) => void;
+  tone: SummaryTone;
+  onToneChange: (tone: SummaryTone) => void;
 }
 
-export default function HotPage({ bm, userId: _userId, onArticleClick }: Props) {
+export default function HotPage({ bm, userId: _userId, onArticleClick, tone, onToneChange }: Props) {
   const today = new Date();
   const [year, setYear]   = useState(today.getFullYear());
   const [month, setMonth] = useState(today.getMonth());
@@ -54,7 +57,7 @@ export default function HotPage({ bm, userId: _userId, onArticleClick }: Props) 
   };
 
   if (detail) return (
-    <DetailPage article={detail} bookmarked={bm.isBookmarked(detail.urlHash)} onBookmark={bm.toggle} onBack={() => setDetail(null)} />
+    <DetailPage article={detail} bookmarked={bm.isBookmarked(detail.urlHash)} onBookmark={bm.toggle} onBack={() => setDetail(null)} tone={tone} onToneChange={onToneChange} />
   );
 
   return (

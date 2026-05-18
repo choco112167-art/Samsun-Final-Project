@@ -1,8 +1,9 @@
 import { useState, useRef, useCallback } from 'react';
 import { searchArticles } from '../data/api';
-import { articleDisplayTitle, type Article } from '../data/articles';
+import { articleDisplayTitle, articleSummaryForTone, type Article } from '../data/articles';
 import DetailPage from './DetailPage';
 import type { BookmarkHook } from '../hooks/useBookmarks';
+import type { SummaryTone } from '../hooks/useTonePreference';
 
 /** SearchResult를 Article로 변환하되 similarity는 보존 */
 type SearchItem = Article & { similarity?: number };
@@ -30,9 +31,11 @@ function saveRecent(q: string, prev: string[]): string[] {
 interface Props {
   bm: BookmarkHook;
   onArticleClick?: (urlHash: string) => void;
+  tone: SummaryTone;
+  onToneChange: (tone: SummaryTone) => void;
 }
 
-export default function SearchPage({ bm, onArticleClick }: Props) {
+export default function SearchPage({ bm, onArticleClick, tone, onToneChange }: Props) {
   const [query, setQuery]         = useState('');
   const [submitted, setSubmitted] = useState('');
   const [results, setResults]     = useState<SearchItem[]>([]);
@@ -78,6 +81,8 @@ export default function SearchPage({ bm, onArticleClick }: Props) {
       bookmarked={bm.isBookmarked(detail.urlHash)}
       onBookmark={bm.toggle}
       onBack={() => setDetail(null)}
+      tone={tone}
+      onToneChange={onToneChange}
     />
   );
 
@@ -211,7 +216,7 @@ export default function SearchPage({ bm, onArticleClick }: Props) {
                       </div>
                       <p style={{ fontSize: 13, fontWeight: 600, color: 'var(--color-text-primary)', lineHeight: 1.4, marginBottom: 5 }}>{articleDisplayTitle(article)}</p>
                       <p style={{ fontSize: 12, color: 'var(--color-text-secondary)', lineHeight: 1.5, display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
-                        {article.summaryFormal || '요약이 아직 없습니다.'}
+                        {articleSummaryForTone(article, tone) || '요약이 아직 없습니다.'}
                       </p>
                       <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 8 }}>
                         <button onClick={e => { e.stopPropagation(); bm.toggle(article.urlHash, article); }} style={{

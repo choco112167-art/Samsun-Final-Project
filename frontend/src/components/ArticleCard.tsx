@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { Badge } from './Badge';
 import type { Article } from '../data/articles';
 import type { ApiArticle } from '../data/api';
+import type { SummaryTone } from '../hooks/useTonePreference';
 
 export type CardArticle = Article | ApiArticle;
 
@@ -14,9 +15,13 @@ function cardHeadline(article: CardArticle): string {
   return ko || fb;
 }
 
-function pickSummary(article: CardArticle): string {
-  if ('summaryFormal' in article && article.summaryFormal?.trim()) return article.summaryFormal.trim();
-  if ('summary_formal' in article && article.summary_formal?.trim()) return article.summary_formal.trim();
+function pickSummary(article: CardArticle, tone: SummaryTone): string {
+  if ('summaryFormal' in article) {
+    const selected = tone === 'formal' ? article.summaryFormal : article.summaryCasual;
+    return selected?.trim() ?? '';
+  }
+  const selected = tone === 'formal' ? article.summary_formal : article.summary_casual;
+  if (selected?.trim()) return selected.trim();
   return '';
 }
 
@@ -44,12 +49,13 @@ interface Props {
   onBookmark?: (id: string, article?: Article) => void;
   onClick?: () => void;
   style?: React.CSSProperties;
+  tone?: SummaryTone;
 }
 
-export default function ArticleCard({ article, bookmarked = false, onBookmark, onClick, style }: Props) {
+export default function ArticleCard({ article, bookmarked = false, onBookmark, onClick, style, tone = 'formal' }: Props) {
   const [copied, setCopied] = useState(false);
 
-  const summary = pickSummary(article);
+  const summary = pickSummary(article, tone);
   const factLabel = pickFactLabel(article);
   const sourceColor = pickSourceColor(article);
   const urlHash = 'urlHash' in article && article.urlHash

@@ -3,6 +3,7 @@ import { fetchArticles } from '../data/api';
 import { CATEGORIES, filterByCategory, articleDisplayTitle, type Article, type Category } from '../data/articles';
 import DetailPage from './DetailPage';
 import type { BookmarkHook } from '../hooks/useBookmarks';
+import type { SummaryTone } from '../hooks/useTonePreference';
 
 type SubTab = '전체' | Category;
 const CATEGORY_TABS: SubTab[] = ['전체', ...CATEGORIES];
@@ -10,9 +11,11 @@ const CATEGORY_TABS: SubTab[] = ['전체', ...CATEGORIES];
 interface Props {
   bm: BookmarkHook;
   onArticleClick?: (urlHash: string) => void;
+  tone: SummaryTone;
+  onToneChange: (tone: SummaryTone) => void;
 }
 
-export default function CategoryPage({ bm, onArticleClick }: Props) {
+export default function CategoryPage({ bm, onArticleClick, tone, onToneChange }: Props) {
   const [tab, setTab]           = useState<SubTab>('전체');
   const [detail, setDetail]     = useState<Article | null>(null);
   const [articles, setArticles] = useState<Article[]>([]);
@@ -27,7 +30,7 @@ export default function CategoryPage({ bm, onArticleClick }: Props) {
   const sorted   = [...filtered].sort((a, b) => (b.credibilityScore ?? 0) - (a.credibilityScore ?? 0));
 
   if (detail) return (
-    <DetailPage article={detail} bookmarked={bm.isBookmarked(detail.urlHash)} onBookmark={bm.toggle} onBack={() => setDetail(null)} />
+    <DetailPage article={detail} bookmarked={bm.isBookmarked(detail.urlHash)} onBookmark={bm.toggle} onBack={() => setDetail(null)} tone={tone} onToneChange={onToneChange} />
   );
 
   return (

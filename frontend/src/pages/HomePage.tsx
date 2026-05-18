@@ -14,6 +14,8 @@ import {
 import type { AbsenceSummaryResponse, AbsenceArticle } from '../data/api';
 import DetailPage from './DetailPage';
 import type { BookmarkHook } from '../hooks/useBookmarks';
+import TonePreferenceControl from '../components/TonePreferenceControl';
+import { type SummaryTone } from '../hooks/useTonePreference';
 
 // CategoryPage 와 동일한 데이터 풀 크기를 보장해야 카테고리 칩 별 매핑 결과가
 // 두 화면에서 동일하게 나온다 (이슈 #15). 너무 작으면 최신 N개 안에 특정 카테고리가
@@ -30,9 +32,11 @@ interface Props {
   onArticleClick?: (urlHash: string) => void;
   absenceData?: AbsenceSummaryResponse | null;
   onAbsenceDismiss?: () => void;
+  tone: SummaryTone;
+  onToneChange: (tone: SummaryTone) => void;
 }
 
-export default function HomePage({ bm, onNavigateToFeed, onArticleClick, absenceData, onAbsenceDismiss, interests = [] }: Props) {
+export default function HomePage({ bm, onNavigateToFeed, onArticleClick, absenceData, onAbsenceDismiss, interests = [], tone, onToneChange }: Props) {
   const [articles, setArticles]       = useState<Article[]>([]);
   const [loading, setLoading]         = useState(true);
   const [error, setError]             = useState<string | null>(null);
@@ -154,6 +158,8 @@ export default function HomePage({ bm, onNavigateToFeed, onArticleClick, absence
       bookmarked={bm.isBookmarked(detail.urlHash)}
       onBookmark={bm.toggle}
       onBack={() => setDetail(null)}
+      tone={tone}
+      onToneChange={onToneChange}
     />
   );
 
@@ -226,7 +232,7 @@ export default function HomePage({ bm, onNavigateToFeed, onArticleClick, absence
               </p>
               {article.summary_formal && (
                 <p style={{ fontSize: 12, color: 'var(--color-text-secondary)', lineHeight: 1.6 }}>
-                  {article.summary_formal}
+                  {tone === 'formal' ? article.summary_formal : '요약이 아직 없습니다.'}
                 </p>
               )}
             </div>
@@ -265,6 +271,10 @@ export default function HomePage({ bm, onNavigateToFeed, onArticleClick, absence
               }} />
             )}
           </button>
+        </div>
+
+        <div style={{ marginTop: 14, maxWidth: 190 }}>
+          <TonePreferenceControl tone={tone} onChange={onToneChange} compact />
         </div>
 
         {/* 카테고리 필터 — 8개 */}
@@ -351,6 +361,7 @@ export default function HomePage({ bm, onNavigateToFeed, onArticleClick, absence
             bookmarked={bm.isBookmarked(article.urlHash)}
             onBookmark={bm.toggle}
             onClick={() => { onArticleClick?.(article.urlHash); setDetail(article); }}
+            tone={tone}
             style={{ animation: `cardIn 0.3s ${0.06 + Math.min(i, 10) * 0.05}s ease both` }}
           />
         ))}

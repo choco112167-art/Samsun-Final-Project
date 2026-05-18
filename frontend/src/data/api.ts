@@ -45,6 +45,7 @@ export interface ApiArticle {
   id?: string | number;
   url_hash: string;
   url: string;
+  source_url?: string;
   title: string;
   title_ko?: string;
   source: string;
@@ -60,6 +61,8 @@ export interface ApiArticle {
   translation: string;
   summary_formal: string;
   summary_casual: string;
+  slang_terms?: string[];
+  neologism_terms?: string[];
   ai_status?: 'pending' | 'processing' | 'completed' | 'failed' | 'skipped';
   ai_provider?: 'mock' | 'openrouter' | 'gemini' | 'local' | string;
   ai_model?: string;
@@ -78,6 +81,15 @@ export interface FetchArticlesParams {
   limit?: number;
   offset?: number;
   is_breaking?: boolean;
+}
+
+export interface NeologismEntry {
+  term: string;
+  explanation?: string | null;
+  ko_suggestion?: string | null;
+  occurrence_count?: number | null;
+  confirmed?: boolean | null;
+  first_seen_url_hash?: string | null;
 }
 
 export interface OnboardingRequest { user_id: string; interest_tags: string[]; }
@@ -129,6 +141,90 @@ export async function fetchArticleByHash(urlHash: string): Promise<ApiArticle> {
   if (error) throw new ApiError(500, error.message);
   if (!data) throw new ApiError(404, 'Article not found');
   return data as unknown as ApiArticle;
+}
+
+export async function fetchArticleExtras(urlHash: string): Promise<Partial<ApiArticle>> {
+  requireSupabase();
+  const extras: Partial<ApiArticle> = {};
+
+  const sourceResult = await supabase
+    .from('articles')
+    .select('source_url')
+    .eq('url_hash', urlHash)
+    .maybeSingle();
+  if (!sourceResult.error && sourceResult.data) {
+    extras.source_url = (sourceResult.data as Partial<ApiArticle>).source_url;
+  } else if (sourceResult.error && import.meta.env.DEV) {
+    console.warn('[api] optional source_url unavailable', sourceResult.error.message);
+  }
+
+  const slangResult = await supabase
+    .from('articles')
+    .select('slang_terms,neologism_terms')
+    .eq('url_hash', urlHash)
+    .maybeSingle();
+  if (!slangResult.error && slangResult.data) {
+    const data = slangResult.data as Partial<ApiArticle>;
+    extras.slang_terms = data.slang_terms;
+    extras.neologism_terms = data.neologism_terms;
+  } else if (slangResult.error && import.meta.env.DEV) {
+    console.warn('[api] optional slang fields unavailable', slangResult.error.message);
+  }
+
+  return extras;
+}
+
+export async function fetchNeologismDictionary(limit = 300): Promise<NeologismEntry[]> {
+  requireSupabase();
+  const { data, error } = await supabase
+    .from('neologisms')
+    .select('term,explanation,ko_suggestion,occurrence_count,confirmed,first_seen_url_hash')
+    .not('explanation', 'is', null)
+    .order('occurrence_count', { ascending: false })
+    .limit(limit);
+  if (error) {
+    if (import.meta.env.DEV) {
+      console.warn('[api] neologism dictionary unavailable', error.message);
+    }
+    return [];
+  }
+  return ((data ?? []) as NeologismEntry[]).filter(entry => entry.term?.trim() && entry.explanation?.trim());
+}
+
+export async function fetchArticleNeologisms(urlHash: string): Promise<NeologismEntry[]> {
+  requireSupabase();
+  const { data, error } = await supabase
+    .from('neologisms')
+    .select('term,explanation,ko_suggestion,occurrence_count,confirmed,first_seen_url_hash')
+    .eq('first_seen_url_hash', urlHash)
+    .not('explanation', 'is', null)
+    .limit(50);
+  if (error) {
+    if (import.meta.env.DEV) {
+      console.warn('[api] article neologisms unavailable', error.message);
+    }
+    return [];
+  }
+  return ((data ?? []) as NeologismEntry[]).filter(entry => entry.term?.trim() && entry.explanation?.trim());
+}
+
+export async function fetchNeologismsByTerms(terms: string[]): Promise<NeologismEntry[]> {
+  requireSupabase();
+  const uniqueTerms = [...new Set(terms.map(term => term.trim()).filter(Boolean))].slice(0, 50);
+  if (uniqueTerms.length === 0) return [];
+  const { data, error } = await supabase
+    .from('neologisms')
+    .select('term,explanation,ko_suggestion,occurrence_count,confirmed,first_seen_url_hash')
+    .in('term', uniqueTerms)
+    .not('explanation', 'is', null)
+    .limit(50);
+  if (error) {
+    if (import.meta.env.DEV) {
+      console.warn('[api] per-article neologism lookup unavailable', error.message);
+    }
+    return [];
+  }
+  return ((data ?? []) as NeologismEntry[]).filter(entry => entry.term?.trim() && entry.explanation?.trim());
 }
 
 export async function postOnboarding(userId: string, interestTags: string[]): Promise<OnboardingResponse> {
@@ -309,6 +405,7 @@ function articleToApiLike(article: Article, similarity?: number, reason?: string
   return {
     url_hash: article.urlHash,
     url: article.url,
+    source_url: article.sourceUrl,
     title: article.title,
     title_ko: article.titleKo,
     source: article.source,
@@ -324,6 +421,8 @@ function articleToApiLike(article: Article, similarity?: number, reason?: string
     translation: article.translation,
     summary_formal: article.summaryFormal,
     summary_casual: article.summaryCasual,
+    slang_terms: article.slangTerms,
+    neologism_terms: article.slangTerms,
     ai_status: article.aiStatus,
     ai_provider: article.aiProvider,
     ai_model: article.aiModel,

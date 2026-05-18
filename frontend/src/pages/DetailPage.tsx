@@ -1,50 +1,24 @@
-import { useEffect, useState, useRef, type MouseEvent } from 'react';
-import { articleDisplayTitle, type Article } from '../data/articles';
+import { useEffect, useMemo, useState, type MouseEvent } from 'react';
+import { articleDisplayTitle, articleSummaryForTone, type Article } from '../data/articles';
+import {
+  fetchArticleExtras,
+  fetchArticleNeologisms,
+  fetchNeologismDictionary,
+  fetchNeologismsByTerms,
+  type NeologismEntry,
+} from '../data/api';
 import { tossOpenURL } from '../lib/toss';
-
-type SummaryTone = 'formal' | 'casual';
+import NeologismText from '../components/NeologismText';
+import TonePreferenceControl from '../components/TonePreferenceControl';
+import { toneLabel, type SummaryTone } from '../hooks/useTonePreference';
 
 interface Props {
   article: Article;
   bookmarked: boolean;
   onBookmark: (id: string, article?: Article) => void;
   onBack: () => void;
-}
-
-const JARGON: Record<string, string> = {
-  'RAG': '검색 증강 생성(Retrieval-Augmented Generation). LLM이 외부 문서를 검색해 답변을 생성하는 기법',
-  'LLM': '대규모 언어 모델(Large Language Model). GPT, Claude 같은 대형 AI 언어 모델',
-  'GPU': '그래픽 처리 장치. AI 학습·추론에 핵심적으로 쓰이는 병렬 연산 칩',
-  'API': '소프트웨어 간 통신을 위한 인터페이스(Application Programming Interface)',
-  'NPU': '신경망 처리 장치(Neural Processing Unit). AI 연산 전용 칩',
-  'SLM': '소형 언어 모델(Small Language Model). 온디바이스에서 동작 가능한 경량 AI 모델',
-  'MMLU': 'AI 모델의 다분야 언어 이해 능력을 평가하는 벤치마크',
-  'AGI': '범용 인공지능(Artificial General Intelligence). 인간 수준의 일반 지능을 갖춘 AI',
-  'RLHF': '인간 피드백 강화학습. AI 출력을 사람이 평가해 모델을 개선하는 방법',
-  '파인튜닝': '사전학습된 모델을 특정 목적에 맞게 추가 학습하는 과정(Fine-tuning)',
-  '임베딩': '텍스트·이미지 등을 수치 벡터로 변환하는 표현 방식(Embedding)',
-  '할루시네이션': 'AI가 사실이 아닌 내용을 그럴듯하게 생성하는 현상(Hallucination)',
-  'MoE': '혼합 전문가(Mixture of Experts). 여러 전문 네트워크를 조합해 효율을 높이는 구조',
-  'CoT': '연쇄적 사고(Chain of Thought). AI가 단계별로 추론 과정을 서술하는 방식',
-  '멀티모달': '텍스트·이미지·음성 등 여러 형태의 데이터를 동시에 처리하는 AI 능력',
-};
-
-function HighlightedText({ text, onTap }: { text: string; onTap: (word: string, el: HTMLElement) => void }) {
-  if (!text) return null;
-  const pattern = new RegExp(`(${Object.keys(JARGON).map(k => k.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|')})`, 'g');
-  const parts = text.split(pattern);
-  return (
-    <>
-      {parts.map((part, i) =>
-        JARGON[part] ? (
-          <span key={i} onClick={e => { e.stopPropagation(); onTap(part, e.currentTarget as HTMLElement); }} style={{
-            color: 'var(--color-primary)', borderBottom: '1px dashed var(--color-primary)',
-            cursor: 'pointer', fontWeight: 500,
-          }}>{part}</span>
-        ) : <span key={i}>{part}</span>
-      )}
-    </>
-  );
+  tone: SummaryTone;
+  onToneChange: (tone: SummaryTone) => void;
 }
 
 function CopyBtn({ copied, onClick }: { copied: boolean; onClick: () => void }) {
@@ -73,35 +47,58 @@ function isExternalHttpUrl(url: string): boolean {
   }
 }
 
-export default function DetailPage({ article, bookmarked, onBookmark, onBack }: Props) {
+function mergeEntries(...groups: NeologismEntry[][]): NeologismEntry[] {
+  const byTerm = new Map<string, NeologismEntry>();
+  groups.flat().forEach(entry => {
+    const key = entry.term.trim().toLocaleLowerCase();
+    if (!key || !entry.explanation?.trim()) return;
+    if (!byTerm.has(key)) byTerm.set(key, entry);
+  });
+  return [...byTerm.values()];
+}
+
+export default function DetailPage({ article, bookmarked, onBookmark, onBack, tone, onToneChange }: Props) {
   const [copiedFormal, setCopiedFormal] = useState(false);
   const [copiedShare,  setCopiedShare]  = useState(false);
-  const [summaryTone, setSummaryTone] = useState<SummaryTone>(() =>
-    article.summaryFormal.trim() || !article.summaryCasual.trim() ? 'formal' : 'casual',
-  );
   const [translationOpen, setTranslationOpen] = useState(false);
-  const [tooltip, setTooltip] = useState<{ word: string; top: number } | null>(null);
-  const mainRef = useRef<HTMLDivElement>(null);
+  const [neologisms, setNeologisms] = useState<NeologismEntry[]>([]);
+  const [sourceOverride, setSourceOverride] = useState('');
 
   const translation = article.translation.trim();
-  const summaryFormal = article.summaryFormal.trim();
-  const summaryCasual = article.summaryCasual.trim();
-  const hasFormalSummary = Boolean(summaryFormal);
-  const hasCasualSummary = Boolean(summaryCasual);
-  const hasAnySummary = hasFormalSummary || hasCasualSummary;
-  const selectedSummary = summaryTone === 'formal' ? summaryFormal : summaryCasual;
-  const selectedToneLabel = summaryTone === 'formal' ? '격식체' : '일상체';
-  const selectedSummaryMessage = hasAnySummary ? '선택한 스타일의 요약이 아직 없습니다.' : '요약이 아직 없습니다.';
+  const selectedSummary = articleSummaryForTone(article, tone);
+  const selectedToneLabel = toneLabel(tone);
+  const visibleNeologisms = useMemo(() => {
+    const haystack = `${selectedSummary}\n${translation}`.toLocaleLowerCase();
+    return neologisms.filter(entry => haystack.includes(entry.term.toLocaleLowerCase()));
+  }, [neologisms, selectedSummary, translation]);
 
   useEffect(() => {
-    if (hasFormalSummary) {
-      setSummaryTone('formal');
-    } else if (hasCasualSummary) {
-      setSummaryTone('casual');
-    } else {
-      setSummaryTone('formal');
-    }
-  }, [article.urlHash, hasFormalSummary, hasCasualSummary]);
+    let cancelled = false;
+    Promise.all([
+      fetchNeologismDictionary(),
+      fetchArticleNeologisms(article.urlHash),
+      fetchArticleExtras(article.urlHash),
+    ])
+      .then(async ([dictionary, articleEntries, extras]) => {
+        if (cancelled) return;
+        const articleTerms = [
+          ...(extras.neologism_terms ?? []),
+          ...(extras.slang_terms ?? []),
+          ...article.slangTerms,
+        ];
+        const termEntries = await fetchNeologismsByTerms(articleTerms);
+        if (cancelled) return;
+        setNeologisms(mergeEntries(termEntries, articleEntries, dictionary));
+        setSourceOverride((extras.source_url ?? '').trim());
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setNeologisms([]);
+          setSourceOverride('');
+        }
+      });
+    return () => { cancelled = true; };
+  }, [article.urlHash, article.slangTerms]);
 
   const handleShare = () => {
     const lines = [`[${article.source}] ${articleDisplayTitle(article)}`];
@@ -114,13 +111,7 @@ export default function DetailPage({ article, bookmarked, onBookmark, onBack }: 
     setCopiedFormal(true); setTimeout(() => setCopiedFormal(false), 2000);
   };
 
-  const handleJargon = (word: string, el: HTMLElement) => {
-    const mainEl = mainRef.current;
-    if (!mainEl) return;
-    const top = el.getBoundingClientRect().bottom - mainEl.getBoundingClientRect().top + mainEl.scrollTop + 6;
-    setTooltip(prev => prev?.word === word ? null : { word, top });
-  };
-  const sourceUrl = (article.sourceUrl || article.url || '').trim();
+  const sourceUrl = (sourceOverride || article.sourceUrl || article.url || '').trim();
   const canOpenSource = isExternalHttpUrl(sourceUrl);
 
   useEffect(() => {
@@ -178,7 +169,7 @@ export default function DetailPage({ article, bookmarked, onBookmark, onBack }: 
       </header>
 
       {/* 본문 */}
-      <main ref={mainRef} onClick={() => setTooltip(null)} style={{ flex: 1, overflowY: 'auto', WebkitOverflowScrolling: 'touch', position: 'relative' }}>
+      <main style={{ flex: 1, overflowY: 'auto', WebkitOverflowScrolling: 'touch', position: 'relative' }}>
 
         {/* 제목 */}
         <div style={{ background: 'var(--color-surface)', padding: '20px 20px 16px', marginBottom: 8 }}>
@@ -190,44 +181,10 @@ export default function DetailPage({ article, bookmarked, onBookmark, onBack }: 
           </h1>
         </div>
 
-        {hasAnySummary && (
-          <div style={{ background: 'var(--color-surface)', padding: '14px 20px', marginBottom: 8 }}>
-            <p style={{ fontSize: 11, fontWeight: 600, color: 'var(--color-text-tertiary)', letterSpacing: '0.04em', textTransform: 'uppercase', marginBottom: 10 }}>요약 스타일</p>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, background: 'var(--color-surface-secondary)', borderRadius: 10, padding: 4 }}>
-              {([
-                ['formal', '격식체', hasFormalSummary],
-                ['casual', '일상체', hasCasualSummary],
-              ] as const).map(([tone, label, enabled]) => {
-                const active = summaryTone === tone;
-                return (
-                  <button
-                    key={tone}
-                    disabled={!enabled}
-                    onClick={() => enabled && setSummaryTone(tone)}
-                    style={{
-                      height: 36,
-                      borderRadius: 8,
-                      fontSize: 13,
-                      fontWeight: active ? 700 : 500,
-                      color: !enabled
-                        ? 'var(--color-text-tertiary)'
-                        : active
-                          ? 'var(--color-primary)'
-                          : 'var(--color-text-secondary)',
-                      background: active ? 'var(--color-surface)' : 'transparent',
-                      boxShadow: active ? '0 1px 4px rgba(0,0,0,0.08)' : 'none',
-                      opacity: enabled ? 1 : 0.45,
-                      cursor: enabled ? 'pointer' : 'not-allowed',
-                      transition: 'all 0.15s',
-                    }}
-                  >
-                    {label}
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-        )}
+        <div style={{ background: 'var(--color-surface)', padding: '14px 20px', marginBottom: 8 }}>
+          <p style={{ fontSize: 11, fontWeight: 600, color: 'var(--color-text-tertiary)', letterSpacing: '0.04em', textTransform: 'uppercase', marginBottom: 10 }}>요약 말투</p>
+          <TonePreferenceControl tone={tone} onChange={onToneChange} />
+        </div>
 
         {/* 3줄 요약 */}
         <div style={{ background: 'var(--color-surface)', padding: '16px 20px', marginBottom: 8 }}>
@@ -241,7 +198,7 @@ export default function DetailPage({ article, bookmarked, onBookmark, onBack }: 
               <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--color-primary)', background: 'var(--color-primary-light)', padding: '3px 8px', borderRadius: 6 }}>{selectedToneLabel}</span>
             </div>
             <p style={{ fontSize: 15, lineHeight: 1.78, color: selectedSummary ? 'var(--color-text-primary)' : 'var(--color-text-tertiary)', letterSpacing: '-0.01em', fontWeight: selectedSummary ? 500 : 400 }}>
-              {selectedSummary || selectedSummaryMessage}
+              {selectedSummary ? <NeologismText text={selectedSummary} entries={visibleNeologisms} /> : '요약이 아직 없습니다.'}
             </p>
           </div>
         </div>
@@ -263,39 +220,25 @@ export default function DetailPage({ article, bookmarked, onBookmark, onBack }: 
             <span style={{ fontSize: 12, color: 'var(--color-text-tertiary)' }}>{translationOpen ? '접기' : '펼치기'}</span>
           </button>
 
-          {/* 신조어 툴팁 */}
-          {translationOpen && tooltip && (
-            <div onClick={e => e.stopPropagation()} style={{
-              position: 'absolute', left: 16, right: 16, top: tooltip.top,
-              background: 'var(--color-surface)', border: '1px solid var(--color-border)',
-              borderRadius: 10, padding: '10px 14px', zIndex: 20,
-              boxShadow: '0 4px 16px rgba(0,0,0,0.12)', animation: 'tipIn 0.18s ease',
-            }}>
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
-                <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--color-primary)' }}>{tooltip.word}</span>
-                <button onClick={() => setTooltip(null)} style={{ fontSize: 18, color: 'var(--color-text-tertiary)', lineHeight: 1 }}>×</button>
-              </div>
-              <p style={{ fontSize: 12, color: 'var(--color-text-secondary)', lineHeight: 1.6 }}>{JARGON[tooltip.word]}</p>
-            </div>
-          )}
-
           {translationOpen && (
             translation ? (
               <>
                 <div style={{ background: 'var(--color-surface-secondary)', borderRadius: 10, padding: '12px 14px', marginBottom: 10 }}>
                   <p style={{ fontSize: 14, lineHeight: 1.78, color: 'var(--color-text-primary)', letterSpacing: '-0.01em', whiteSpace: 'pre-line' }}>
-                    <HighlightedText text={translation} onTap={handleJargon} />
+                    <NeologismText text={translation} entries={visibleNeologisms} />
                   </p>
                 </div>
 
-                <p style={{ fontSize: 11, color: 'var(--color-text-tertiary)' }}>
-                  파란색 단어를 탭하면 설명을 볼 수 있어요
-                </p>
+                {visibleNeologisms.length > 0 && (
+                  <p style={{ fontSize: 11, color: 'var(--color-text-tertiary)' }}>
+                    파란색 단어를 탭하거나 마우스를 올리면 설명을 볼 수 있어요
+                  </p>
+                )}
               </>
             ) : (
               <div style={{ background: 'var(--color-surface-secondary)', borderRadius: 10, padding: '14px', marginBottom: 10 }}>
                 <p style={{ fontSize: 13, lineHeight: 1.7, color: 'var(--color-text-tertiary)' }}>
-                  번역 전문은 아직 준비 중입니다.
+                  번역 전문이 아직 없습니다.
                 </p>
               </div>
             )

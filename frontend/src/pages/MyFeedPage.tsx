@@ -4,6 +4,7 @@ import type { Article } from '../data/articles';
 import ArticleCard from '../components/ArticleCard';
 import DetailPage from './DetailPage';
 import type { BookmarkHook } from '../hooks/useBookmarks';
+import type { SummaryTone } from '../hooks/useTonePreference';
 import type { Interest } from './OnboardingPage';
 
 type FeedItem = Article & { similarity?: number; reason?: string };
@@ -25,9 +26,11 @@ interface Props {
   interests: Interest[];
   onInterestsChange: (next: Interest[]) => void;
   userId: string;
+  tone: SummaryTone;
+  onToneChange: (tone: SummaryTone) => void;
 }
 
-export default function MyFeedPage({ bm, interests, onInterestsChange, userId }: Props) {
+export default function MyFeedPage({ bm, interests, onInterestsChange, userId, tone, onToneChange }: Props) {
   const [tab, setTab]           = useState<MyTab>('feed');
   const [editMode, setEditMode] = useState(false);
   const [detail, setDetail]     = useState<FeedItem | null>(null);
@@ -72,6 +75,8 @@ export default function MyFeedPage({ bm, interests, onInterestsChange, userId }:
       bookmarked={bm.isBookmarked(detail.urlHash)}
       onBookmark={bm.toggle}
       onBack={() => setDetail(null)}
+      tone={tone}
+      onToneChange={onToneChange}
     />
   );
 
@@ -145,6 +150,7 @@ export default function MyFeedPage({ bm, interests, onInterestsChange, userId }:
                   bookmarked={bm.isBookmarked(article.urlHash)}
                   onBookmark={bm.toggle}
                   onClick={() => setDetail(article)}
+                  tone={tone}
                 />
                 {article.similarity !== undefined && (
                   <div style={{
@@ -176,6 +182,7 @@ export default function MyFeedPage({ bm, interests, onInterestsChange, userId }:
                 <ArticleCard key={article.urlHash} article={article}
                   bookmarked={bm.isBookmarked(article.urlHash)} onBookmark={bm.toggle}
                   onClick={() => setDetail(article)}
+                  tone={tone}
                   style={{ animation: `fadeSlide 0.25s ${i * 0.05}s ease both` }}
                 />
               ))

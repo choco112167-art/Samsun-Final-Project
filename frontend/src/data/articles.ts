@@ -14,6 +14,7 @@
 import type { ApiArticle } from './api';
 import { normalizeCategory } from './categories';
 import type { Category } from './categories';
+import type { SummaryTone } from '../hooks/useTonePreference';
 
 // 카테고리 분류 체계는 ./categories.ts 가 단일 진실 소스다.
 // 기존 import 호환을 위해 여기서도 재내보낸다.
@@ -37,6 +38,7 @@ export interface Article {
   urlHash:     string;   // DB의 url_hash (PK) — 상세 페이지 이동 시 사용
   url:         string;   // 원문 URL — 기존 컴포넌트 호환용
   sourceUrl:   string;   // 원문 URL — 상세 페이지 "원문 보기" 표준 필드
+  slangTerms:  string[];
 
   // 메타 정보 (표시 제목은 articleDisplayTitle() 사용 권장)
   /** 영문 RSS 헤드라인 등 원본 제목 */
@@ -113,6 +115,14 @@ export function articleDisplayTitle(a: Pick<Article, 'title' | 'titleKo'>): stri
   return ko || (a.title ?? '').trim();
 }
 
+export function articleSummaryForTone(
+  article: Pick<Article, 'summaryFormal' | 'summaryCasual'>,
+  tone: SummaryTone,
+): string {
+  const selected = tone === 'formal' ? article.summaryFormal : article.summaryCasual;
+  return (selected ?? '').trim();
+}
+
 
 export function formatTimeAgo(publishedAt: string): string {
   if (!publishedAt) return '';
@@ -147,7 +157,8 @@ export function toArticle(api: ApiArticle): Article {
     // snake_case → camelCase 변환
     urlHash:     api.url_hash,
     url:         api.url,
-    sourceUrl:   api.url,
+    sourceUrl:   api.source_url ?? api.url,
+    slangTerms:  api.neologism_terms ?? api.slang_terms ?? [],
 
     title:       api.title,
     titleKo:     api.title_ko ?? '',

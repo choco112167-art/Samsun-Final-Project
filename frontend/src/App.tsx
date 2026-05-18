@@ -7,6 +7,7 @@ import HotPage from './pages/HotPage';
 import SearchPage from './pages/SearchPage';
 import MyFeedPage from './pages/MyFeedPage';
 import { useBookmarks } from './hooks/useBookmarks';
+import { useTonePreference } from './hooks/useTonePreference';
 import { recordArticleView, logArticleView, fetchAbsenceSummary, markUserSeen, type AbsenceSummaryResponse } from './data/api';
 import { getSamsunUserId, tossHaptic } from './lib/toss';
 
@@ -31,6 +32,7 @@ export default function App() {
   });
   const [activeTab, setActiveTab] = useState<TabId>('home');
   const bm = useBookmarks();
+  const { tone, setTone } = useTonePreference();
   const [absenceData, setAbsenceData] = useState<AbsenceSummaryResponse | null>(null);
 
   // 앱 진입 시 부재 요약 확인
@@ -85,11 +87,13 @@ export default function App() {
               setAbsenceData(null);
               if (userId) markUserSeen(userId).catch(() => {});
             }}
+            tone={tone}
+            onToneChange={setTone}
           />
         );
-      case 'category': return <CategoryPage bm={bm} onArticleClick={handleArticleClick} />;
-      case 'hot':      return <HotPage bm={bm} onArticleClick={handleArticleClick} />;
-      case 'search':   return <SearchPage bm={bm} onArticleClick={handleArticleClick} />;
+      case 'category': return <CategoryPage bm={bm} onArticleClick={handleArticleClick} tone={tone} onToneChange={setTone} />;
+      case 'hot':      return <HotPage bm={bm} onArticleClick={handleArticleClick} tone={tone} onToneChange={setTone} />;
+      case 'search':   return <SearchPage bm={bm} onArticleClick={handleArticleClick} tone={tone} onToneChange={setTone} />;
       case 'my':
         return (
           <MyFeedPage
@@ -98,6 +102,8 @@ export default function App() {
             interests={interests}
             onInterestsChange={handleInterestsChange}
             userId={userId}
+            tone={tone}
+            onToneChange={setTone}
           />
         );
     }
