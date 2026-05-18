@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { ApiError, fetchArticles } from '../data/api';
-import { CATEGORIES, filterByCategory, articleDisplayTitle, type Article, type Category } from '../data/articles';
+import { CATEGORIES, filterByCategory, articleCompletenessScore, articleDisplayTitle, hasKoreanTitle, type Article, type Category } from '../data/articles';
 import DetailPage from './DetailPage';
 import type { BookmarkHook } from '../hooks/useBookmarks';
 import type { SummaryTone } from '../hooks/useTonePreference';
@@ -38,7 +38,11 @@ export default function CategoryPage({ bm, onArticleClick, tone, onToneChange }:
   // Article.category는 toArticle()에서 이미 normalizeCategory() 가 적용된 UI 카테고리.
   // HomePage 와 동일한 공유 유틸을 통해 두 화면의 결과가 완전히 일치하도록 보장한다.
   const filtered = filterByCategory(articles, tab);
-  const sorted   = [...filtered].sort((a, b) => (b.credibilityScore ?? 0) - (a.credibilityScore ?? 0));
+  const sorted   = [...filtered].sort((a, b) => {
+    const qualityDelta = articleCompletenessScore(b) - articleCompletenessScore(a);
+    if (qualityDelta !== 0) return qualityDelta;
+    return (b.credibilityScore ?? 0) - (a.credibilityScore ?? 0);
+  });
 
   if (detail) return (
     <DetailPage article={detail} bookmarked={bm.isBookmarked(detail.urlHash)} onBookmark={bm.toggle} onBack={() => setDetail(null)} tone={tone} onToneChange={onToneChange} />
@@ -96,7 +100,7 @@ export default function CategoryPage({ bm, onArticleClick, tone, onToneChange }:
                   {article.isBreaking && <span style={{ fontSize: 10, fontWeight: 600, color: '#EF4444' }}>속보</span>}
                   <span style={{ fontSize: 11, color: 'var(--color-text-tertiary)', marginLeft: 'auto' }}>{article.timeAgo}</span>
                 </div>
-                <p style={{ fontSize: 13, fontWeight: 600, color: 'var(--color-text-primary)', lineHeight: 1.4, marginBottom: 8 }}>{articleDisplayTitle(article)}</p>
+                <p style={{ fontSize: 13, fontWeight: hasKoreanTitle(article) ? 600 : 500, color: hasKoreanTitle(article) ? 'var(--color-text-primary)' : 'var(--color-text-secondary)', lineHeight: 1.4, marginBottom: 8 }}>{articleDisplayTitle(article)}</p>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                   <div style={{ flex: 1, height: 3, borderRadius: 2, background: 'var(--color-border)', overflow: 'hidden' }}>
                     <div style={{ height: '100%', borderRadius: 2, background: i < 3 ? 'var(--color-primary)' : 'var(--color-text-tertiary)', width: `${((article.credibilityScore ?? 0) / maxScore) * 100}%`, opacity: i < 3 ? 1 : 0.4 }} />

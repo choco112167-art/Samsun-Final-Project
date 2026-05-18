@@ -1,6 +1,6 @@
 import { useState, useRef, useCallback } from 'react';
 import { searchArticles } from '../data/api';
-import { articleDisplayTitle, articleSummaryForTone, type Article } from '../data/articles';
+import { articleDisplayTitle, articleSummaryForTone, hasKoreanTitle, type Article } from '../data/articles';
 import DetailPage from './DetailPage';
 import type { BookmarkHook } from '../hooks/useBookmarks';
 import type { SummaryTone } from '../hooks/useTonePreference';
@@ -214,9 +214,9 @@ export default function SearchPage({ bm, onArticleClick, tone, onToneChange }: P
                           </div>
                         )}
                       </div>
-                      <p style={{ fontSize: 13, fontWeight: 600, color: 'var(--color-text-primary)', lineHeight: 1.4, marginBottom: 5 }}>{articleDisplayTitle(article)}</p>
+                      <p style={{ fontSize: 13, fontWeight: hasKoreanTitle(article) ? 600 : 500, color: hasKoreanTitle(article) ? 'var(--color-text-primary)' : 'var(--color-text-secondary)', lineHeight: 1.4, marginBottom: 5 }}>{articleDisplayTitle(article)}</p>
                       <p style={{ fontSize: 12, color: 'var(--color-text-secondary)', lineHeight: 1.5, display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
-                        {articleSummaryForTone(article, tone) || '요약이 아직 없습니다.'}
+                        {articleSummaryForTone(article, tone) || '요약 생성 중입니다.'}
                       </p>
                       <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 8 }}>
                         <button onClick={e => { e.stopPropagation(); bm.toggle(article.urlHash, article); }} style={{

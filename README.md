@@ -475,11 +475,16 @@ python scripts/backfill_article_ai_outputs.py --limit 5
 # 운영용 실제 백필. API 비용/쿼터가 발생하므로 작은 limit으로 나눠 실행
 python scripts/backfill_article_ai_outputs.py --limit 5 --provider openrouter --model google/gemini-2.5-flash --run
 
+# 품질 보수: 짧은 번역/1줄 요약까지 재생성 대상에 포함
+python scripts/backfill_title_ko.py --limit 50
+python scripts/backfill_article_ai_outputs.py --limit 5 --provider openrouter --model google/gemini-2.5-flash --repair-short-translation --min-translation-chars 300 --repair-weak-summaries --min-summary-chars 55 --min-summary-sentences 2 --summary-sentences 3 --run
+
 # 5건 초과는 명시적으로 허용해야 함
 python scripts/backfill_article_ai_outputs.py --limit 20 --allow-large-run --provider openrouter --run
 ```
 
 `backfill_article_ai_outputs.py`는 기본적으로 `translation`, `summary_formal`, `summary_casual` 중 하나라도 비어 있는 기사만 조회합니다. DB의 `content`를 우선 사용하고, 비어 있으면 `url`에서 본문 크롤링을 시도합니다. 본문 확보에 실패하면 해당 기사는 건너뜁니다. `--overwrite`가 없으면 이미 채워진 AI 출력 필드는 덮어쓰지 않습니다.
+`--repair-short-translation`은 너무 짧은 번역 전문도 재생성 대상으로 보고, `--repair-weak-summaries`는 너무 짧거나 2문장 미만인 `summary_formal`/`summary_casual`도 보수 대상으로 봅니다.
 기본값은 `--limit 1`, `provider=mock`, preview 모드입니다. `--run`을 붙이지 않으면 모델 호출과 DB 업데이트를 하지 않습니다. 5건을 초과하려면 `--allow-large-run`을 명시해야 합니다.
 `provider=mock`은 API 호출 없이 `[MOCK 번역 전문]`과 3줄 요약을 저장해 “DB 저장 → 프론트 표시” 흐름만 검증합니다. `provider=openrouter`는 `OPENROUTER_API_KEY`와 OpenRouter Chat Completions endpoint만 사용하고, `provider=gemini`는 `GOOGLE_API_KEY` 또는 `GEMINI_API_KEY`만 사용합니다. API provider 사용 시 비용과 쿼터가 발생합니다.
 `provider=mock` 결과는 데모 화면에 남기면 안 됩니다. 데모 전에는 반드시 mock 탐지와 정리를 실행합니다.

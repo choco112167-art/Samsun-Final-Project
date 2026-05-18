@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import argparse
 import os
+import re
 import requests
 from typing import Any
 
@@ -60,15 +61,19 @@ def fetch_target_articles(
     only_missing: bool,
     url_hash: str | None,
     repair_short_translation: bool,
+    repair_weak_summaries: bool,
     min_translation_chars: int,
+    min_summary_chars: int,
+    min_summary_sentences: int,
     available_meta_fields: set[str],
 ) -> list[dict[str, Any]]:
-    query_limit = limit * 5 if repair_short_translation and only_missing else limit
+    needs_client_filter = only_missing and (repair_short_translation or repair_weak_summaries)
+    query_limit = limit * 5 if needs_client_filter else limit
     select_fields = BASE_SELECT_FIELDS
     if available_meta_fields:
         select_fields = f"{select_fields},{','.join(sorted(available_meta_fields))}"
     query = sb.table("articles").select(select_fields).order("published_at", desc=True).limit(query_limit)
-    if only_missing and not repair_short_translation:
+    if only_missing and not needs_client_filter:
         query = query.or_(_missing_filter())
     if source:
         query = query.eq("source", source)
@@ -76,13 +81,35 @@ def fetch_target_articles(
         query = query.eq("url_hash", url_hash)
     result = query.execute()
     rows = result.data or []
-    if repair_short_translation and only_missing:
+    if needs_client_filter:
         rows = [
             row for row in rows
             if any(is_blank(row.get(field)) for field in AI_FIELDS)
             or len(str(row.get("translation") or "").strip()) < min_translation_chars
+            or any(
+                is_weak_summary(row.get(field), min_summary_chars, min_summary_sentences)
+                for field in ("summary_formal", "summary_casual")
+            )
         ]
     return rows[:limit]
+
+
+def _sentence_count(value: str) -> int:
+    text = re.sub(r"\s+", " ", value.strip())
+    if not text:
+        return 0
+    numbered = len(re.findall(r"(?:^|\s)\d+\.\s+", text))
+    punctuation = len([part for part in re.split(r"[.!?。！？]", text) if len(part.strip()) > 5])
+    return max(numbered, punctuation)
+
+
+def is_weak_summary(value: Any, min_chars: int, min_sentences: int) -> bool:
+    text = str(value or "").strip()
+    if not text:
+        return True
+    if "[MOCK" in text or "(파싱 실패)" in text:
+        return True
+    return len(text) < min_chars or _sentence_count(text) < min_sentences
 
 
 def detect_ai_meta_fields(sb) -> set[str]:
@@ -126,7 +153,10 @@ def build_update_payload(
     generated: dict[str, Any],
     overwrite: bool,
     repair_short_translation: bool,
+    repair_weak_summaries: bool,
     min_translation_chars: int,
+    min_summary_chars: int,
+    min_summary_sentences: int,
     provider: str,
     model: str,
     body_source: str,
@@ -143,6 +173,10 @@ def build_update_payload(
         current = row.get(field)
         if field == "translation" and repair_short_translation:
             if overwrite or is_blank(current) or len(str(current).strip()) < min_translation_chars:
+                payload[field] = value
+            continue
+        if field in {"summary_formal", "summary_casual"} and repair_weak_summaries:
+            if overwrite or is_blank(current) or is_weak_summary(current, min_summary_chars, min_summary_sentences):
                 payload[field] = value
             continue
         if overwrite or is_blank(current):
@@ -215,10 +249,22 @@ def build_llm_user_content(title: str, body: str, use_neologism_glossary: bool =
     return f"{neo_block}\n\n{base}" if neo_block else base
 
 
-def needs_processing(row: dict[str, Any], repair_short_translation: bool, min_translation_chars: int) -> bool:
+def needs_processing(
+    row: dict[str, Any],
+    repair_short_translation: bool,
+    repair_weak_summaries: bool,
+    min_translation_chars: int,
+    min_summary_chars: int,
+    min_summary_sentences: int,
+) -> bool:
     if any(is_blank(row.get(field)) for field in AI_FIELDS):
         return True
     if repair_short_translation and len(str(row.get("translation") or "").strip()) < min_translation_chars:
+        return True
+    if repair_weak_summaries and any(
+        is_weak_summary(row.get(field), min_summary_chars, min_summary_sentences)
+        for field in ("summary_formal", "summary_casual")
+    ):
         return True
     return False
 
@@ -378,6 +424,9 @@ def main() -> int:
     parser.add_argument("--max-body-chars", type=int, default=12000)
     parser.add_argument("--repair-short-translation", action="store_true")
     parser.add_argument("--min-translation-chars", type=int, default=300)
+    parser.add_argument("--repair-weak-summaries", action="store_true")
+    parser.add_argument("--min-summary-chars", type=int, default=55)
+    parser.add_argument("--min-summary-sentences", type=int, default=2)
     parser.add_argument(
         "--only-missing",
         action=argparse.BooleanOptionalAction,
@@ -437,7 +486,10 @@ def main() -> int:
         only_missing=args.only_missing,
         url_hash=args.url_hash,
         repair_short_translation=args.repair_short_translation,
+        repair_weak_summaries=args.repair_weak_summaries,
         min_translation_chars=max(args.min_translation_chars, 1),
+        min_summary_chars=max(args.min_summary_chars, 1),
+        min_summary_sentences=max(args.min_summary_sentences, 1),
         available_meta_fields=available_meta_fields,
     )
 
@@ -447,7 +499,10 @@ def main() -> int:
         f"overwrite={args.overwrite} run={args.run}"
         f" min_body_chars={args.min_body_chars} max_body_chars={args.max_body_chars}"
         f" repair_short_translation={args.repair_short_translation}"
-        f" min_translation_chars={args.min_translation_chars}",
+        f" min_translation_chars={args.min_translation_chars}"
+        f" repair_weak_summaries={args.repair_weak_summaries}"
+        f" min_summary_chars={args.min_summary_chars}"
+        f" min_summary_sentences={args.min_summary_sentences}",
         flush=True,
     )
     print(
@@ -482,7 +537,10 @@ def main() -> int:
         if not args.overwrite and not needs_processing(
             row,
             repair_short_translation=args.repair_short_translation,
+            repair_weak_summaries=args.repair_weak_summaries,
             min_translation_chars=max(args.min_translation_chars, 1),
+            min_summary_chars=max(args.min_summary_chars, 1),
+            min_summary_sentences=max(args.min_summary_sentences, 1),
         ):
             skipped += 1
             print("  skip=already has complete AI outputs", flush=True)
@@ -564,12 +622,31 @@ def main() -> int:
             print("  update_ok=False reason=short translation rejected", flush=True)
             continue
 
+        weak_generated = [
+            field for field in ("summary_formal", "summary_casual")
+            if is_weak_summary(
+                generated.get(field),
+                max(args.min_summary_chars, 1),
+                max(args.min_summary_sentences, 1),
+            )
+        ]
+        if args.repair_weak_summaries and weak_generated:
+            failed += 1
+            print(
+                f"  update_ok=False reason=weak generated summaries rejected: {','.join(weak_generated)}",
+                flush=True,
+            )
+            continue
+
         payload = build_update_payload(
             row,
             generated,
             overwrite=args.overwrite,
             repair_short_translation=args.repair_short_translation,
+            repair_weak_summaries=args.repair_weak_summaries,
             min_translation_chars=max(args.min_translation_chars, 1),
+            min_summary_chars=max(args.min_summary_chars, 1),
+            min_summary_sentences=max(args.min_summary_sentences, 1),
             provider=provider,
             model=model,
             body_source=body_source,

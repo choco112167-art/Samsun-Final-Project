@@ -1,5 +1,13 @@
 import { useEffect, useMemo, useState, type MouseEvent } from 'react';
-import { articleDisplayTitle, articleSummaryForTone, type Article } from '../data/articles';
+import {
+  articleDisplayTitle,
+  articleSummaryForTone,
+  articleTranslationForDisplay,
+  hasKoreanTitle,
+  isValidSummary,
+  isValidTranslation,
+  type Article,
+} from '../data/articles';
 import {
   fetchArticleExtras,
   fetchArticleNeologisms,
@@ -57,6 +65,23 @@ function mergeEntries(...groups: NeologismEntry[][]): NeologismEntry[] {
   return [...byTerm.values()];
 }
 
+function StatusPill({ ready, label }: { ready: boolean; label: string }) {
+  return (
+    <span style={{
+      fontSize: 10,
+      fontWeight: 600,
+      color: ready ? '#0F766E' : 'var(--color-text-tertiary)',
+      background: ready ? '#CCFBF1' : 'var(--color-surface-secondary)',
+      border: '0.5px solid var(--color-border)',
+      padding: '3px 7px',
+      borderRadius: 999,
+      whiteSpace: 'nowrap',
+    }}>
+      {ready ? `${label} 완료` : '처리 중'}
+    </span>
+  );
+}
+
 export default function DetailPage({ article, bookmarked, onBookmark, onBack, tone, onToneChange }: Props) {
   const [copiedFormal, setCopiedFormal] = useState(false);
   const [copiedShare,  setCopiedShare]  = useState(false);
@@ -64,9 +89,12 @@ export default function DetailPage({ article, bookmarked, onBookmark, onBack, to
   const [neologisms, setNeologisms] = useState<NeologismEntry[]>([]);
   const [sourceOverride, setSourceOverride] = useState('');
 
-  const translation = article.translation.trim();
+  const translation = articleTranslationForDisplay(article);
   const selectedSummary = articleSummaryForTone(article, tone);
   const selectedToneLabel = toneLabel(tone);
+  const hasLocalizedTitle = hasKoreanTitle(article);
+  const summaryReady = isValidSummary(tone === 'formal' ? article.summaryFormal : article.summaryCasual);
+  const translationReady = isValidTranslation(article.translation);
   const visibleNeologisms = useMemo(() => {
     const haystack = `${selectedSummary}\n${translation}`.toLocaleLowerCase();
     return neologisms.filter(entry => haystack.includes(entry.term.toLocaleLowerCase()));
@@ -179,9 +207,14 @@ export default function DetailPage({ article, bookmarked, onBookmark, onBack, to
           <span style={{ display: 'inline-block', fontSize: 11, fontWeight: 500, color: 'var(--color-primary)', background: 'var(--color-primary-light)', padding: '3px 8px', borderRadius: 6, marginBottom: 10 }}>
             {article.category}
           </span>
-          <h1 style={{ fontSize: 19, fontWeight: 700, lineHeight: 1.42, letterSpacing: '-0.03em', color: 'var(--color-text-primary)' }}>
+          <h1 style={{ fontSize: 19, fontWeight: hasLocalizedTitle ? 700 : 600, lineHeight: 1.42, letterSpacing: '-0.03em', color: hasLocalizedTitle ? 'var(--color-text-primary)' : 'var(--color-text-secondary)' }}>
             {articleDisplayTitle(article)}
           </h1>
+          {!hasLocalizedTitle && (
+            <p style={{ marginTop: 8, fontSize: 11, color: 'var(--color-text-tertiary)', lineHeight: 1.5 }}>
+              한국어 제목 생성 중입니다.
+            </p>
+          )}
         </div>
 
         <div style={{ background: 'var(--color-surface)', padding: '14px 20px', marginBottom: 8 }}>
@@ -193,7 +226,10 @@ export default function DetailPage({ article, bookmarked, onBookmark, onBack, to
         <div style={{ background: 'var(--color-surface)', padding: '16px 20px', marginBottom: 8 }}>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
             <p style={{ fontSize: 11, fontWeight: 600, color: 'var(--color-text-tertiary)', letterSpacing: '0.04em', textTransform: 'uppercase' }}>3줄 요약</p>
-            {selectedSummary && <CopyBtn copied={copiedFormal} onClick={handleCopySummary} />}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+              <StatusPill ready={summaryReady} label="요약" />
+              {selectedSummary && <CopyBtn copied={copiedFormal} onClick={handleCopySummary} />}
+            </div>
           </div>
 
           <div style={{ background: 'var(--color-surface-secondary)', borderRadius: 10, padding: '14px 14px' }}>
@@ -201,7 +237,7 @@ export default function DetailPage({ article, bookmarked, onBookmark, onBack, to
               <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--color-primary)', background: 'var(--color-primary-light)', padding: '3px 8px', borderRadius: 6 }}>{selectedToneLabel}</span>
             </div>
             <p style={{ fontSize: 15, lineHeight: 1.78, color: selectedSummary ? 'var(--color-text-primary)' : 'var(--color-text-tertiary)', letterSpacing: '-0.01em', fontWeight: selectedSummary ? 500 : 400 }}>
-              {selectedSummary ? <NeologismText text={selectedSummary} entries={visibleNeologisms} /> : '요약이 아직 없습니다.'}
+              {selectedSummary ? <NeologismText text={selectedSummary} entries={visibleNeologisms} /> : '요약 생성 중입니다.'}
             </p>
           </div>
         </div>
@@ -219,7 +255,10 @@ export default function DetailPage({ article, bookmarked, onBookmark, onBack, to
               textAlign: 'left',
             }}
           >
-            <p style={{ fontSize: 11, fontWeight: 600, color: 'var(--color-text-tertiary)', letterSpacing: '0.04em', textTransform: 'uppercase' }}>번역 전문</p>
+            <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <p style={{ fontSize: 11, fontWeight: 600, color: 'var(--color-text-tertiary)', letterSpacing: '0.04em', textTransform: 'uppercase' }}>번역 전문</p>
+              <StatusPill ready={translationReady} label="번역" />
+            </span>
             <span style={{ fontSize: 12, color: 'var(--color-text-tertiary)' }}>{translationOpen ? '접기' : '펼치기'}</span>
           </button>
 
@@ -241,7 +280,7 @@ export default function DetailPage({ article, bookmarked, onBookmark, onBack, to
             ) : (
               <div style={{ background: 'var(--color-surface-secondary)', borderRadius: 10, padding: '14px', marginBottom: 10 }}>
                 <p style={{ fontSize: 13, lineHeight: 1.7, color: 'var(--color-text-tertiary)' }}>
-                  번역 전문이 아직 없습니다.
+                  번역 전문 생성 중입니다.
                 </p>
               </div>
             )

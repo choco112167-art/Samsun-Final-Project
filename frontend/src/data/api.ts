@@ -1,5 +1,11 @@
 import { supabase, isSupabaseConfigured, getSupabaseConfigIssue } from '../lib/supabase';
-import { toArticle, normalizeCategory } from './articles';
+import {
+  articleCompletenessScore,
+  articleSummaryForTone,
+  articleTranslationForDisplay,
+  toArticle,
+  normalizeCategory,
+} from './articles';
 import type { Article } from './articles';
 
 /**
@@ -132,6 +138,12 @@ function toArticleList(rows: ApiArticle[] | null): Article[] {
   return (rows ?? []).map(toArticle);
 }
 
+function polishedFeedSort(a: Article, b: Article): number {
+  const qualityDelta = articleCompletenessScore(b) - articleCompletenessScore(a);
+  if (qualityDelta !== 0) return qualityDelta;
+  return new Date(b.publishedAt).getTime() - new Date(a.publishedAt).getTime();
+}
+
 export async function fetchArticles(params: FetchArticlesParams = {}): Promise<Article[]> {
   requireSupabase();
   const { data, error } = await buildArticleQuery(params);
@@ -145,9 +157,10 @@ export async function fetchArticles(params: FetchArticlesParams = {}): Promise<A
       category: params.category ?? 'all',
     });
   }
-  return params.category
+  const filtered = params.category
     ? articles.filter(article => article.category === normalizeCategory(params.category))
     : articles;
+  return filtered.sort(polishedFeedSort);
 }
 
 export async function fetchArticleByHash(urlHash: string): Promise<ApiArticle> {
@@ -257,7 +270,7 @@ export async function postOnboarding(userId: string, interestTags: string[]): Pr
 
 function scoreByInterests(article: Article, interests: string[]): number {
   if (interests.length === 0) return article.credibilityScore || 0.1;
-  const haystack = `${article.category} ${article.title} ${article.titleKo ?? ''} ${article.summaryFormal}`.toLowerCase();
+  const haystack = `${article.category} ${article.title} ${article.titleKo ?? ''} ${articleSummaryForTone(article, 'formal')}`.toLowerCase();
   const matches = interests.filter(interest => haystack.includes(interest.toLowerCase())).length;
   return matches + (article.credibilityScore || 0);
 }
@@ -306,9 +319,9 @@ function articleSearchScore(article: Article, query: string): number {
     article.titleKo,
     article.source,
     article.category,
-    article.summaryFormal,
-    article.summaryCasual,
-    article.translation,
+    articleSummaryForTone(article, 'formal'),
+    articleSummaryForTone(article, 'casual'),
+    articleTranslationForDisplay(article),
     article.content,
     article.factLabel,
   ].join(' '));
@@ -384,7 +397,7 @@ export async function fetchAbsenceSummary(userId: string): Promise<AbsenceSummar
       source: article.source,
       category: article.category,
       published_at: article.publishedAt,
-      summary_formal: article.summaryFormal,
+      summary_formal: articleSummaryForTone(article, 'formal'),
       similarity: 0.7,
     })),
   };

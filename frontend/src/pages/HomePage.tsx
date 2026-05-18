@@ -7,6 +7,8 @@ import {
   CATEGORIES,
   filterByCategory,
   articleDisplayTitle,
+  isValidSummary,
+  hasKoreanTitle,
   type Article,
   type Category,
   type Interest,
@@ -263,7 +265,7 @@ export default function HomePage({ bm, onNavigateToFeed, onArticleClick, absence
               <p style={{ fontSize: 13, fontWeight: 600, color: 'var(--color-text-primary)', lineHeight: 1.45, marginBottom: 6 }}>
                 {article.title_ko?.trim() || article.title}
               </p>
-              {article.summary_formal && (
+              {isValidSummary(article.summary_formal) && (
                 <p style={{ fontSize: 12, color: 'var(--color-text-secondary)', lineHeight: 1.6 }}>
                   {tone === 'formal' ? article.summary_formal : '요약이 아직 없습니다.'}
                 </p>
@@ -358,7 +360,7 @@ export default function HomePage({ bm, onNavigateToFeed, onArticleClick, absence
                       <span style={{ fontSize: 10, color: 'var(--color-text-tertiary)' }}>{a.source}</span>
                       <span style={{ fontSize: 10, color: '#EF4444', fontWeight: 600 }}>{a.timeAgo}</span>
                     </div>
-                    <p style={{ fontSize: 12, fontWeight: 600, color: 'var(--color-text-primary)', lineHeight: 1.4, display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
+                    <p style={{ fontSize: 12, fontWeight: hasKoreanTitle(a) ? 600 : 500, color: hasKoreanTitle(a) ? 'var(--color-text-primary)' : 'var(--color-text-secondary)', lineHeight: 1.4, display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
                       {articleDisplayTitle(a)}
                     </p>
                   </button>

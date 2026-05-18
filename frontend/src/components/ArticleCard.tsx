@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Badge } from './Badge';
-import type { Article } from '../data/articles';
+import { isValidSummary, hasKoreanTitle, type Article } from '../data/articles';
 import type { ApiArticle } from '../data/api';
 import type { SummaryTone } from '../hooks/useTonePreference';
 
@@ -18,11 +18,15 @@ function cardHeadline(article: CardArticle): string {
 function pickSummary(article: CardArticle, tone: SummaryTone): string {
   if ('summaryFormal' in article) {
     const selected = tone === 'formal' ? article.summaryFormal : article.summaryCasual;
-    return selected?.trim() ?? '';
+    return isValidSummary(selected) ? selected.trim() : '';
   }
   const selected = tone === 'formal' ? article.summary_formal : article.summary_casual;
-  if (selected?.trim()) return selected.trim();
-  return '';
+  return isValidSummary(selected) ? selected.trim() : '';
+}
+
+function hasLocalizedHeadline(article: CardArticle): boolean {
+  if ('titleKo' in article) return hasKoreanTitle(article);
+  return Boolean(((article as ApiArticle).title_ko ?? '').trim());
 }
 
 function pickFactLabel(article: CardArticle): 'FACT' | 'UNVERIFIED' | 'RUMOR' | undefined {
@@ -58,6 +62,7 @@ export default function ArticleCard({ article, bookmarked = false, onBookmark, o
   const summary = pickSummary(article, tone);
   const factLabel = pickFactLabel(article);
   const sourceColor = pickSourceColor(article);
+  const localizedHeadline = hasLocalizedHeadline(article);
   const urlHash = 'urlHash' in article && article.urlHash
     ? article.urlHash
     : (article as ApiArticle).url_hash;
@@ -130,7 +135,8 @@ export default function ArticleCard({ article, bookmarked = false, onBookmark, o
       </div>
 
       <h2 style={{
-        fontSize: 15, fontWeight: 600, color: 'var(--color-text-primary)',
+        fontSize: 15, fontWeight: localizedHeadline ? 600 : 500,
+        color: localizedHeadline ? 'var(--color-text-primary)' : 'var(--color-text-secondary)',
         lineHeight: 1.45, letterSpacing: '-0.02em',
         marginBottom: 7, paddingLeft: 8,
       }}>
@@ -151,7 +157,7 @@ export default function ArticleCard({ article, bookmarked = false, onBookmark, o
           fontSize: 13, color: 'var(--color-text-tertiary)', lineHeight: 1.6,
           marginBottom: 12, paddingLeft: 8,
         }}>
-          요약이 아직 없습니다.
+          요약 생성 중입니다.
         </p>
       )}
 

@@ -115,12 +115,60 @@ export function articleDisplayTitle(a: Pick<Article, 'title' | 'titleKo'>): stri
   return ko || (a.title ?? '').trim();
 }
 
+export function hasKoreanTitle(a: Pick<Article, 'titleKo'>): boolean {
+  return Boolean((a.titleKo ?? '').trim());
+}
+
+function cleanGeneratedText(value: string | null | undefined): string {
+  return (value ?? '').replace(/\r\n/g, '\n').trim();
+}
+
+function isPlaceholderGeneratedText(value: string): boolean {
+  return /\[MOCK|\(파싱 실패\)|parsing failed|translation unavailable|summary unavailable/i.test(value);
+}
+
+function sentenceCount(value: string): number {
+  const normalized = value
+    .replace(/\n+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+  if (!normalized) return 0;
+  const numbered = normalized.match(/(?:^|\s)\d+\.\s+/g)?.length ?? 0;
+  const punctuation = normalized.split(/[.!?。！？]|[.!?]\s|[다요죠음함됨임]\./).filter(part => part.trim().length > 5).length;
+  return Math.max(numbered, punctuation);
+}
+
+export function isValidSummary(value: string | null | undefined): boolean {
+  const text = cleanGeneratedText(value);
+  if (text.length < 55 || isPlaceholderGeneratedText(text)) return false;
+  return sentenceCount(text) >= 2;
+}
+
+export function isValidTranslation(value: string | null | undefined): boolean {
+  const text = cleanGeneratedText(value);
+  if (text.length < 140 || isPlaceholderGeneratedText(text)) return false;
+  return /[가-힣]/.test(text);
+}
+
 export function articleSummaryForTone(
   article: Pick<Article, 'summaryFormal' | 'summaryCasual'>,
   tone: SummaryTone,
 ): string {
   const selected = tone === 'formal' ? article.summaryFormal : article.summaryCasual;
-  return (selected ?? '').trim();
+  return isValidSummary(selected) ? cleanGeneratedText(selected) : '';
+}
+
+export function articleTranslationForDisplay(article: Pick<Article, 'translation'>): string {
+  return isValidTranslation(article.translation) ? cleanGeneratedText(article.translation) : '';
+}
+
+export function articleCompletenessScore(
+  article: Pick<Article, 'titleKo' | 'summaryFormal' | 'summaryCasual' | 'translation'>,
+): number {
+  return (hasKoreanTitle(article) ? 3 : 0)
+    + (isValidSummary(article.summaryFormal) ? 2 : 0)
+    + (isValidSummary(article.summaryCasual) ? 2 : 0)
+    + (isValidTranslation(article.translation) ? 3 : 0);
 }
 
 

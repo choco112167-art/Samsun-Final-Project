@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { fetchHot } from '../data/api';
-import { articleDisplayTitle, type Article } from '../data/articles';
+import { articleDisplayTitle, hasKoreanTitle, type Article } from '../data/articles';
 import DetailPage from './DetailPage';
 import type { BookmarkHook } from '../hooks/useBookmarks';
 import type { SummaryTone } from '../hooks/useTonePreference';
@@ -148,7 +148,7 @@ export default function HotPage({ bm, userId: _userId, onArticleClick, tone, onT
                       <div style={{ width: 5, height: 5, borderRadius: '50%', background: article.sourceColor ?? '#6B7280' }} />
                       <span style={{ fontSize: 11, color: 'var(--color-text-secondary)' }}>{article.source}</span>
                     </div>
-                    <p style={{ fontSize: 13, fontWeight: 600, color: 'var(--color-text-primary)', lineHeight: 1.4, marginBottom: 8 }}>{articleDisplayTitle(article)}</p>
+                    <p style={{ fontSize: 13, fontWeight: hasKoreanTitle(article) ? 600 : 500, color: hasKoreanTitle(article) ? 'var(--color-text-primary)' : 'var(--color-text-secondary)', lineHeight: 1.4, marginBottom: 8 }}>{articleDisplayTitle(article)}</p>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                       <div style={{ flex: 1, height: 3, borderRadius: 2, background: 'var(--color-border)', overflow: 'hidden' }}>
                         <div style={{ height: '100%', borderRadius: 2, background: 'var(--color-primary)', width: viewCount > 0 ? `${(viewCount / maxV) * 100}%` : '20%' }} />
