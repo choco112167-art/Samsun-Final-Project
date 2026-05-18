@@ -23,21 +23,23 @@ from article_pipeline_common import (
 )
 
 
-def _fetch_missing(sb, limit: int) -> list[dict]:
-    result = (
+def _fetch_missing(sb, limit: int, title_contains: str = "") -> list[dict]:
+    query = (
         sb.table("articles")
         .select("url_hash,title,title_ko,published_at")
         .or_("title_ko.is.null,title_ko.eq.")
         .order("published_at", desc=True)
         .limit(limit)
-        .execute()
     )
+    if title_contains.strip():
+        query = query.ilike("title", f"%{title_contains.strip()}%")
+    result = query.execute()
     return result.data or []
 
 
-def backfill(limit: int, dry_run: bool, sleep_sec: float, model: str) -> int:
+def backfill(limit: int, dry_run: bool, sleep_sec: float, model: str, title_contains: str = "") -> int:
     sb = get_supabase_client()
-    rows = _fetch_missing(sb, limit)
+    rows = _fetch_missing(sb, limit, title_contains=title_contains)
     print(f"[backfill] missing title_ko rows selected: {len(rows)}")
 
     updated = 0
@@ -69,12 +71,14 @@ def main() -> int:
     parser.add_argument("--dry-run", action="store_true")
     parser.add_argument("--sleep", type=float, default=0.2)
     parser.add_argument("--model", default=title_model())
+    parser.add_argument("--title-contains", default="")
     args = parser.parse_args()
     backfill(
         limit=max(args.limit, 0),
         dry_run=args.dry_run,
         sleep_sec=max(args.sleep, 0.0),
         model=args.model,
+        title_contains=args.title_contains,
     )
     return 0
 

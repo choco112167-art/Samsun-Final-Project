@@ -23,15 +23,17 @@ from article_pipeline_common import (
     body_quality_warning,
     configure_stdio,
     fetch_article_body_from_url,
+    generate_title_ko,
     get_supabase_client,
     is_blank,
+    title_model,
 )
 
 
 AI_FIELDS = ("translation", "summary_formal", "summary_casual")
 BASE_SELECT_FIELDS = (
     "url_hash,title,title_ko,url,source,published_at,content,"
-    "translation,summary_formal,summary_casual"
+    "translation,summary_formal,summary_casual,fact_label"
 )
 AI_META_FIELDS = (
     "ai_status",
@@ -65,9 +67,17 @@ def fetch_target_articles(
     min_translation_chars: int,
     min_summary_chars: int,
     min_summary_sentences: int,
+    title_contains: str,
+    repair_missing_title_ko: bool,
+    repair_missing_fact_status: bool,
     available_meta_fields: set[str],
 ) -> list[dict[str, Any]]:
-    needs_client_filter = only_missing and (repair_short_translation or repair_weak_summaries)
+    needs_client_filter = only_missing and (
+        repair_short_translation
+        or repair_weak_summaries
+        or repair_missing_title_ko
+        or repair_missing_fact_status
+    )
     query_limit = limit * 5 if needs_client_filter else limit
     select_fields = BASE_SELECT_FIELDS
     if available_meta_fields:
@@ -79,12 +89,20 @@ def fetch_target_articles(
         query = query.eq("source", source)
     if url_hash:
         query = query.eq("url_hash", url_hash)
+    if title_contains.strip():
+        query = query.ilike("title", f"%{title_contains.strip()}%")
     result = query.execute()
     rows = result.data or []
     if needs_client_filter:
         rows = [
             row for row in rows
             if any(is_blank(row.get(field)) for field in AI_FIELDS)
+            or (repair_missing_title_ko and is_blank(row.get("title_ko")))
+            or (
+                repair_missing_fact_status
+                and "fact_status" in available_meta_fields
+                and is_blank(row.get("fact_status"))
+            )
             or len(str(row.get("translation") or "").strip()) < min_translation_chars
             or any(
                 is_weak_summary(row.get(field), min_summary_chars, min_summary_sentences)
@@ -159,6 +177,9 @@ def build_update_payload(
     min_summary_sentences: int,
     provider: str,
     model: str,
+    title_ko_value: str,
+    repair_missing_title_ko: bool,
+    repair_missing_fact_status: bool,
     body_source: str,
     body_chars: int,
     available_meta_fields: set[str],
@@ -166,6 +187,8 @@ def build_update_payload(
     ai_error: str = "",
 ) -> dict[str, str]:
     payload: dict[str, Any] = {}
+    if repair_missing_title_ko and is_blank(row.get("title_ko")) and title_ko_value.strip():
+        payload["title_ko"] = title_ko_value.strip()
     for field in AI_FIELDS:
         value = str(generated.get(field) or "").strip()
         if not value:
@@ -193,6 +216,8 @@ def build_update_payload(
     fact_label = row.get("fact_label") or row.get("fact_status")
     if fact_label:
         meta_values["fact_status"] = fact_label
+    elif repair_missing_fact_status:
+        meta_values["fact_status"] = "UNVERIFIED"
 
     slang_terms = detect_slang_terms(title=str(row.get("title") or row.get("title_ko") or ""), body=generated.get("translation") or "")
     if slang_terms:
@@ -256,6 +281,8 @@ def needs_processing(
     min_translation_chars: int,
     min_summary_chars: int,
     min_summary_sentences: int,
+    repair_missing_title_ko: bool,
+    repair_missing_fact_status: bool,
 ) -> bool:
     if any(is_blank(row.get(field)) for field in AI_FIELDS):
         return True
@@ -265,6 +292,10 @@ def needs_processing(
         is_weak_summary(row.get(field), min_summary_chars, min_summary_sentences)
         for field in ("summary_formal", "summary_casual")
     ):
+        return True
+    if repair_missing_title_ko and is_blank(row.get("title_ko")):
+        return True
+    if repair_missing_fact_status and is_blank(row.get("fact_status")):
         return True
     return False
 
@@ -425,6 +456,10 @@ def main() -> int:
     parser.add_argument("--repair-short-translation", action="store_true")
     parser.add_argument("--min-translation-chars", type=int, default=300)
     parser.add_argument("--repair-weak-summaries", action="store_true")
+    parser.add_argument("--repair-weak-summary", dest="repair_weak_summaries", action="store_true")
+    parser.add_argument("--repair-missing-title-ko", action="store_true")
+    parser.add_argument("--repair-missing-fact-status", action="store_true")
+    parser.add_argument("--title-contains", default="")
     parser.add_argument("--min-summary-chars", type=int, default=55)
     parser.add_argument("--min-summary-sentences", type=int, default=2)
     parser.add_argument(
@@ -490,6 +525,9 @@ def main() -> int:
         min_translation_chars=max(args.min_translation_chars, 1),
         min_summary_chars=max(args.min_summary_chars, 1),
         min_summary_sentences=max(args.min_summary_sentences, 1),
+        title_contains=args.title_contains,
+        repair_missing_title_ko=args.repair_missing_title_ko,
+        repair_missing_fact_status=args.repair_missing_fact_status,
         available_meta_fields=available_meta_fields,
     )
 
@@ -501,6 +539,9 @@ def main() -> int:
         f" repair_short_translation={args.repair_short_translation}"
         f" min_translation_chars={args.min_translation_chars}"
         f" repair_weak_summaries={args.repair_weak_summaries}"
+        f" repair_missing_title_ko={args.repair_missing_title_ko}"
+        f" repair_missing_fact_status={args.repair_missing_fact_status}"
+        f" title_contains={args.title_contains or '*'}"
         f" min_summary_chars={args.min_summary_chars}"
         f" min_summary_sentences={args.min_summary_sentences}",
         flush=True,
@@ -541,9 +582,46 @@ def main() -> int:
             min_translation_chars=max(args.min_translation_chars, 1),
             min_summary_chars=max(args.min_summary_chars, 1),
             min_summary_sentences=max(args.min_summary_sentences, 1),
+            repair_missing_title_ko=args.repair_missing_title_ko,
+            repair_missing_fact_status=args.repair_missing_fact_status,
         ):
             skipped += 1
             print("  skip=already has complete AI outputs", flush=True)
+            continue
+
+        needs_ai_outputs = (
+            any(is_blank(row.get(field)) for field in AI_FIELDS)
+            or (args.repair_short_translation and len(str(row.get("translation") or "").strip()) < max(args.min_translation_chars, 1))
+            or (
+                args.repair_weak_summaries
+                and any(
+                    is_weak_summary(row.get(field), max(args.min_summary_chars, 1), max(args.min_summary_sentences, 1))
+                    for field in ("summary_formal", "summary_casual")
+                )
+            )
+        )
+        if not needs_ai_outputs:
+            direct_payload: dict[str, Any] = {}
+            if args.repair_missing_title_ko and is_blank(row.get("title_ko")):
+                if args.run:
+                    direct_payload["title_ko"] = generate_title_ko(row.get("title") or "", model=title_model())
+                else:
+                    direct_payload["title_ko"] = "(preview title_ko)"
+            if (
+                args.repair_missing_fact_status
+                and "fact_status" in available_meta_fields
+                and is_blank(row.get("fact_status"))
+            ):
+                direct_payload["fact_status"] = row.get("fact_label") or "UNVERIFIED"
+            if direct_payload and args.run:
+                sb.table("articles").update(direct_payload).eq("url_hash", url_hash).execute()
+                updated += 1
+                print(f"  update_ok=True update_fields={','.join(direct_payload.keys())}", flush=True)
+            elif direct_payload:
+                print(f"  update_ok=False reason=preview only update_fields={','.join(direct_payload.keys())}", flush=True)
+            else:
+                skipped += 1
+                print("  skip=no repairable fields", flush=True)
             continue
 
         body, body_source, quality_warning = get_article_body(
@@ -569,6 +647,9 @@ def main() -> int:
             continue
 
         try:
+            generated_title_ko = ""
+            if args.repair_missing_title_ko and is_blank(row.get("title_ko")):
+                generated_title_ko = generate_title_ko(row.get("title") or "", model=title_model())
             generated = generate_outputs(
                 provider=provider,
                 model=model,
@@ -649,6 +730,9 @@ def main() -> int:
             min_summary_sentences=max(args.min_summary_sentences, 1),
             provider=provider,
             model=model,
+            title_ko_value=generated_title_ko,
+            repair_missing_title_ko=args.repair_missing_title_ko,
+            repair_missing_fact_status=args.repair_missing_fact_status,
             body_source=body_source,
             body_chars=len(body),
             available_meta_fields=available_meta_fields,

@@ -26,6 +26,9 @@ OPTIONAL_ARTICLE_COLUMNS = (
     "source_url",
     "fact_status",
     "is_demo",
+    "demo_visible",
+    "demo_priority",
+    "hitl_required",
     "ai_status",
     "ai_provider",
     "ai_model",
@@ -83,6 +86,22 @@ def demo_articles() -> list[dict[str, Any]]:
             ],
         },
         {
+            "slug": "verified-agent-workflow",
+            "title": "[DEMO] Verified enterprise AI agent workflow case",
+            "title_ko": "[시연용] 기업용 AI 에이전트 도입 사례, 검증된 자료로 정리",
+            "category": "2",
+            "credibility_score": 0.88,
+            "fact_label": "FACT",
+            "published_at": now_iso(44),
+            "summary_formal": "1. 한 기업이 내부 문서 검색과 고객 응대에 AI 에이전트를 적용한 시연용 사례입니다.\n2. 적용 범위와 제한 조건이 명확히 제시되어 검증됨 상태로 표시했습니다.\n3. 데모에서는 완성도 높은 일반 AI 뉴스 카드가 어떻게 보이는지 확인할 수 있습니다.",
+            "summary_casual": "1. 한 기업이 문서 검색과 고객 응대에 AI 에이전트를 쓰는 시연용 사례예요.\n2. 적용 범위와 한계가 분명해서 검증됨으로 표시했어요.\n3. 데모에서 일반적인 완성형 AI 뉴스 카드 모습을 볼 수 있어요.",
+            "translation": "이 시연용 검증 기사에서는 기업용 AI 에이전트 도입 사례를 다룹니다. 내부 문서 검색, 반복 고객 문의 응답, 담당자 검토 흐름을 연결하는 구성이며, 적용 범위와 제한 조건이 함께 제시되어 있습니다.\n\n이 항목은 실제 뉴스가 아니라 데모 화면에서 검증됨 상태와 완성된 번역·요약·제목 구성을 보여주기 위한 안전한 샘플입니다.",
+            "content": "Synthetic verified enterprise AI agent workflow article. This is not real news.",
+            "claims": [
+                {"claim": "기업용 AI 에이전트 도입 과정을 보여주는 검증됨 상태의 시연용 기사입니다.", "verdict": "FACT", "confidence": 0.88},
+            ],
+        },
+        {
             "slug": "rumor-lab-acquisition",
             "title": "[DEMO] Rumor about a lab acquisition",
             "title_ko": "[시연용] 미확인 인수설 확산, 루머 의심으로 표시",
@@ -96,6 +115,23 @@ def demo_articles() -> list[dict[str, Any]]:
             "content": "Synthetic demo rumor article. It is intentionally unverified and does not describe a real acquisition.",
             "claims": [
                 {"claim": "이 항목은 실제 인수 사실이 아니라 시연용 루머 데이터입니다.", "verdict": "RUMOR", "confidence": 0.32},
+            ],
+        },
+        {
+            "slug": "neologism-prompt-injection",
+            "title": "[DEMO] Neologism example about prompt injection defense",
+            "title_ko": "[시연용] 프롬프트 주입 방어와 가드레일 운영 사례",
+            "category": "3",
+            "credibility_score": 0.82,
+            "fact_label": "FACT",
+            "published_at": now_iso(60),
+            "summary_formal": "1. 프롬프트 주입 공격을 막기 위한 가드레일 운영 사례를 소개하는 시연용 기사입니다.\n2. 신조어 설명 기능을 보여주기 위해 관련 용어를 본문과 요약에 포함했습니다.\n3. 사용자는 강조된 용어를 눌러 Supabase neologisms 설명을 확인할 수 있습니다.",
+            "summary_casual": "1. 프롬프트 주입을 막는 가드레일 운영 사례를 보여주는 시연용 기사예요.\n2. 신조어 설명 기능을 보여주려고 관련 용어를 요약과 번역에 넣었어요.\n3. 강조된 단어를 누르면 DB에 저장된 설명을 볼 수 있어요.",
+            "translation": "이 시연용 기사는 프롬프트 주입과 가드레일이라는 용어를 앱에서 어떻게 설명하는지 보여줍니다. 프롬프트 주입은 사용자가 모델 지시문을 우회하도록 유도하는 공격 방식이며, 가드레일은 이러한 위험을 줄이기 위해 입력과 출력을 제한하고 점검하는 운영 장치입니다.\n\n이 항목은 실제 보안 사고를 주장하지 않습니다. 신조어 하이라이트와 설명 팝오버가 데모에서 자연스럽게 보이도록 만든 안전한 샘플입니다.",
+            "content": "Synthetic neologism demo article for prompt injection and guardrails. This is not real news.",
+            "slang_terms": ["프롬프트 주입", "가드레일"],
+            "claims": [
+                {"claim": "프롬프트 주입과 가드레일 설명 기능을 보여주는 시연용 기사입니다.", "verdict": "FACT", "confidence": 0.82},
             ],
         },
         {
@@ -120,7 +156,7 @@ def demo_articles() -> list[dict[str, Any]]:
 def article_payloads(sb) -> list[dict[str, Any]]:
     optional = supported_article_columns(sb, OPTIONAL_ARTICLE_COLUMNS)
     rows: list[dict[str, Any]] = []
-    for item in demo_articles():
+    for index, item in enumerate(demo_articles(), 1):
         url = f"https://example.com/samsun-news-demo/{item['slug']}"
         row: dict[str, Any] = {
             "url_hash": make_hash(url),
@@ -145,6 +181,9 @@ def article_payloads(sb) -> list[dict[str, Any]]:
             "source_url": url,
             "fact_status": item["fact_label"],
             "is_demo": True,
+            "demo_visible": True,
+            "demo_priority": index,
+            "hitl_required": item["fact_label"] == "HITL_REQUIRED",
             "ai_status": "completed",
             "ai_provider": "demo-seed",
             "ai_model": "synthetic-demo-v1",
@@ -153,8 +192,8 @@ def article_payloads(sb) -> list[dict[str, Any]]:
             "content_chars": len(item["content"]),
             "translation_chars": len(item["translation"]),
             "updated_at": datetime.now(timezone.utc).isoformat(),
-            "slang_terms": [],
-            "neologism_terms": [],
+            "slang_terms": item.get("slang_terms", []),
+            "neologism_terms": item.get("slang_terms", []),
         }
         for key, value in extras.items():
             if key in optional:
@@ -193,6 +232,20 @@ def seed_neologisms(sb) -> None:
             "term": "HITL",
             "explanation": "Human-in-the-Loop의 약자로, AI 판단 뒤 사람이 최종 검토하는 절차입니다.",
             "ko_suggestion": "사람 검토",
+            "occurrence_count": 1,
+            "confirmed": True,
+        },
+        {
+            "term": "프롬프트 주입",
+            "explanation": "모델의 지시문을 우회하거나 악용하도록 입력을 조작하는 공격 방식입니다.",
+            "ko_suggestion": "지시문 조작 공격",
+            "occurrence_count": 1,
+            "confirmed": True,
+        },
+        {
+            "term": "가드레일",
+            "explanation": "AI 입력과 출력을 제한·점검해 위험한 응답을 줄이는 안전 장치입니다.",
+            "ko_suggestion": "안전 장치",
             "occurrence_count": 1,
             "confirmed": True,
         },

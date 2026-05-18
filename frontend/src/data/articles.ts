@@ -113,7 +113,7 @@ const DEFAULT_COLOR = '#6B7280';
 /** 목록·상세에서 보여 줄 한국어 우선 제목 (레거시 행 폴백 포함). */
 export function articleDisplayTitle(a: Pick<Article, 'title' | 'titleKo'>): string {
   const ko = (a.titleKo ?? '').trim();
-  return ko || (a.title ?? '').trim();
+  return ko || '제목 번역 중입니다.';
 }
 
 export function hasKoreanTitle(a: Pick<Article, 'titleKo'>): boolean {

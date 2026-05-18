@@ -38,6 +38,8 @@ const ARTICLE_FIELDS = [
   'summary_casual',
 ].join(',');
 
+const DEMO_POLISHED_FEED = import.meta.env.VITE_DEMO_POLISHED_FEED === '1';
+
 export class ApiError extends Error {
   status: number;
   constructor(status: number, message: string) {
@@ -144,6 +146,13 @@ function polishedFeedSort(a: Article, b: Article): number {
   return new Date(b.publishedAt).getTime() - new Date(a.publishedAt).getTime();
 }
 
+function isDemoReadyArticle(article: Article): boolean {
+  return articleCompletenessScore(article) >= 7
+    && Boolean(article.source.trim())
+    && Boolean(article.url.trim())
+    && Boolean(article.factLabel);
+}
+
 export async function fetchArticles(params: FetchArticlesParams = {}): Promise<Article[]> {
   requireSupabase();
   const { data, error } = await buildArticleQuery(params);
@@ -160,7 +169,11 @@ export async function fetchArticles(params: FetchArticlesParams = {}): Promise<A
   const filtered = params.category
     ? articles.filter(article => article.category === normalizeCategory(params.category))
     : articles;
-  return filtered.sort(polishedFeedSort);
+  const sorted = filtered.sort(polishedFeedSort);
+  if (!DEMO_POLISHED_FEED) return sorted;
+  const ready = sorted.filter(isDemoReadyArticle);
+  const incomplete = sorted.filter(article => !isDemoReadyArticle(article));
+  return [...ready, ...incomplete];
 }
 
 export async function fetchArticleByHash(urlHash: string): Promise<ApiArticle> {

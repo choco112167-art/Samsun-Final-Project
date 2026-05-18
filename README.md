@@ -443,6 +443,18 @@ python scripts/check_articles_health.py
 
 시연용 루머/미검증/HITL 사례는 실제 뉴스처럼 보이면 안 됩니다. 아래 스크립트는 모든 샘플 기사에 `source=DEMO`와 `[시연용]` 제목 접두어를 넣고, 루머 항목은 `RUMOR`, 사람 검토 항목은 `HITL_REQUIRED`로 저장합니다.
 
+시연 준비 상태 점검:
+
+```bash
+python scripts/audit_demo_readiness.py
+```
+
+선택 마이그레이션: 숨김/시연 우선순위 필드를 쓰려면 Supabase SQL Editor에서 먼저 실행합니다.
+
+```sql
+-- backend/sql/add_demo_readiness_fields.sql
+```
+
 백업 먼저 실행:
 
 ```bash
@@ -470,6 +482,13 @@ python scripts/seed_demo_articles.py --replace-demo --confirm-delete
 ```
 
 프로덕션 데이터 전체 삭제 명령은 제공하지 않습니다. 삭제 스크립트는 `source=DEMO` 기사와 연결된 `fact_checks`만 대상으로 합니다.
+
+불완전한 오래된 기사를 시연 화면에서 낮추거나 숨기려면 먼저 위 마이그레이션을 실행한 뒤 preview로 대상을 확인합니다.
+
+```bash
+python scripts/mark_incomplete_articles_hidden.py --limit 100
+python scripts/mark_incomplete_articles_hidden.py --limit 100 --run
+```
 
 기존 `title_ko` 보강:
 
@@ -511,12 +530,16 @@ python scripts/backfill_article_ai_outputs.py --limit 5 --provider openrouter --
 python scripts/backfill_title_ko.py --limit 50
 python scripts/backfill_article_ai_outputs.py --limit 5 --provider openrouter --model google/gemini-2.5-flash --repair-short-translation --min-translation-chars 300 --repair-weak-summaries --min-summary-chars 55 --min-summary-sentences 2 --summary-sentences 3 --run
 
+# 시연 전 통합 보수 wrapper: title_ko, 약한 요약, 짧은 번역, fact_status 보수
+python scripts/repair_demo_articles.py --limit 5 --provider openrouter
+python scripts/repair_demo_articles.py --limit 5 --provider openrouter --run
+
 # 5건 초과는 명시적으로 허용해야 함
 python scripts/backfill_article_ai_outputs.py --limit 20 --allow-large-run --provider openrouter --run
 ```
 
 `backfill_article_ai_outputs.py`는 기본적으로 `translation`, `summary_formal`, `summary_casual` 중 하나라도 비어 있는 기사만 조회합니다. DB의 `content`를 우선 사용하고, 비어 있으면 `url`에서 본문 크롤링을 시도합니다. 본문 확보에 실패하면 해당 기사는 건너뜁니다. `--overwrite`가 없으면 이미 채워진 AI 출력 필드는 덮어쓰지 않습니다.
-`--repair-short-translation`은 너무 짧은 번역 전문도 재생성 대상으로 보고, `--repair-weak-summaries`는 너무 짧거나 2문장 미만인 `summary_formal`/`summary_casual`도 보수 대상으로 봅니다.
+`--repair-short-translation`은 너무 짧은 번역 전문도 재생성 대상으로 보고, `--repair-weak-summaries`/`--repair-weak-summary`는 너무 짧거나 2문장 미만인 `summary_formal`/`summary_casual`도 보수 대상으로 봅니다. `--repair-missing-title-ko`, `--repair-missing-fact-status`, `--title-contains`로 시연 대상만 좁혀 보수할 수 있습니다.
 기본값은 `--limit 1`, `provider=mock`, preview 모드입니다. `--run`을 붙이지 않으면 모델 호출과 DB 업데이트를 하지 않습니다. 5건을 초과하려면 `--allow-large-run`을 명시해야 합니다.
 `provider=mock`은 API 호출 없이 `[MOCK 번역 전문]`과 3줄 요약을 저장해 “DB 저장 → 프론트 표시” 흐름만 검증합니다. `provider=openrouter`는 `OPENROUTER_API_KEY`와 OpenRouter Chat Completions endpoint만 사용하고, `provider=gemini`는 `GOOGLE_API_KEY` 또는 `GEMINI_API_KEY`만 사용합니다. API provider 사용 시 비용과 쿼터가 발생합니다.
 `provider=mock` 결과는 데모 화면에 남기면 안 됩니다. 데모 전에는 반드시 mock 탐지와 정리를 실행합니다.
