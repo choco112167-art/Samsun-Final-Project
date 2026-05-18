@@ -7,6 +7,9 @@ Usage:
 
 from __future__ import annotations
 
+from collections import Counter
+from datetime import datetime, timezone
+
 from article_pipeline_common import configure_stdio, get_supabase_client, supported_article_columns
 from demo_quality import (
     has_fact,
@@ -17,6 +20,10 @@ from demo_quality import (
     is_demo_ready,
     is_weak_summary,
 )
+
+
+MAY_START = datetime.fromisoformat("2026-05-01T00:00:00+00:00")
+MAY_END = datetime.fromisoformat("2026-05-18T23:59:59+00:00")
 
 
 BASE_FIELDS = [
@@ -58,6 +65,32 @@ def fetch_all(sb, fields: list[str]) -> list[dict]:
         offset += page_size
 
 
+def normalize_fact(value: object) -> str:
+    raw = str(value or "").strip().upper()
+    if raw in {"FACT", "VERIFIED", "FACT_INSIGHT", "INSIGHT"}:
+        return "verified"
+    if raw in {"RUMOR"}:
+        return "rumor"
+    if raw in {"HITL", "HITL_REQUIRED", "HUMAN_REVIEW_REQUIRED"}:
+        return "hitl_required"
+    if raw in {"", "NONE", "NULL"}:
+        return "missing"
+    return "unverified"
+
+
+def parse_dt(value: object) -> datetime | None:
+    text = str(value or "").strip()
+    if not text:
+        return None
+    try:
+        parsed = datetime.fromisoformat(text.replace("Z", "+00:00"))
+        if parsed.tzinfo is None:
+            parsed = parsed.replace(tzinfo=timezone.utc)
+        return parsed.astimezone(timezone.utc)
+    except ValueError:
+        return None
+
+
 def main() -> int:
     configure_stdio()
     sb = get_supabase_client()
@@ -78,6 +111,18 @@ def main() -> int:
     with_neologisms = sum(1 for row in rows if has_neologism_terms(row))
     demo_ready = sum(1 for row in rows if is_demo_ready(row))
     newest = max((str(row.get("published_at") or "") for row in rows), default="")
+    may_rows = [
+        row for row in rows
+        if (dt := parse_dt(row.get("published_at"))) is not None and MAY_START <= dt <= MAY_END
+    ]
+    demo_rows = [
+        row for row in rows
+        if str(row.get("source") or "").strip().upper() == "DEMO"
+        or bool(row.get("is_demo"))
+        or "[시연용]" in str(row.get("title_ko") or "")
+    ]
+    fact_counts = Counter(normalize_fact(row.get("fact_status") or row.get("fact_label")) for row in rows)
+    demo_fact_counts = Counter(normalize_fact(row.get("fact_status") or row.get("fact_label")) for row in demo_rows)
 
     print("[demo-readiness]")
     print(f"total_articles: {total}")
@@ -91,6 +136,13 @@ def main() -> int:
     print(f"articles_with_neologism_terms: {with_neologisms}")
     print(f"newest_article_published_at: {newest or '(none)'}")
     print(f"demo_ready_articles: {demo_ready}")
+    print(f"may_2026_05_01_to_05_18_articles: {len(may_rows)}")
+    print(f"demo_articles: {len(demo_rows)}")
+    print(f"demo_rumor_articles: {demo_fact_counts.get('rumor', 0)}")
+    print(f"hitl_required_articles: {fact_counts.get('hitl_required', 0)}")
+    print("fact_status_counts:")
+    for key in ("verified", "unverified", "rumor", "hitl_required", "missing"):
+        print(f"  {key}: {fact_counts.get(key, 0)}")
     print(f"optional_columns_detected: {','.join(optional) or '(none)'}")
 
     if demo_ready < 5:

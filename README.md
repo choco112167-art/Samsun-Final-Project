@@ -904,4 +904,57 @@ Samsun-Final-Project-main/
 
 ---
 
+## Final Demo / Evaluation Summary
+
+Samsun News / 삼선뉴스 is an Apps in Toss `.ait` AI news curation mini-app. It converts raw English AI/tech news into a Korean-first mobile feed with Korean titles, full translations, formal/casual 3-line summaries, fact-status badges, neologism explanations, source links, and safe rumor/HITL demo examples.
+
+Core AI features:
+
+- Local demo/backfill model: Ollama `samsun-gemma4`
+- Cloud refresh path: Supabase Edge/Cron + OpenRouter/Gemini
+- Strict Sangjun SQLite import range: `2026-05-01` through `2026-05-18`
+- Conservative fact policy: uncertain claims become `UNVERIFIED` or `HITL_REQUIRED`
+- Neologism explanations from Supabase, not hardcoded mock text
+
+Architecture:
+
+- Frontend: React + Vite + Apps in Toss `.ait`
+- Data/backend: Supabase direct read with anon key
+- Batch/local import: `scripts/process_sangjun_sqlite_with_ollama.py`
+- Demo readiness: `scripts/audit_demo_readiness.py`, `scripts/prepare_demo_feed.py`, `scripts/seed_demo_articles.py`
+
+Final demo commands:
+
+```bash
+python scripts/audit_demo_readiness.py
+python scripts/audit_sangjun_sqlite.py --db-path samsun_345.db --since 2026-05-01 --until 2026-05-18
+python scripts/process_sangjun_sqlite_with_ollama.py --db-path samsun_345.db --since 2026-05-01 --until 2026-05-18 --limit 3 --dry-run
+cd frontend
+npm run build
+npm run ait:build
+```
+
+Final `.ait` path:
+
+```text
+frontend/samsun-newsapp.ait
+```
+
+Evaluation documents:
+
+- `docs/EVALUATION_RUBRIC_MAPPING.md`
+- `docs/FINAL_DEMO_SCENARIO.md`
+- `docs/FINAL_ARCHITECTURE.md`
+- `docs/MODEL_STRATEGY.md`
+- `docs/DATA_PIPELINE.md`
+- `docs/FINAL_TEST_CHECKLIST.md`
+
+Honest limitations:
+
+- Supabase Edge cannot use localhost Ollama; cloud refresh uses OpenRouter/Gemini.
+- Some older DB rows remain incomplete; demo mode prioritizes May-range processed rows and clearly marked demo rows.
+- Quantitative BLEU/COMET/G-Eval and term preservation evaluation can be expanded after the demo.
+
+---
+
 *생성 AI 7회차 Deep Dive 프로젝트 | 최종 발표: 2026년 5월 20일*
