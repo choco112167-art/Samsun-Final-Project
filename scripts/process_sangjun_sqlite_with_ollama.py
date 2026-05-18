@@ -11,6 +11,7 @@ import json
 import os
 import re
 import sqlite3
+import sys
 from datetime import datetime, timezone
 from typing import Any
 
@@ -146,26 +147,30 @@ Rules:
 
 
 def call_ollama(prompt: str, model: str, base_url: str, timeout: int = 180) -> dict[str, Any]:
-    response = requests.post(
-        base_url.rstrip("/") + "/api/chat",
-        json={
-            "model": model,
-            "messages": [
-                {"role": "system", "content": "Return strict JSON only. You are a careful Korean AI news editor."},
-                {"role": "user", "content": prompt},
-            ],
-            "stream": False,
-            "options": {"temperature": 0.1, "num_predict": 4096},
-        },
-        timeout=timeout,
-    )
-    response.raise_for_status()
-    body = response.json()
-    content = ((body.get("message") or {}).get("content") or "").strip()
-    parsed = extract_json_object(content)
-    if not parsed:
-        raise RuntimeError("Ollama response did not contain valid JSON")
-    return parsed
+    last_error = ""
+    for attempt in range(1, 4):
+        retry_note = "" if attempt == 1 else "\nPrevious output was invalid. Return one strict JSON object only."
+        response = requests.post(
+            base_url.rstrip("/") + "/api/chat",
+            json={
+                "model": model,
+                "messages": [
+                    {"role": "system", "content": "Return strict JSON only. You are a careful Korean AI news editor."},
+                    {"role": "user", "content": prompt + retry_note},
+                ],
+                "stream": False,
+                "options": {"temperature": 0.05, "num_predict": 4096},
+            },
+            timeout=timeout,
+        )
+        response.raise_for_status()
+        body = response.json()
+        content = ((body.get("message") or {}).get("content") or "").strip()
+        parsed = extract_json_object(content)
+        if parsed:
+            return parsed
+        last_error = content[:240]
+    raise RuntimeError(f"Ollama response did not contain valid JSON: {last_error}")
 
 
 def normalize_generated(data: dict[str, Any], row: dict[str, Any], cmap: dict[str, str]) -> dict[str, Any]:
@@ -305,13 +310,17 @@ def to_supabase_payload(
 
 
 def main() -> int:
+    if hasattr(sys.stdout, "reconfigure"):
+        sys.stdout.reconfigure(encoding="utf-8")
+    if hasattr(sys.stderr, "reconfigure"):
+        sys.stderr.reconfigure(encoding="utf-8")
     parser = argparse.ArgumentParser()
     parser.add_argument("--db-path", default="samsun_345.db")
     parser.add_argument("--since", default=DEFAULT_SINCE)
     parser.add_argument("--until", default=DEFAULT_UNTIL)
     parser.add_argument("--limit", type=int, default=10)
     parser.add_argument("--offset", type=int, default=0)
-    parser.add_argument("--dry-run", action="store_true")
+    parser.add_argument("--dry-run", action="store_true", help="Call Ollama and print generated fields, but do not write.")
     parser.add_argument("--write-sqlite", action="store_true")
     parser.add_argument("--upsert-supabase", action="store_true")
     parser.add_argument("--only-missing", action="store_true")
@@ -357,12 +366,12 @@ def main() -> int:
             f"rowid={row.get('__rowid__')} published_at={get_value(row, cmap, 'published_at')} "
             f"source={get_value(row, cmap, 'source')} title={(str(get_value(row, cmap, 'title')) or '')[:90]}"
         )
-    if args.dry_run:
-        print("[sangjun-process] dry-run: no Ollama call, no SQLite write, no Supabase upsert.")
-        return 0
     if not args.write_sqlite and not args.upsert_supabase:
-        print("[sangjun-process] no write target selected. Add --write-sqlite and/or --upsert-supabase.")
-        return 0
+        if args.dry_run:
+            print("[sangjun-process] dry-run: Ollama will be called, but no SQLite/Supabase writes will occur.")
+        else:
+            print("[sangjun-process] no write target selected. Add --dry-run, --write-sqlite and/or --upsert-supabase.")
+            return 0
 
     if args.write_sqlite:
         ensure_sqlite_columns(conn, table)
@@ -375,25 +384,43 @@ def main() -> int:
         sb = get_supabase_client()
         optional = supported_article_columns(sb, OPTIONAL_SUPABASE_COLUMNS)
 
-    upsert_rows: list[dict[str, Any]] = []
     processed = 0
+    upserted = 0
+    skipped = 0
     for index, row in enumerate(selected, start=1):
         prompt = build_prompt(row, cmap)
-        generated = normalize_generated(call_ollama(prompt, args.model, args.ollama_base_url), row, cmap)
-        if args.write_sqlite:
+        try:
+            generated = normalize_generated(call_ollama(prompt, args.model, args.ollama_base_url), row, cmap)
+        except Exception as exc:
+            skipped += 1
+            print(f"[sangjun-process] skip rowid={row.get('__rowid__')} reason={exc}")
+            continue
+        if args.dry_run:
+            print(
+                "[sangjun-process] generated "
+                f"title_ko={generated['title_ko'][:80]} "
+                f"translation_chars={len(generated['translation'])} "
+                f"summary_formal_chars={len(generated['summary_formal'])} "
+                f"summary_casual_chars={len(generated['summary_casual'])} "
+                f"fact_status={generated['fact_status']} "
+                f"fact_label={generated['fact_label']} "
+                f"neologism_terms={generated['neologism_terms']}"
+            )
+        if args.write_sqlite and not args.dry_run:
             write_sqlite(conn, table, row["__rowid__"], generated)
-        if args.upsert_supabase:
-            upsert_rows.append(to_supabase_payload(row, cmap, generated, optional, demo_priority=index, model=args.model))
+        if args.upsert_supabase and not args.dry_run:
+            payload = to_supabase_payload(row, cmap, generated, optional, demo_priority=index, model=args.model)
+            sb.table("articles").upsert([payload], on_conflict="url_hash").execute()
+            upserted += 1
         processed += 1
         print(
             f"[sangjun-process] processed={processed}/{len(selected)} "
             f"fact={generated['fact_label']} title_ko={generated['title_ko'][:60]}"
         )
 
-    if sb is not None and upsert_rows:
-        sb.table("articles").upsert(upsert_rows, on_conflict="url_hash").execute()
-        print(f"[sangjun-process] supabase_upserted={len(upsert_rows)}")
-    print(f"[sangjun-process] done processed={processed}")
+    if sb is not None:
+        print(f"[sangjun-process] supabase_upserted={upserted}")
+    print(f"[sangjun-process] done processed={processed} skipped={skipped}")
     return 0
 
 

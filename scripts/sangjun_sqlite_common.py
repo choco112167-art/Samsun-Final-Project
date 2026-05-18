@@ -55,9 +55,31 @@ WRITE_COLUMNS: dict[str, str] = {
 
 def resolve_db_path(value: str) -> Path:
     path = Path(value)
-    if path.is_absolute():
+    if path.is_absolute() and path.exists():
         return path
-    return Path.cwd() / path
+    if path.is_absolute():
+        alternatives = []
+        if path.suffix.lower() == ".db":
+            alternatives.append(path.with_suffix(""))
+        else:
+            alternatives.append(path.with_suffix(path.suffix + ".db") if path.suffix else Path(str(path) + ".db"))
+        for alternative in alternatives:
+            if alternative.exists():
+                return alternative
+        return path
+
+    root_path = Path.cwd() / path
+    if root_path.exists():
+        return root_path
+    alternatives = []
+    if root_path.suffix.lower() == ".db":
+        alternatives.append(root_path.with_suffix(""))
+    else:
+        alternatives.append(root_path.with_suffix(root_path.suffix + ".db") if root_path.suffix else Path(str(root_path) + ".db"))
+    for alternative in alternatives:
+        if alternative.exists():
+            return alternative
+    return root_path
 
 
 def quote_ident(name: str) -> str:

@@ -19,6 +19,10 @@ poc_dummy.py
 articles_raw.jsonl
 articles_translated.jsonl
 *.jsonl
+samsun_345
+samsun_345.db
+*.sqlite
+*.sqlite3
 eval/data/
 token.json
 client_secret*.json

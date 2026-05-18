@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import sqlite3
+import sys
 
 from sangjun_sqlite_common import (
     DEFAULT_SINCE,
@@ -20,6 +21,10 @@ from sangjun_sqlite_common import (
 
 
 def main() -> int:
+    if hasattr(sys.stdout, "reconfigure"):
+        sys.stdout.reconfigure(encoding="utf-8")
+    if hasattr(sys.stderr, "reconfigure"):
+        sys.stderr.reconfigure(encoding="utf-8")
     parser = argparse.ArgumentParser()
     parser.add_argument("--db-path", default="samsun_345.db")
     parser.add_argument("--since", default=DEFAULT_SINCE)
