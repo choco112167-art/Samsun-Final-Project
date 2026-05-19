@@ -26,10 +26,12 @@ from sangjun_sqlite_common import (
     detect_article_table,
     detect_neologisms,
     filter_rows,
+    filter_demo_neologism_terms,
     get_value,
     is_blank,
     json_dumps_ko,
     make_url_hash,
+    normalize_final_category,
     parse_published_at,
     quote_ident,
     resolve_db_path,
@@ -106,6 +108,12 @@ def build_prompt(row: dict[str, Any], cmap: dict[str, str]) -> str:
     published_at = str(get_value(row, cmap, "published_at") or "")
     body = str(get_value(row, cmap, "content") or "")
     body = body[:8000]
+    suggested_category = normalize_final_category(
+        get_value(row, cmap, "category"),
+        source,
+        title,
+        body,
+    )
     return f"""
 You are a careful Korean AI news editor for Samsun News.
 Process exactly one article. Do not invent facts.
@@ -119,6 +127,7 @@ Return ONLY valid JSON with these fields:
   "summary_ko": "3-line Korean summary",
   "summary_formal": "1. ...\\n2. ...\\n3. ...",
   "summary_casual": "1. ...\\n2. ...\\n3. ...",
+  "category": "<카테고리>",
   "fact_status": "verified | unverified | rumor | hitl_required",
   "fact_label": "VERIFIED | UNVERIFIED | RUMOR | HITL_REQUIRED",
   "fact_confidence": 0.0,
@@ -131,6 +140,31 @@ Rules:
 - Keep product/company names in English if common.
 - For uncertainty, prefer unverified or hitl_required.
 - Do not claim rumor/fake items are verified.
+
+━━━ CATEGORY RULES ━━━
+Read the article and select the single most appropriate category from the list below.
+Output the category label EXACTLY as written — no modifications allowed.
+
+  • AI 연구    — 논문, 모델 아키텍처, 벤치마크, 학술 연구 등
+  • AI 심층    — AI 기술·트렌드의 심층 분석, 해설, 특집 기사
+  • AI 스타트업 — AI 스타트업의 창업·투자·인수·성장 스토리
+  • AI 윤리    — AI 안전성, 편향, 규제, 정책, 사회적 영향
+  • AI 비즈니스 — 대기업 AI 전략, 제품 출시, 파트너십, 실적
+  • AI 커뮤니티 — 개발자 커뮤니티, 오픈소스, 해커톤, 밋업
+  • 테크 전반  — AI 외 IT·반도체·플랫폼·하드웨어 등 기술 전반
+
+━━━ CATEGORY DISAMBIGUATION ━━━
+Priority order when multiple categories apply:
+If the subject is a startup (article mentions funding rounds, early-stage growth,
+or the company is not a well-known major tech firm) → AI 스타트업 우선
+If the article is academic/paper-based → AI 연구 우선 over AI 심층
+If the article analyzes trends without a new announcement → AI 심층
+If the article involves non-AI tech (chip fabrication, OS, hardware) → 테크 전반
+When in doubt between AI 비즈니스 and AI 스타트업:
+major tech firms (Google, Microsoft, Meta, Apple, Amazon, Nvidia 등) → AI 비즈니스
+
+[SUGGESTED_CATEGORY_FROM_SOURCE]
+{suggested_category}
 
 [SOURCE]
 {source}
@@ -187,6 +221,12 @@ def normalize_generated(data: dict[str, Any], row: dict[str, Any], cmap: dict[st
         confidence = 0.45
     confidence = max(0.0, min(1.0, confidence))
     hitl_required = bool(data.get("hitl_required")) or status == "hitl_required"
+    category = normalize_final_category(
+        data.get("category") or get_value(row, cmap, "category"),
+        get_value(row, cmap, "source"),
+        get_value(row, cmap, "title"),
+        get_value(row, cmap, "content"),
+    )
     neo_terms = data.get("neologism_terms")
     if not isinstance(neo_terms, list):
         neo_terms = []
@@ -199,7 +239,7 @@ def normalize_generated(data: dict[str, Any], row: dict[str, Any], cmap: dict[st
             summary_casual,
         ]
     )
-    neo_terms = sorted({str(term).strip() for term in [*neo_terms, *detect_neologisms(haystack)] if str(term).strip()})
+    neo_terms = filter_demo_neologism_terms([*neo_terms, *detect_neologisms(haystack)])
     return {
         "title_ko": title_ko,
         "translation": translation,
@@ -207,6 +247,7 @@ def normalize_generated(data: dict[str, Any], row: dict[str, Any], cmap: dict[st
         "summary_ko": summary_ko,
         "summary_formal": summary_formal,
         "summary_casual": summary_casual,
+        "category": category,
         "fact_status": status,
         "fact_label": label,
         "fact_confidence": confidence,
@@ -262,16 +303,17 @@ def to_supabase_payload(
     url = str(get_value(row, cmap, "url") or "").strip()
     if not url:
         url = f"sangjun-sqlite://{row.get('__rowid__')}"
+    url_hash = str(get_value(row, cmap, "url_hash") or "").strip() or make_url_hash(url)
     published = parse_published_at(get_value(row, cmap, "published_at"))
     content = str(get_value(row, cmap, "content") or "")
     payload: dict[str, Any] = {
-        "url_hash": make_url_hash(url),
+        "url_hash": url_hash,
         "url": url,
         "title": str(get_value(row, cmap, "title") or generated["title_ko"] or ""),
         "title_ko": generated["title_ko"],
         "source": str(get_value(row, cmap, "source") or "SANGJUN"),
-        "source_type": "media",
-        "category": str(get_value(row, cmap, "category") or "AI 연구"),
+        "source_type": str(get_value(row, cmap, "source_type") or "media"),
+        "category": generated["category"],
         "country": str(get_value(row, cmap, "country") or "KR"),
         "keywords": ["sangjun", "may-2026", "AI"],
         "published_at": published.isoformat() if published else None,
@@ -354,17 +396,27 @@ def main() -> int:
     )
     if args.only_missing:
         selected = [row for row in selected if row_needs_processing(row, cmap)]
+    short_rows = [
+        row for row in selected
+        if len(str(get_value(row, cmap, "content") or "").strip()) < 80
+    ]
+    selected = [
+        row for row in selected
+        if len(str(get_value(row, cmap, "content") or "").strip()) >= 80
+    ]
     selected = selected[max(args.offset, 0): max(args.offset, 0) + max(args.limit, 0)]
 
     print(
-        f"[sangjun-process] table={table} selected={len(selected)} "
+        f"[sangjun-process] table={table} selected={len(selected)} skipped_short_content={len(short_rows)} "
         f"range={args.since}..{args.until} model={args.model} dry_run={args.dry_run}"
     )
     for row in selected[:10]:
         print(
             "  "
             f"rowid={row.get('__rowid__')} published_at={get_value(row, cmap, 'published_at')} "
-            f"source={get_value(row, cmap, 'source')} title={(str(get_value(row, cmap, 'title')) or '')[:90]}"
+            f"source={get_value(row, cmap, 'source')} "
+            f"category={normalize_final_category(get_value(row, cmap, 'category'), get_value(row, cmap, 'source'), get_value(row, cmap, 'title'), get_value(row, cmap, 'content'))} "
+            f"title={(str(get_value(row, cmap, 'title')) or '')[:90]}"
         )
     if not args.write_sqlite and not args.upsert_supabase:
         if args.dry_run:

@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import sqlite3
 import sys
+from collections import Counter
 
 from sangjun_sqlite_common import (
     DEFAULT_SINCE,
@@ -15,6 +16,7 @@ from sangjun_sqlite_common import (
     filter_rows,
     get_value,
     is_blank,
+    normalize_final_category,
     parse_published_at,
     resolve_db_path,
 )
@@ -57,6 +59,17 @@ def main() -> int:
         return sum(1 for row in selected if is_blank(get_value(row, cmap, logical)))
 
     rows_with_content = sum(1 for row in selected if not is_blank(get_value(row, cmap, "content")))
+    content_lengths = [len(str(get_value(row, cmap, "content") or "")) for row in selected]
+    normalized_categories = Counter(
+        normalize_final_category(
+            get_value(row, cmap, "category"),
+            get_value(row, cmap, "source"),
+            get_value(row, cmap, "title"),
+            get_value(row, cmap, "content"),
+        )
+        for row in selected
+    )
+    processing_candidates = sum(1 for row in selected if len(str(get_value(row, cmap, "content") or "").strip()) >= 80)
 
     print("[sangjun-audit]")
     print(f"db_path: {db_path}")
@@ -73,6 +86,14 @@ def main() -> int:
     print(f"missing_summary_ko_selected_range: {missing_count('summary_ko')}")
     print(f"missing_summary_formal_selected_range: {missing_count('summary_formal')}")
     print(f"missing_summary_casual_selected_range: {missing_count('summary_casual')}")
+    print(f"processing_candidates_content_len_ge_80: {processing_candidates}")
+    if content_lengths:
+        sorted_lengths = sorted(content_lengths)
+        mid = len(sorted_lengths) // 2
+        print(
+            "content_length_distribution_selected_range: "
+            f"min={sorted_lengths[0]} median={sorted_lengths[mid]} max={sorted_lengths[-1]}"
+        )
 
     print("source_counts_selected_range:")
     for source, count in counter_for(selected, cmap, "source").most_common(20):
@@ -80,6 +101,10 @@ def main() -> int:
 
     print("category_counts_selected_range:")
     for category, count in counter_for(selected, cmap, "category").most_common(20):
+        print(f"  {category}: {count}")
+
+    print("normalized_category_counts_selected_range:")
+    for category, count in normalized_categories.most_common():
         print(f"  {category}: {count}")
 
     print("sample_latest_rows_selected_range:")

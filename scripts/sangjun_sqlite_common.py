@@ -17,6 +17,7 @@ DEFAULT_UNTIL = "2026-05-18"
 
 FIELD_CANDIDATES: dict[str, tuple[str, ...]] = {
     "id": ("id", "article_id", "idx", "rowid"),
+    "url_hash": ("url_hash", "hash", "article_hash"),
     "title": ("title", "title_en", "headline", "original_title"),
     "title_ko": ("title_ko", "ko_title", "korean_title", "translated_title"),
     "url": ("url", "source_url", "link", "article_url"),
@@ -28,14 +29,72 @@ FIELD_CANDIDATES: dict[str, tuple[str, ...]] = {
     "content": ("content", "body", "article_text", "text", "crawled_text", "description"),
     "translation": ("translation_ko", "translation", "translated_text", "ko_body"),
     "summary_ko": ("summary_ko", "summary", "ko_summary"),
-    "summary_formal": ("summary_formal", "formal_summary"),
-    "summary_casual": ("summary_casual", "casual_summary"),
+    "summary_formal": ("summary_formal", "translation_formal", "formal_summary"),
+    "summary_casual": ("summary_casual", "translation_casual", "casual_summary"),
     "fact_status": ("fact_status", "fact_label", "verdict"),
     "fact_label": ("fact_label", "fact_status", "verdict"),
     "fact_confidence": ("fact_confidence", "confidence", "credibility_score"),
     "hitl_required": ("hitl_required", "human_review_required"),
     "neologism_terms": ("neologism_terms", "slang_terms"),
 }
+
+FINAL_CATEGORIES = (
+    "AI 연구",
+    "AI 심층",
+    "AI 스타트업",
+    "AI 윤리",
+    "AI 비즈니스",
+    "AI 커뮤니티",
+    "테크 전반",
+)
+
+RAW_CATEGORY_MAP = {
+    "AI/스타트업": "AI 스타트업",
+    "AI 심층/기술": "AI 심층",
+    "LLM 커뮤니티": "AI 커뮤니티",
+    "AI/반도체": "테크 전반",
+    "AI 연구": "AI 연구",
+    "AI 연구/기술": "AI 연구",
+    "AI 심층": "AI 심층",
+    "AI 스타트업": "AI 스타트업",
+    "AI 윤리": "AI 윤리",
+    "AI 윤리/정책": "AI 윤리",
+    "AI 비즈니스": "AI 비즈니스",
+    "AI 커뮤니티": "AI 커뮤니티",
+    "테크 전반": "테크 전반",
+    "기타 테크": "테크 전반",
+    "AI 인프라": "테크 전반",
+    "LLM/생성AI": "AI 심층",
+}
+
+SOURCE_CATEGORY_FALLBACK = {
+    "TECHCRUNCH": "AI 스타트업",
+    "THE GUARDIAN TECH": "AI 윤리",
+    "IEEE SPECTRUM": "테크 전반",
+    "THE DECODER": "AI 심층",
+    "VENTUREBEAT AI": "AI 비즈니스",
+    "THE VERGE": "테크 전반",
+}
+
+STARTUP_SIGNALS = ("startup", "funding", "funded", "raises", "raised", "raise", "acquire", "acquired", "acquisition", "seed round", "series a", "series b")
+
+NEOLOGISM_DEMO_ALLOWLIST = (
+    "RAG",
+    "LLM",
+    "Fine-tuning",
+    "Prompt Injection",
+    "Guardrail",
+    "Hallucination",
+    "Inference",
+    "Token",
+    "Transformer",
+    "Embedding",
+    "HITL",
+    "CoVe",
+    "Re-ranking",
+    "pgvector",
+    "LoRA",
+)
 
 WRITE_COLUMNS: dict[str, str] = {
     "title_ko": "TEXT",
@@ -221,23 +280,49 @@ def counter_for(rows: list[dict[str, Any]], cmap: dict[str, str], logical: str) 
     return Counter(str(get_value(row, cmap, logical, "(missing)") or "(blank)").strip() for row in rows)
 
 
+def normalize_final_category(raw: Any, source: Any = "", title: Any = "", content: Any = "") -> str:
+    raw_text = str(raw or "").strip()
+    if raw_text in RAW_CATEGORY_MAP:
+        return RAW_CATEGORY_MAP[raw_text]
+
+    source_text = str(source or "").strip()
+    source_key = source_text.upper()
+    haystack = f"{title or ''} {content or ''}".lower()
+
+    if source_key == "TECHCRUNCH" and any(signal in haystack for signal in STARTUP_SIGNALS):
+        return "AI 스타트업"
+    if "HACKER NEWS" in source_key or "LEMMY" in source_key or "REDDIT" in source_key or source_key.startswith("HN"):
+        return "AI 커뮤니티"
+    if source_key == "MIT TECHNOLOGY REVIEW":
+        if any(token in haystack for token in ("paper", "benchmark", "research", "model architecture", "study", "researchers")):
+            return "AI 연구"
+        return "AI 심층"
+    if source_key in SOURCE_CATEGORY_FALLBACK:
+        return SOURCE_CATEGORY_FALLBACK[source_key]
+    return RAW_CATEGORY_MAP.get(raw_text, "테크 전반")
+
+
 def make_url_hash(url: str) -> str:
     return hashlib.md5(url.encode("utf-8")).hexdigest()
 
 
 def detect_neologisms(text: str) -> list[str]:
-    candidates = [
-        "HITL",
-        "프롬프트 주입",
-        "가드레일",
-        "RAG",
-        "LLMOps",
-        "파인튜닝",
-        "멀티모달",
-        "에이전트",
-    ]
     lower = text.lower()
-    return [term for term in candidates if term.lower() in lower]
+    return [term for term in NEOLOGISM_DEMO_ALLOWLIST if term.lower() in lower]
+
+
+def filter_demo_neologism_terms(terms: list[Any]) -> list[str]:
+    allowed = {term.lower(): term for term in NEOLOGISM_DEMO_ALLOWLIST}
+    out: list[str] = []
+    seen: set[str] = set()
+    for value in terms:
+        raw = str(value or "").strip()
+        key = raw.lower()
+        if key not in allowed or key in seen:
+            continue
+        seen.add(key)
+        out.append(allowed[key])
+    return out
 
 
 def json_dumps_ko(value: Any) -> str:

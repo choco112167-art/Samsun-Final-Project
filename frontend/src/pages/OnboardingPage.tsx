@@ -10,11 +10,11 @@ import { getSamsunUserId, tossHaptic } from '../lib/toss';
 export type { Interest };
 
 const INTERESTS: { id: Interest; emoji: string; desc: string }[] = [
-  { id: 'AI 연구/기술', emoji: '🔬', desc: 'MIT TR · The Decoder — AI 최신 연구 동향' },
+  { id: 'AI 연구',    emoji: '🔬', desc: '논문·모델·벤치마크 중심 연구 동향' },
   { id: 'AI 심층',    emoji: '📖', desc: 'MIT TR · The Decoder — AI 심층 분석·리포트' },
   { id: 'AI 스타트업', emoji: '🚀', desc: 'TechCrunch · VentureBeat — AI 스타트업·투자 동향' },
   { id: 'AI 비즈니스', emoji: '💼', desc: 'VentureBeat — AI 비즈니스·산업 적용 소식' },
-  { id: 'AI 윤리/정책', emoji: '⚖️', desc: 'The Guardian — AI 윤리·규제·사회적 영향' },
+  { id: 'AI 윤리',    emoji: '⚖️', desc: 'AI 안전성·규제·사회적 영향' },
   { id: 'AI 커뮤니티', emoji: '💬', desc: 'Reddit — AI 커뮤니티 토론·트렌드' },
   { id: '테크 전반',  emoji: '💻', desc: 'The Verge — AI를 포함한 테크 업계 전반 소식' },
 ];

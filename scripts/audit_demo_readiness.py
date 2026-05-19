@@ -22,6 +22,7 @@ from demo_quality import (
     is_demo_ready,
     is_weak_summary,
 )
+from sangjun_sqlite_common import FINAL_CATEGORIES, normalize_final_category
 
 
 MAY_START = datetime.fromisoformat("2026-05-01T00:00:00+00:00")
@@ -43,6 +44,7 @@ BASE_FIELDS = [
 ]
 OPTIONAL_FIELDS = [
     "summary_ko",
+    "keywords",
     "fact_status",
     "fact_confidence",
     "slang_terms",
@@ -52,32 +54,8 @@ OPTIONAL_FIELDS = [
     "demo_visible",
     "demo_priority",
     "hitl_required",
+    "content_source",
 ]
-
-
-SOURCE_CATEGORY_FALLBACK = {
-    "TECHCRUNCH": "AI 비즈니스",
-    "MIT TECHNOLOGY REVIEW": "AI 연구/기술",
-    "THE GUARDIAN TECH": "AI 윤리/정책",
-    "IEEE SPECTRUM": "AI 인프라",
-    "THE DECODER": "LLM/생성AI",
-    "VENTUREBEAT AI": "AI 비즈니스",
-    "THE VERGE": "기타 테크",
-    "MEDIUM": "기타 테크",
-    "QUANTA MAGAZINE": "AI 연구/기술",
-}
-
-RAW_CATEGORY_MAP = {
-    "AI 연구": "AI 연구/기술",
-    "AI 심층/기술": "AI 연구/기술",
-    "AI/스타트업": "AI 스타트업",
-    "AI 제품": "AI 제품/서비스",
-    "AI 윤리": "AI 윤리/정책",
-    "AI/반도체": "AI 인프라",
-    "반도체": "AI 인프라",
-    "LLM 커뮤니티": "LLM/생성AI",
-    "테크전반": "테크 전반",
-}
 
 
 def fetch_all(sb, fields: list[str]) -> list[dict[str, Any]]:
@@ -120,13 +98,12 @@ def is_demo_or_sample(row: dict[str, Any]) -> bool:
 
 
 def fallback_category(row: dict[str, Any]) -> str:
-    raw = str(row.get("category") or "").strip()
-    if raw:
-        return RAW_CATEGORY_MAP.get(raw, raw)
-    source = str(row.get("source") or "").strip().upper()
-    if "REDDIT" in source or "HACKER NEWS" in source or source.startswith("HN"):
-        return "AI 커뮤니티"
-    return SOURCE_CATEGORY_FALLBACK.get(source, "카테고리 없음")
+    return normalize_final_category(
+        row.get("category"),
+        row.get("source"),
+        row.get("title") or row.get("title_ko"),
+        row.get("translation") or "",
+    )
 
 
 def is_incomplete(row: dict[str, Any]) -> bool:
@@ -171,6 +148,7 @@ def main() -> int:
 
     total = len(rows)
     not_hidden = sum(1 for row in rows if not bool(row.get("is_hidden")))
+    hidden = sum(1 for row in rows if bool(row.get("is_hidden")))
     korean_title = sum(1 for row in rows if has_korean(row.get("title_ko")))
     missing_title_ko = sum(1 for row in rows if is_blank(row.get("title_ko")))
     missing_summary_formal = sum(1 for row in rows if is_blank(row.get("summary_formal")))
@@ -205,11 +183,20 @@ def main() -> int:
     category_null = sum(1 for row in rows if is_blank(row.get("category")))
 
     visible_by_category = Counter(fallback_category(row) for row in final_visible_rows)
+    all_by_final_category = Counter(fallback_category(row) for row in rows)
     visible_by_source = Counter(str(row.get("source") or "(none)") for row in final_visible_rows)
+    sangjun_rows = [
+        row for row in rows
+        if row.get("content_source") == "sangjun_sqlite"
+        or "sangjun" in [str(item).lower() for item in (row.get("keywords") or [])]
+    ]
+    demo_visible_violations = [row for row in final_visible_rows if is_demo_or_sample(row)]
+    incomplete_visible_violations = [row for row in final_visible_rows if is_incomplete(row)]
 
     print("[demo-readiness]")
     print(f"total_articles: {total}")
     print(f"is_hidden_false_articles: {not_hidden}")
+    print(f"is_hidden_true_articles: {hidden}")
     print(f"final_visible_real_complete_articles: {len(final_visible_rows)}")
     print(f"demo_or_sample_articles: {len(demo_rows)}")
     print(f"incomplete_articles: {len(incomplete_rows)}")
@@ -232,6 +219,9 @@ def main() -> int:
     print(f"newest_article_published_at: {newest or '(none)'}")
     print(f"demo_ready_articles_legacy_strict: {demo_ready}")
     print(f"may_2026_05_01_to_05_18_articles: {len(may_rows)}")
+    print(f"sangjun_imported_articles: {len(sangjun_rows)}")
+    print(f"demo_or_sample_visible_violations: {len(demo_visible_violations)}")
+    print(f"incomplete_visible_violations: {len(incomplete_visible_violations)}")
     print(f"demo_articles: {len(demo_rows)}")
     print(f"demo_rumor_articles: {demo_fact_counts.get('rumor', 0)}")
     print(f"hitl_required_articles: {fact_counts.get('hitl_required', 0)}")
@@ -239,8 +229,11 @@ def main() -> int:
     for key in ("verified", "unverified", "rumor", "hitl_required", "missing"):
         print(f"  {key}: {fact_counts.get(key, 0)}")
     print("visible_by_category:")
-    for key, count in visible_by_category.most_common():
-        print(f"  {key}: {count}")
+    for key in FINAL_CATEGORIES:
+        print(f"  {key}: {visible_by_category.get(key, 0)}")
+    print("all_articles_by_final_7_category:")
+    for key in FINAL_CATEGORIES:
+        print(f"  {key}: {all_by_final_category.get(key, 0)}")
     print("visible_by_source:")
     for key, count in visible_by_source.most_common():
         print(f"  {key}: {count}")
