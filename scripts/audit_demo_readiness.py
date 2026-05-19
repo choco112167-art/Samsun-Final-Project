@@ -1,5 +1,5 @@
 """
-Audit Supabase articles for polished Samsun News demo readiness.
+Audit Supabase articles for final Samsun News presentation readiness.
 
 Usage:
     python scripts/audit_demo_readiness.py
@@ -7,8 +7,9 @@ Usage:
 
 from __future__ import annotations
 
-from collections import Counter
+from collections import Counter, defaultdict
 from datetime import datetime, timezone
+from typing import Any
 
 from article_pipeline_common import configure_stdio, get_supabase_client, supported_article_columns
 from demo_quality import (
@@ -16,6 +17,7 @@ from demo_quality import (
     has_korean,
     has_neologism_terms,
     has_translation,
+    has_valid_summary,
     is_blank,
     is_demo_ready,
     is_weak_summary,
@@ -33,12 +35,14 @@ BASE_FIELDS = [
     "source",
     "url",
     "published_at",
+    "category",
     "summary_formal",
     "summary_casual",
     "translation",
     "fact_label",
 ]
 OPTIONAL_FIELDS = [
+    "summary_ko",
     "fact_status",
     "fact_confidence",
     "slang_terms",
@@ -51,8 +55,33 @@ OPTIONAL_FIELDS = [
 ]
 
 
-def fetch_all(sb, fields: list[str]) -> list[dict]:
-    rows: list[dict] = []
+SOURCE_CATEGORY_FALLBACK = {
+    "TECHCRUNCH": "AI 비즈니스",
+    "MIT TECHNOLOGY REVIEW": "AI 연구/기술",
+    "THE GUARDIAN TECH": "AI 윤리/정책",
+    "IEEE SPECTRUM": "AI 인프라",
+    "THE DECODER": "LLM/생성AI",
+    "VENTUREBEAT AI": "AI 비즈니스",
+    "THE VERGE": "기타 테크",
+    "MEDIUM": "기타 테크",
+    "QUANTA MAGAZINE": "AI 연구/기술",
+}
+
+RAW_CATEGORY_MAP = {
+    "AI 연구": "AI 연구/기술",
+    "AI 심층/기술": "AI 연구/기술",
+    "AI/스타트업": "AI 스타트업",
+    "AI 제품": "AI 제품/서비스",
+    "AI 윤리": "AI 윤리/정책",
+    "AI/반도체": "AI 인프라",
+    "반도체": "AI 인프라",
+    "LLM 커뮤니티": "LLM/생성AI",
+    "테크전반": "테크 전반",
+}
+
+
+def fetch_all(sb, fields: list[str]) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
     offset = 0
     page_size = 1000
     select_fields = ",".join(fields)
@@ -78,6 +107,45 @@ def normalize_fact(value: object) -> str:
     return "unverified"
 
 
+def is_demo_or_sample(row: dict[str, Any]) -> bool:
+    title = f"{row.get('title') or ''} {row.get('title_ko') or ''}".upper()
+    return (
+        str(row.get("source") or "").strip().upper() == "DEMO"
+        or bool(row.get("is_demo"))
+        or "DEMO" in title
+        or "시연용" in str(row.get("title") or "")
+        or "시연용" in str(row.get("title_ko") or "")
+        or "MOCK" in title
+    )
+
+
+def fallback_category(row: dict[str, Any]) -> str:
+    raw = str(row.get("category") or "").strip()
+    if raw:
+        return RAW_CATEGORY_MAP.get(raw, raw)
+    source = str(row.get("source") or "").strip().upper()
+    if "REDDIT" in source or "HACKER NEWS" in source or source.startswith("HN"):
+        return "AI 커뮤니티"
+    return SOURCE_CATEGORY_FALLBACK.get(source, "카테고리 없음")
+
+
+def is_incomplete(row: dict[str, Any]) -> bool:
+    return (
+        not has_korean(row.get("title_ko"))
+        or not has_translation(row)
+        or not has_valid_summary(row)
+        or not has_fact(row)
+    )
+
+
+def is_final_visible(row: dict[str, Any]) -> bool:
+    if bool(row.get("is_hidden")) or row.get("demo_visible") is False:
+        return False
+    if is_demo_or_sample(row):
+        return False
+    return not is_incomplete(row)
+
+
 def parse_dt(value: object) -> datetime | None:
     text = str(value or "").strip()
     if not text:
@@ -91,6 +159,10 @@ def parse_dt(value: object) -> datetime | None:
         return None
 
 
+def text_len(value: object) -> int:
+    return len(str(value or "").strip())
+
+
 def main() -> int:
     configure_stdio()
     sb = get_supabase_client()
@@ -98,14 +170,13 @@ def main() -> int:
     rows = fetch_all(sb, BASE_FIELDS + optional)
 
     total = len(rows)
+    not_hidden = sum(1 for row in rows if not bool(row.get("is_hidden")))
     korean_title = sum(1 for row in rows if has_korean(row.get("title_ko")))
     missing_title_ko = sum(1 for row in rows if is_blank(row.get("title_ko")))
     missing_summary_formal = sum(1 for row in rows if is_blank(row.get("summary_formal")))
     missing_summary_casual = sum(1 for row in rows if is_blank(row.get("summary_casual")))
-    weak_summaries = sum(
-        1 for row in rows
-        if is_weak_summary(row.get("summary_formal")) or is_weak_summary(row.get("summary_casual"))
-    )
+    missing_summary_ko = sum(1 for row in rows if "summary_ko" in optional and is_blank(row.get("summary_ko")))
+    weak_summaries = sum(1 for row in rows if not has_valid_summary(row))
     missing_translation = sum(1 for row in rows if not has_translation(row))
     with_fact = sum(1 for row in rows if has_fact(row))
     with_neologisms = sum(1 for row in rows if has_neologism_terms(row))
@@ -115,27 +186,51 @@ def main() -> int:
         row for row in rows
         if (dt := parse_dt(row.get("published_at"))) is not None and MAY_START <= dt <= MAY_END
     ]
-    demo_rows = [
-        row for row in rows
-        if str(row.get("source") or "").strip().upper() == "DEMO"
-        or bool(row.get("is_demo"))
-        or "[시연용]" in str(row.get("title_ko") or "")
-    ]
+    demo_rows = [row for row in rows if is_demo_or_sample(row)]
+    incomplete_rows = [row for row in rows if is_incomplete(row)]
+    final_visible_rows = [row for row in rows if is_final_visible(row)]
+    final_visible_rows.sort(
+        key=lambda row: (
+            int(row.get("demo_priority") or 0),
+            str(row.get("published_at") or ""),
+        ),
+        reverse=True,
+    )
     fact_counts = Counter(normalize_fact(row.get("fact_status") or row.get("fact_label")) for row in rows)
     demo_fact_counts = Counter(normalize_fact(row.get("fact_status") or row.get("fact_label")) for row in demo_rows)
+    with_translation = sum(1 for row in rows if has_translation(row))
+    with_summary_formal = sum(1 for row in rows if not is_weak_summary(row.get("summary_formal")))
+    with_summary_casual = sum(1 for row in rows if not is_weak_summary(row.get("summary_casual")))
+    with_summary_ko = sum(1 for row in rows if "summary_ko" in optional and not is_weak_summary(row.get("summary_ko")))
+    category_null = sum(1 for row in rows if is_blank(row.get("category")))
+
+    visible_by_category = Counter(fallback_category(row) for row in final_visible_rows)
+    visible_by_source = Counter(str(row.get("source") or "(none)") for row in final_visible_rows)
 
     print("[demo-readiness]")
     print(f"total_articles: {total}")
+    print(f"is_hidden_false_articles: {not_hidden}")
+    print(f"final_visible_real_complete_articles: {len(final_visible_rows)}")
+    print(f"demo_or_sample_articles: {len(demo_rows)}")
+    print(f"incomplete_articles: {len(incomplete_rows)}")
+    print(f"category_null_articles: {category_null}")
     print(f"articles_with_korean_title: {korean_title}")
     print(f"articles_missing_title_ko: {missing_title_ko}")
     print(f"articles_missing_summary_formal: {missing_summary_formal}")
     print(f"articles_missing_summary_casual: {missing_summary_casual}")
-    print(f"articles_with_weak_summaries: {weak_summaries}")
+    if "summary_ko" in optional:
+        print(f"articles_missing_summary_ko: {missing_summary_ko}")
+    print(f"articles_with_weak_or_missing_all_summaries: {weak_summaries}")
     print(f"articles_missing_or_short_translation: {missing_translation}")
+    print(f"articles_with_valid_translation: {with_translation}")
+    print(f"articles_with_valid_summary_formal: {with_summary_formal}")
+    print(f"articles_with_valid_summary_casual: {with_summary_casual}")
+    if "summary_ko" in optional:
+        print(f"articles_with_valid_summary_ko: {with_summary_ko}")
     print(f"articles_with_fact_status_or_label: {with_fact}")
     print(f"articles_with_neologism_terms: {with_neologisms}")
     print(f"newest_article_published_at: {newest or '(none)'}")
-    print(f"demo_ready_articles: {demo_ready}")
+    print(f"demo_ready_articles_legacy_strict: {demo_ready}")
     print(f"may_2026_05_01_to_05_18_articles: {len(may_rows)}")
     print(f"demo_articles: {len(demo_rows)}")
     print(f"demo_rumor_articles: {demo_fact_counts.get('rumor', 0)}")
@@ -143,10 +238,25 @@ def main() -> int:
     print("fact_status_counts:")
     for key in ("verified", "unverified", "rumor", "hitl_required", "missing"):
         print(f"  {key}: {fact_counts.get(key, 0)}")
+    print("visible_by_category:")
+    for key, count in visible_by_category.most_common():
+        print(f"  {key}: {count}")
+    print("visible_by_source:")
+    for key, count in visible_by_source.most_common():
+        print(f"  {key}: {count}")
     print(f"optional_columns_detected: {','.join(optional) or '(none)'}")
+    print("final_feed_top50:")
+    for idx, row in enumerate(final_visible_rows[:50], start=1):
+        title = row.get("title_ko") or row.get("title") or "(untitled)"
+        summary_len = max(text_len(row.get("summary_formal")), text_len(row.get("summary_casual")), text_len(row.get("summary_ko")))
+        print(
+            f"  {idx:02d}. {title} | category={fallback_category(row)} | "
+            f"source={row.get('source')} | published_at={row.get('published_at')} | "
+            f"translation_len={text_len(row.get('translation'))} | summary_len={summary_len}"
+        )
 
-    if demo_ready < 5:
-        print("[demo-readiness] WARNING: fewer than 5 demo-ready articles. Run repair/seed commands before demo.")
+    if len(final_visible_rows) < 100:
+        print("[demo-readiness] WARNING: fewer than 100 final-visible complete real articles.")
     return 0
 
 

@@ -33,7 +33,11 @@ def is_weak_summary(value: Any, min_chars: int = 55, min_sentences: int = 2) -> 
 
 
 def has_valid_summary(row: dict[str, Any]) -> bool:
-    return not is_weak_summary(row.get("summary_formal")) or not is_weak_summary(row.get("summary_casual"))
+    return (
+        not is_weak_summary(row.get("summary_formal"))
+        or not is_weak_summary(row.get("summary_casual"))
+        or not is_weak_summary(row.get("summary_ko"))
+    )
 
 
 def has_translation(row: dict[str, Any], min_chars: int = 140) -> bool:

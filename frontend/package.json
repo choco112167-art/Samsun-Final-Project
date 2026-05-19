@@ -6,10 +6,11 @@
   "scripts": {
     "dev": "vite --host 0.0.0.0 --port 5173",
     "dev:host": "vite --host 0.0.0.0 --port 5173",
+    "check:build-env": "node scripts/check-build-env.mjs",
     "typecheck": "tsc -b",
-    "build": "vite build",
+    "build": "npm run check:build-env && vite build",
     "ait:dev": "granite dev",
-    "ait:build": "ait build",
+    "ait:build": "npm run check:build-env && ait build",
     "ait:deploy": "ait deploy",
     "lint": "eslint .",
     "preview": "vite preview"

@@ -4,6 +4,7 @@ import { isValidSummary, hasKoreanTitle, type Article } from '../data/articles';
 import type { ApiArticle } from '../data/api';
 import type { SummaryTone } from '../hooks/useTonePreference';
 import { FactStatusBadge, factStatusColor } from './FactStatusBadge';
+import { categoryStyle, normalizeCategory } from '../data/categories';
 
 export type CardArticle = Article | ApiArticle;
 
@@ -41,6 +42,20 @@ function pickTimeAgo(article: CardArticle): string {
   return '';
 }
 
+function sourceTone(source: string) {
+  const palette: Record<string, { color: string; background: string; border: string }> = {
+    'TechCrunch': { color: '#1D4ED8', background: '#EFF6FF', border: '#BFDBFE' },
+    'MIT Technology Review': { color: '#0F766E', background: '#ECFDF5', border: '#A7F3D0' },
+    'The Guardian Tech': { color: '#9A3412', background: '#FFF7ED', border: '#FED7AA' },
+    'IEEE Spectrum': { color: '#4338CA', background: '#EEF2FF', border: '#C7D2FE' },
+    'The Decoder': { color: '#6D28D9', background: '#F5F3FF', border: '#DDD6FE' },
+    'VentureBeat AI': { color: '#BE123C', background: '#FFF1F2', border: '#FECDD3' },
+    'The Verge': { color: '#334155', background: '#F8FAFC', border: '#CBD5E1' },
+  };
+  if (/reddit|hacker news/i.test(source)) return { color: '#B45309', background: '#FFFBEB', border: '#FDE68A' };
+  return palette[source] ?? { color: '#4E5968', background: '#F2F4F6', border: '#E5E8EB' };
+}
+
 interface Props {
   article: CardArticle;
   bookmarked?: boolean;
@@ -57,6 +72,9 @@ export default function ArticleCard({ article, bookmarked = false, onBookmark, o
   const factLabel = pickFactLabel(article);
   const sourceColor = factStatusColor(factLabel);
   const localizedHeadline = hasLocalizedHeadline(article);
+  const category = normalizeCategory(article.category, article.source);
+  const categoryTone = categoryStyle(category);
+  const sourceBadgeTone = sourceTone(article.source);
   const urlHash = 'urlHash' in article && article.urlHash
     ? article.urlHash
     : (article as ApiArticle).url_hash;
@@ -106,7 +124,13 @@ export default function ArticleCard({ article, bookmarked = false, onBookmark, o
       <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 8, paddingLeft: 8 }}>
         <div style={{ width: 6, height: 6, borderRadius: '50%', background: sourceColor, flexShrink: 0 }} />
         <span style={{
-          fontSize: 12, color: 'var(--color-text-secondary)', fontWeight: 500,
+          fontSize: 11,
+          color: sourceBadgeTone.color,
+          fontWeight: 800,
+          background: sourceBadgeTone.background,
+          border: `1px solid ${sourceBadgeTone.border}`,
+          padding: '3px 7px',
+          borderRadius: 999,
           maxWidth: 90, overflow: 'hidden', textOverflow: 'ellipsis',
           whiteSpace: 'nowrap', minWidth: 0,
         }}>{article.source}</span>
@@ -161,10 +185,16 @@ export default function ArticleCard({ article, bookmarked = false, onBookmark, o
 
       <div style={{ display: 'flex', alignItems: 'center', paddingLeft: 8 }}>
         <span style={{
-          fontSize: 11, fontWeight: 500, color: 'var(--color-primary)',
-          background: 'var(--color-primary-light)', padding: '3px 8px', borderRadius: 6,
+          fontSize: 11,
+          fontWeight: 800,
+          color: categoryTone.color,
+          background: categoryTone.background,
+          border: `1px solid ${categoryTone.border}`,
+          padding: '4px 9px',
+          borderRadius: 999,
+          boxShadow: '0 3px 8px rgba(49,130,246,0.08)',
         }}>
-          {'category' in article ? article.category : ''}
+          {category}
         </span>
 
         <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 6 }}>

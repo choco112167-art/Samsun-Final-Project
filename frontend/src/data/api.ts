@@ -5,8 +5,10 @@ import {
   articleTranslationForDisplay,
   demoFeedRankScore,
   factStatusWeight,
+  hasKoreanTitle,
   isDemoArticle,
-  isOldIncompleteDemoFeedArticle,
+  isValidSummary,
+  isValidTranslation,
   toArticle,
   normalizeCategory,
 } from './articles';
@@ -43,6 +45,7 @@ const ARTICLE_FIELDS = [
 ].join(',');
 
 const DEMO_POLISHED_FEED = import.meta.env.VITE_DEMO_POLISHED_FEED === '1';
+const HIDE_DEMO_ARTICLES = import.meta.env.VITE_HIDE_DEMO_ARTICLES === '1' || DEMO_POLISHED_FEED;
 const DEMO_RANGE_START = new Date('2026-05-01T00:00:00+09:00').getTime();
 const DEMO_RANGE_END = new Date('2026-05-18T23:59:59+09:00').getTime();
 
@@ -83,6 +86,10 @@ export interface ApiArticle {
   ai_model?: string;
   ai_generated_at?: string;
   ai_error?: string;
+  is_demo?: boolean;
+  is_hidden?: boolean;
+  demo_visible?: boolean;
+  demo_priority?: number;
   is_new: boolean;
   is_breaking: boolean;
   time_ago: string;
@@ -147,6 +154,30 @@ function toArticleList(rows: ApiArticle[] | null): Article[] {
   return (rows ?? []).map(toArticle);
 }
 
+async function attachOptionalPresentationFields(rows: ApiArticle[]): Promise<ApiArticle[]> {
+  if (rows.length === 0) return rows;
+  const hashes = rows.map(row => row.url_hash).filter(Boolean).slice(0, 500);
+  if (hashes.length === 0) return rows;
+
+  const result = await supabase
+    .from('articles')
+    .select('url_hash,is_demo,is_hidden,demo_visible,demo_priority')
+    .in('url_hash', hashes);
+
+  if (result.error) {
+    if (import.meta.env.DEV) {
+      console.warn('[api] optional presentation fields unavailable', result.error.message);
+    }
+    return rows;
+  }
+
+  const extras = new Map<string, Partial<ApiArticle>>();
+  for (const row of (result.data ?? []) as Partial<ApiArticle>[]) {
+    if (row.url_hash) extras.set(row.url_hash, row);
+  }
+  return rows.map(row => ({ ...row, ...(extras.get(row.url_hash) ?? {}) }));
+}
+
 function polishedFeedSort(a: Article, b: Article): number {
   if (DEMO_POLISHED_FEED) {
     const demoDelta = Number(isDemoArticle(b)) - Number(isDemoArticle(a));
@@ -161,11 +192,19 @@ function polishedFeedSort(a: Article, b: Article): number {
   return new Date(b.publishedAt).getTime() - new Date(a.publishedAt).getTime();
 }
 
-function isDemoReadyArticle(article: Article): boolean {
-  return articleCompletenessScore(article) >= 7
+function isCompletePresentationArticle(article: Article): boolean {
+  return hasKoreanTitle(article)
+    && isValidTranslation(article.translation)
+    && (isValidSummary(article.summaryFormal) || isValidSummary(article.summaryCasual))
+    && Boolean(article.factLabel)
     && Boolean(article.source.trim())
-    && Boolean(article.url.trim())
-    && Boolean(article.factLabel);
+    && Boolean(article.url.trim());
+}
+
+function isPresentationHidden(article: Article): boolean {
+  if (article.isHidden === true || article.demoVisible === false) return true;
+  if (HIDE_DEMO_ARTICLES && isDemoArticle(article)) return true;
+  return false;
 }
 
 function isDemoRangeArticle(article: Article): boolean {
@@ -179,7 +218,8 @@ export async function fetchArticles(params: FetchArticlesParams = {}): Promise<A
   requireSupabase();
   const { data, error } = await buildArticleQuery(params);
   if (error) throw new ApiError(500, supabaseErrorMessage('Supabase articles query failed', error));
-  const articles = toArticleList(data as unknown as ApiArticle[]);
+  const rowsWithExtras = await attachOptionalPresentationFields(data as unknown as ApiArticle[]);
+  const articles = toArticleList(rowsWithExtras);
   if (import.meta.env.DEV) {
     console.info('[api] fetched articles', {
       count: articles.length,
@@ -188,16 +228,16 @@ export async function fetchArticles(params: FetchArticlesParams = {}): Promise<A
       category: params.category ?? 'all',
     });
   }
+  const visible = articles.filter(article => !isPresentationHidden(article));
   const filtered = params.category
-    ? articles.filter(article => article.category === normalizeCategory(params.category))
-    : articles;
+    ? visible.filter(article => article.category === normalizeCategory(params.category))
+    : visible;
   const sorted = filtered.sort(polishedFeedSort);
   if (!DEMO_POLISHED_FEED) return sorted;
   const demoScoped = sorted.filter(isDemoRangeArticle);
-  const ready = demoScoped.filter(isDemoReadyArticle);
+  const ready = demoScoped.filter(isCompletePresentationArticle);
   if (ready.length === 0) return [];
-  const incomplete = demoScoped.filter(article => !isDemoReadyArticle(article) && !isOldIncompleteDemoFeedArticle(article));
-  return [...ready, ...incomplete];
+  return ready;
 }
 
 export async function fetchArticleByHash(urlHash: string): Promise<ApiArticle> {

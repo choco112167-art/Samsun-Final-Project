@@ -70,6 +70,10 @@ export interface Article {
   aiProvider?:   string;
   aiModel?:      string;
   aiError?:      string;
+  isDemo?:       boolean;
+  isHidden?:     boolean;
+  demoVisible?:  boolean;
+  demoPriority?: number;
 
   // UI 상태
   isNew:      boolean;   // true면 "NEW" 뱃지 표시
@@ -184,8 +188,9 @@ export function normalizeFactStatus(label: string | null | undefined): FactStatu
   return 'UNVERIFIED';
 }
 
-export function isDemoArticle(article: Pick<Article, 'source' | 'title' | 'titleKo'>): boolean {
+export function isDemoArticle(article: Pick<Article, 'source' | 'title' | 'titleKo' | 'isDemo'>): boolean {
   return article.source.trim().toUpperCase() === 'DEMO'
+    || article.isDemo === true
     || (article.titleKo ?? '').includes('[시연용]')
     || article.title.includes('[DEMO]');
 }
@@ -255,7 +260,7 @@ export function toArticle(api: ApiArticle): Article {
     source:      api.source,
     sourceColor: SOURCE_COLORS[api.source] ?? DEFAULT_COLOR,  // 소스명으로 컬러 주입
     sourceType:  api.source_type ?? 'media',
-    category:    normalizeCategory(api.category),             // 카테고리 정규화
+    category:    normalizeCategory(api.category, api.source),  // 카테고리 정규화 + source fallback
     country:     api.country ?? '',
     keywords:    api.keywords ?? [],
     publishedAt,
@@ -275,6 +280,10 @@ export function toArticle(api: ApiArticle): Article {
     aiProvider:    api.ai_provider,
     aiModel:       api.ai_model,
     aiError:       api.ai_error,
+    isDemo:        api.is_demo,
+    isHidden:      api.is_hidden,
+    demoVisible:   api.demo_visible,
+    demoPriority:  api.demo_priority,
 
     // 백엔드가 is_new를 내려주면 사용, 없으면 6시간 이내인지 직접 판단
     isNew:      api.is_new      ?? (now - publishedMs < 6 * 3_600_000),

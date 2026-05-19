@@ -10,11 +10,11 @@ import type { Interest } from './OnboardingPage';
 type FeedItem = Article & { similarity?: number; reason?: string };
 
 const ALL_INTERESTS: { id: Interest; emoji: string; desc: string }[] = [
-  { id: 'AI 연구',     emoji: '🔬', desc: 'MIT TR — AI 최신 연구 동향' },
+  { id: 'AI 연구/기술', emoji: '🔬', desc: 'MIT TR — AI 최신 연구 동향' },
   { id: 'AI 심층',     emoji: '📖', desc: 'The Decoder — AI 심층 분석·리포트' },
   { id: 'AI 스타트업',  emoji: '🚀', desc: 'TechCrunch · VentureBeat — AI 스타트업·투자 동향' },
   { id: '테크 전반',    emoji: '💻', desc: 'The Verge — AI를 포함한 테크 업계 전반 소식' },
-  { id: 'AI 윤리',     emoji: '⚖️', desc: 'The Guardian — AI 윤리·규제·사회적 영향' },
+  { id: 'AI 윤리/정책', emoji: '⚖️', desc: 'The Guardian — AI 윤리·규제·사회적 영향' },
   { id: 'AI 비즈니스',  emoji: '💼', desc: 'AI 비즈니스·산업 적용 소식' },
   { id: 'AI 커뮤니티',  emoji: '💬', desc: '커뮤니티 토론·트렌드' },
 ];
