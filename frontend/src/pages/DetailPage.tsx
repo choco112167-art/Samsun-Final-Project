@@ -91,6 +91,8 @@ export default function DetailPage({ article, bookmarked, onBookmark, onBack, to
   const [translationOpen, setTranslationOpen] = useState(false);
   const [neologisms, setNeologisms] = useState<NeologismEntry[]>([]);
   const [sourceOverride, setSourceOverride] = useState('');
+  const [originalOverride, setOriginalOverride] = useState('');
+  const [factExplanation, setFactExplanation] = useState('');
 
   const translation = articleTranslationForDisplay(article);
   const selectedSummary = articleSummaryForTone(article, tone);
@@ -124,6 +126,8 @@ export default function DetailPage({ article, bookmarked, onBookmark, onBack, to
         if (cancelled) return;
         setNeologisms(mergeEntries(termEntries, articleEntries, dictionary));
         setSourceOverride((extras.source_url ?? '').trim());
+        setOriginalOverride((extras.original_url ?? '').trim());
+        setFactExplanation((extras.fact_insight ?? extras.fact_reason ?? article.factInsight ?? article.factReason ?? '').trim());
       })
       .catch((err: unknown) => {
         if (import.meta.env.DEV) {
@@ -132,10 +136,12 @@ export default function DetailPage({ article, bookmarked, onBookmark, onBack, to
         if (!cancelled) {
           setNeologisms([]);
           setSourceOverride('');
+          setOriginalOverride('');
+          setFactExplanation('');
         }
       });
     return () => { cancelled = true; };
-  }, [article.urlHash, article.slangTerms]);
+  }, [article.factInsight, article.factReason, article.slangTerms, article.urlHash]);
 
   const handleShare = () => {
     const lines = [`[${article.source}] ${articleDisplayTitle(article)}`];
@@ -148,7 +154,7 @@ export default function DetailPage({ article, bookmarked, onBookmark, onBack, to
     setCopiedFormal(true); setTimeout(() => setCopiedFormal(false), 2000);
   };
 
-  const sourceUrl = (sourceOverride || article.sourceUrl || article.url || '').trim();
+  const sourceUrl = (article.url || sourceOverride || article.sourceUrl || originalOverride || article.originalUrl || '').trim();
   const canOpenSource = isExternalHttpUrl(sourceUrl);
 
   useEffect(() => {
@@ -235,8 +241,24 @@ export default function DetailPage({ article, bookmarked, onBookmark, onBack, to
             <p style={{ fontSize: 12, color: 'var(--color-text-secondary)', lineHeight: 1.6 }}>
               {demoArticle && factStatus === 'RUMOR'
                 ? '이 항목은 검증되지 않은 시연용 루머 데이터입니다.'
-                : '이 항목은 아직 검증이 완료되지 않았습니다. 출처와 추가 확인 결과를 함께 확인해주세요.'}
+                : factExplanation || '이 항목은 아직 검증이 완료되지 않았습니다. 출처와 추가 확인 결과를 함께 확인해주세요.'}
             </p>
+          </div>
+        )}
+
+        {!needsCaution && factExplanation && (
+          <div style={{ background: 'var(--color-surface)', border: '0.5px solid var(--color-border)', padding: '12px 20px', marginBottom: 8 }}>
+            <p style={{ fontSize: 13, fontWeight: 700, color: 'var(--color-text-primary)', marginBottom: 4 }}>
+              팩트체크 인사이트
+            </p>
+            <p style={{ fontSize: 12, color: 'var(--color-text-secondary)', lineHeight: 1.6 }}>
+              {factExplanation}
+            </p>
+            {typeof article.credibilityScore === 'number' && (
+              <p style={{ marginTop: 6, fontSize: 11, color: 'var(--color-text-tertiary)' }}>
+                신뢰도 점수 {Math.round((article.credibilityScore ?? 0) * 100)}%
+              </p>
+            )}
           </div>
         )}
 

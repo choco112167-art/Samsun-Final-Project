@@ -38,6 +38,7 @@ export interface Article {
   urlHash:     string;   // DB의 url_hash (PK) — 상세 페이지 이동 시 사용
   url:         string;   // 원문 URL — 기존 컴포넌트 호환용
   sourceUrl:   string;   // 원문 URL — 상세 페이지 "원문 보기" 표준 필드
+  originalUrl: string;
   slangTerms:  string[];
 
   // 메타 정보 (표시 제목은 articleDisplayTitle() 사용 권장)
@@ -61,6 +62,9 @@ export interface Article {
   credibilityScore: number;
   factLabel:        'FACT' | 'VERIFIED' | 'UNVERIFIED' | 'RUMOR' | 'HITL_REQUIRED' | 'INSIGHT' | 'FACT_INSIGHT';
   factConfidence?:  number;
+  factStatus?:      string;
+  factReason?:      string;
+  factInsight?:     string;
 
   // 번역 / 요약
   translation:   string;   // 한국어 번역 전문 — DetailPage 신조어 하이라이트에 사용
@@ -252,7 +256,8 @@ export function toArticle(api: ApiArticle): Article {
     // snake_case → camelCase 변환
     urlHash:     api.url_hash,
     url:         api.url,
-    sourceUrl:   api.source_url ?? api.url,
+    sourceUrl:   api.source_url ?? api.original_url ?? api.url,
+    originalUrl: api.original_url ?? '',
     slangTerms:  api.neologism_terms ?? api.slang_terms ?? [],
 
     title:       api.title,
@@ -272,6 +277,9 @@ export function toArticle(api: ApiArticle): Article {
     credibilityScore: api.credibility_score ?? 0,
     factLabel:        api.fact_label ?? 'UNVERIFIED',
     factConfidence:   api.fact_confidence,
+    factStatus:       api.fact_status,
+    factReason:       api.fact_reason,
+    factInsight:      api.fact_insight,
 
     translation:   api.translation    ?? '',
     summaryFormal: api.summary_formal ?? '',

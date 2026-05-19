@@ -81,3 +81,36 @@ flowchart LR
 - `is_hidden=true` 또는 `demo_visible=false`는 노출하지 않는다.
 - `title_ko`, `translation`, `summary_formal`/`summary_casual`, `fact_label`이 부족한 미완성 기사는 노출하지 않는다.
 - 2026-05-01부터 2026-05-18까지 상준 SQLite DB에서 AI 처리된 실제 기사와 안전한 Supabase 행만 최종 피드 후보로 사용한다.
+
+## 최종 데이터 흐름
+
+```mermaid
+flowchart LR
+  SQLite["samsun_345.db<br/>원천 기사 DB"] --> Filter["May 1-18 선별"]
+  Filter --> Gemma["Ollama samsun-gemma4<br/>번역/요약/분류"]
+  Gemma --> Upsert["Supabase public.articles upsert"]
+  Upsert --> AIT["Apps in Toss .ait<br/>Supabase 직접 조회"]
+```
+
+앱은 `samsun_345.db`를 직접 읽지 않는다. SQLite는 발표용 원천 기사 저장소이고, 최종 런타임 데이터 소스는 Supabase `public.articles`다.
+
+## Supabase SQL Editor 적용 목록
+
+발표 전 Supabase SQL Editor에서 실행할 최종 패치:
+
+```text
+backend/sql/final_demo_supabase_patch.sql
+```
+
+이 SQL은 `public.articles` 기준 `match_articles` RPC를 다시 만들고, `users`, `user_logs`, `source_url/original_url`, `fact_reason/fact_insight`, demo visibility 필드를 보강한다. GitHub push만으로 Supabase SQL이 자동 적용되지는 않는다.
+
+## 커뮤니티 수집 소스
+
+- Lemmy Technology: RSS + Lemmy API `post_view.post.embed_description`.
+- Hacker News AI/LLM/ML: hnrss.org keyword RSS.
+- Reddit은 API/RSS 정책 변화와 데이터 라이선싱 리스크 때문에 최종 수집 대상에서 제외했다.
+
+## 최종 산출물
+
+- Apps in Toss 업로드 파일: `frontend/samsun-newsapp.ait`
+- 빌드 명령: `cd frontend && npm run ait:build`

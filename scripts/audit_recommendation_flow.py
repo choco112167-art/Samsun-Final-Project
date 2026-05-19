@@ -190,7 +190,7 @@ def main() -> int:
         ok, recs, detail = rpc_match_articles(sb, seed_vector, 5)
         status("match_articles RPC", ok and len(recs) > 0, detail)
         if not ok:
-            print("  fix: run backend/sql/personalized_recommendation_pgvector.sql in Supabase SQL Editor")
+            print("  fix: run backend/sql/final_demo_supabase_patch.sql in Supabase SQL Editor")
         for row in recs[:5]:
             print(f"  - {row.get('title_ko') or row.get('title')} | {row.get('category')} | sim={row.get('similarity')}")
     else:

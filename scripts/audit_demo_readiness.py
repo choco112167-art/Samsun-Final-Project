@@ -43,6 +43,8 @@ BASE_FIELDS = [
     "fact_label",
 ]
 OPTIONAL_FIELDS = [
+    "source_url",
+    "original_url",
     "summary_ko",
     "keywords",
     "fact_status",
@@ -55,6 +57,8 @@ OPTIONAL_FIELDS = [
     "demo_priority",
     "hitl_required",
     "content_source",
+    "fact_reason",
+    "fact_insight",
 ]
 
 
@@ -140,6 +144,23 @@ def text_len(value: object) -> int:
     return len(str(value or "").strip())
 
 
+def source_url(row: dict[str, Any]) -> str:
+    return str(row.get("url") or row.get("source_url") or row.get("original_url") or "").strip()
+
+
+def is_valid_http_url(value: object) -> bool:
+    text = str(value or "").strip().lower()
+    return text.startswith("http://") or text.startswith("https://")
+
+
+def fact_checks_count(sb) -> int | None:
+    try:
+        result = sb.table("fact_checks").select("id", count="exact").limit(1).execute()
+        return int(result.count or 0)
+    except Exception:
+        return None
+
+
 def main() -> int:
     configure_stdio()
     sb = get_supabase_client()
@@ -192,6 +213,14 @@ def main() -> int:
     ]
     demo_visible_violations = [row for row in final_visible_rows if is_demo_or_sample(row)]
     incomplete_visible_violations = [row for row in final_visible_rows if is_incomplete(row)]
+    visible_missing_url = [row for row in final_visible_rows if not source_url(row)]
+    visible_invalid_url = [row for row in final_visible_rows if source_url(row) and not is_valid_http_url(source_url(row))]
+    with_fact_insight = sum(1 for row in rows if not is_blank(row.get("fact_reason")) or not is_blank(row.get("fact_insight")))
+    hot_candidates = [
+        row for row in final_visible_rows
+        if has_fact(row) and has_translation(row) and has_valid_summary(row)
+    ]
+    fact_checks = fact_checks_count(sb)
 
     print("[demo-readiness]")
     print(f"total_articles: {total}")
@@ -215,6 +244,9 @@ def main() -> int:
     if "summary_ko" in optional:
         print(f"articles_with_valid_summary_ko: {with_summary_ko}")
     print(f"articles_with_fact_status_or_label: {with_fact}")
+    print(f"articles_with_fact_reason_or_insight: {with_fact_insight}")
+    if fact_checks is not None:
+        print(f"fact_checks_rows: {fact_checks}")
     print(f"articles_with_neologism_terms: {with_neologisms}")
     print(f"newest_article_published_at: {newest or '(none)'}")
     print(f"demo_ready_articles_legacy_strict: {demo_ready}")
@@ -222,6 +254,9 @@ def main() -> int:
     print(f"sangjun_imported_articles: {len(sangjun_rows)}")
     print(f"demo_or_sample_visible_violations: {len(demo_visible_violations)}")
     print(f"incomplete_visible_violations: {len(incomplete_visible_violations)}")
+    print(f"visible_articles_missing_url: {len(visible_missing_url)}")
+    print(f"visible_articles_invalid_url: {len(visible_invalid_url)}")
+    print(f"hot_issue_candidates: {len(hot_candidates)}")
     print(f"demo_articles: {len(demo_rows)}")
     print(f"demo_rumor_articles: {demo_fact_counts.get('rumor', 0)}")
     print(f"hitl_required_articles: {fact_counts.get('hitl_required', 0)}")

@@ -160,7 +160,7 @@ curl -X POST http://localhost:8000/users/demo/click/<url_hash>
 Supabase RPC가 오래된 테이블명을 참조하면 아래 SQL을 Supabase SQL Editor에서 실행합니다.
 
 ```sql
--- backend/sql/personalized_recommendation_pgvector.sql
+-- backend/sql/final_demo_supabase_patch.sql
 ```
 
 상태 점검:

@@ -25,6 +25,8 @@ export const NEOLOGISM_STOPWORDS = [
   'meta',
   'google',
   'openai',
+  'anthropic',
+  'nvidia',
   'ai',
   'ml',
 ];

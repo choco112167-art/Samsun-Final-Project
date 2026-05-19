@@ -63,6 +63,7 @@ export interface ApiArticle {
   url_hash: string;
   url: string;
   source_url?: string;
+  original_url?: string;
   title: string;
   title_ko?: string;
   source: string;
@@ -75,6 +76,9 @@ export interface ApiArticle {
   content: string;
   credibility_score: number;
   fact_confidence?: number;
+  fact_status?: string;
+  fact_reason?: string;
+  fact_insight?: string;
   fact_label: 'FACT' | 'VERIFIED' | 'UNVERIFIED' | 'RUMOR' | 'HITL_REQUIRED' | 'INSIGHT' | 'FACT_INSIGHT';
   translation: string;
   summary_formal: string;
@@ -264,13 +268,30 @@ export async function fetchArticleExtras(urlHash: string): Promise<Partial<ApiAr
 
   const sourceResult = await supabase
     .from('articles')
-    .select('source_url')
+    .select('source_url,original_url')
     .eq('url_hash', urlHash)
     .maybeSingle();
   if (!sourceResult.error && sourceResult.data) {
-    extras.source_url = (sourceResult.data as Partial<ApiArticle>).source_url;
+    const data = sourceResult.data as Partial<ApiArticle>;
+    extras.source_url = data.source_url;
+    extras.original_url = data.original_url;
   } else if (sourceResult.error && import.meta.env.DEV) {
     console.warn('[api] optional source_url unavailable', sourceResult.error.message);
+  }
+
+  const factResult = await supabase
+    .from('articles')
+    .select('fact_status,fact_confidence,fact_reason,fact_insight')
+    .eq('url_hash', urlHash)
+    .maybeSingle();
+  if (!factResult.error && factResult.data) {
+    const data = factResult.data as Partial<ApiArticle>;
+    extras.fact_status = data.fact_status;
+    extras.fact_confidence = data.fact_confidence;
+    extras.fact_reason = data.fact_reason;
+    extras.fact_insight = data.fact_insight;
+  } else if (factResult.error && import.meta.env.DEV) {
+    console.warn('[api] optional fact insight fields unavailable', factResult.error.message);
   }
 
   const slangResult = await supabase
@@ -703,10 +724,55 @@ export async function fetchHot(date: string): Promise<(Article & { view_count: n
     .order('credibility_score', { ascending: false })
     .limit(20);
   if (error) throw new ApiError(500, supabaseErrorMessage('Supabase hot articles query failed', error));
-  return (data as unknown as ApiArticle[]).map((article, index) => ({
-    ...toArticle(article),
-    view_count: Math.max(0, 100 - index * 7),
-  }));
+
+  const datedRows = await attachOptionalPresentationFields(data as unknown as ApiArticle[]);
+  const dated = toArticleList(datedRows)
+    .filter(article => !isPresentationHidden(article))
+    .filter(article => !DEMO_POLISHED_FEED || (isDemoRangeArticle(article) && isCompletePresentationArticle(article)))
+    .map((article, index) => ({ ...article, view_count: Math.max(0, 100 - index * 7) }));
+  if (dated.length >= 5) return dated;
+
+  const yesterday = new Date(Date.now() - 86_400_000).toISOString();
+  const logResult = await supabase
+    .from('user_logs')
+    .select('url_hash,created_at')
+    .gte('created_at', yesterday)
+    .limit(500);
+  if (!logResult.error && logResult.data?.length) {
+    const counts = new Map<string, number>();
+    for (const row of logResult.data as { url_hash?: string }[]) {
+      if (row.url_hash) counts.set(row.url_hash, (counts.get(row.url_hash) ?? 0) + 1);
+    }
+    const hashes = [...counts.keys()].slice(0, 50);
+    if (hashes.length) {
+      const articlesResult = await supabase
+        .from('articles')
+        .select(ARTICLE_FIELDS)
+        .in('url_hash', hashes);
+      if (!articlesResult.error) {
+        const rows = await attachOptionalPresentationFields(articlesResult.data as unknown as ApiArticle[]);
+        const hotByLogs = toArticleList(rows)
+          .filter(article => !isPresentationHidden(article))
+          .filter(article => !DEMO_POLISHED_FEED || (isDemoRangeArticle(article) && isCompletePresentationArticle(article)))
+          .map(article => ({ ...article, view_count: counts.get(article.urlHash) ?? 0 }))
+          .sort((a, b) => b.view_count - a.view_count)
+          .slice(0, 20);
+        if (hotByLogs.length >= 5) return hotByLogs;
+      }
+    }
+  }
+
+  const fallback = await fetchArticles({ limit: 40 });
+  return fallback
+    .sort((a, b) => {
+      const statusDelta = factStatusWeight(b.factLabel) - factStatusWeight(a.factLabel);
+      if (statusDelta !== 0) return statusDelta;
+      const scoreDelta = (b.credibilityScore ?? 0) - (a.credibilityScore ?? 0);
+      if (scoreDelta !== 0) return scoreDelta;
+      return new Date(b.publishedAt).getTime() - new Date(a.publishedAt).getTime();
+    })
+    .slice(0, 20)
+    .map((article, index) => ({ ...article, view_count: Math.max(0, 80 - index * 4) }));
 }
 
 function articleToApiLike(article: Article, similarity?: number, reason?: string): SearchResult & { reason?: string } {

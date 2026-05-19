@@ -31,6 +31,8 @@ BASE_FIELDS = [
 ]
 
 OPTIONAL_FIELDS = [
+    "source_url",
+    "original_url",
     "summary_ko",
     "fact_status",
     "slang_terms",
@@ -96,12 +98,13 @@ def fallback_category(row: dict[str, Any]) -> str:
 
 
 def is_complete_real(row: dict[str, Any]) -> bool:
+    url = str(row.get("url") or row.get("source_url") or row.get("original_url") or "").strip()
     return (
         not is_demo_row(row)
         and has_korean(row.get("title_ko"))
         and has_translation(row)
         and has_valid_summary(row)
-        and not is_blank(row.get("url"))
+        and not is_blank(url)
         and not is_blank(row.get("source"))
     )
 
