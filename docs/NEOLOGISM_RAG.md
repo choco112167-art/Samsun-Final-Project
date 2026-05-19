@@ -21,9 +21,10 @@
 | 번역 prompt glossary 주입 | 실제 구현 | `pipeline/translate_summarize.py`, `backend/neologism_rag.py` |
 | `articles.slang_terms` / `articles.neologism_terms` 저장 | 부분 구현 | `backend/save_articles.py`, `backend/sql/add_pipeline_tracking_fields.sql` |
 | frontend dictionary 조회 | 실제 구현 | `frontend/src/data/api.ts` |
-| inline highlight | 실제 구현 | `frontend/src/components/NeologismText.tsx` |
+| inline highlight | 실제 구현 | `frontend/src/components/NeologismText.tsx`, `frontend/src/data/neologismMatcher.ts` |
 | 모바일 bottom sheet 설명 | 실제 구현 | `frontend/src/components/NeologismText.tsx`, `frontend/src/components/Overlay.tsx` |
 | demo seed | 실제 구현 | `scripts/seed_demo_articles.py` |
+| DB 품질 감사 | 실제 구현 | `scripts/audit_neologisms.py` |
 
 ## Supabase Schema / Migration
 
@@ -87,11 +88,29 @@ Frontend lookup:
 
 UI:
 
-- `NeologismText` splits summary/translation text by registered terms.
-- Terms with a valid explanation are highlighted.
+- `NeologismText` highlights summary/translation text only; source/title 영역은 하이라이트하지 않습니다.
+- Matching policy lives in `frontend/src/data/neologismMatcher.ts`.
+- Terms with a valid explanation are highlighted only when they pass strict safety filters.
 - Mobile tap opens a bottom sheet.
 - Desktop hover shows a tooltip.
 - Lookup failure returns an empty list and does not block article rendering.
+
+Highlight safety rules:
+
+- `term` length must be at least 3 characters.
+- `explanation` must be non-empty.
+- Stopwords/source fragments such as `the`, `tech`, `guardian`, `meta`, `google`, `openai`, `ai`, `ml` are never highlighted.
+- Matching uses word boundaries, so partial matches inside mixed Korean/English words are blocked.
+- Longer terms win first, overlapping shorter terms are dropped.
+- One term is highlighted only on its first occurrence.
+- Each article text block highlights at most 4 terms.
+- In final demo mode (`VITE_DEMO_POLISHED_FEED=1` or `VITE_HIDE_DEMO_ARTICLES=1`), highlighting is allowlist-only:
+  `RAG`, `LLM`, `Fine-tuning`, `Prompt Injection`, `Guardrail`, `Hallucination`, `Inference`, `Token`, `Transformer`, `Embedding`, `HITL`, `CoVe`, `Re-ranking`, `pgvector`, `LoRA`.
+
+Important demo fix:
+
+- Generic/source/company terms such as `The`, `Tech`, `Meta`, `Google`, `OpenAI`, `AI`, `ML` are intentionally hidden even if the DB has rows for them.
+- The bottom sheet always displays the clicked term object's own `explanation`. There is no fallback to the first dictionary entry or to a generic AI explanation.
 
 ## Unknown Term Policy
 
@@ -127,6 +146,12 @@ Check demo readiness:
 
 ```bash
 python scripts/audit_demo_readiness.py
+```
+
+Audit neologism dictionary quality:
+
+```bash
+python scripts/audit_neologisms.py
 ```
 
 Open an article containing:

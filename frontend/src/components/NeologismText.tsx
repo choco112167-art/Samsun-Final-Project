@@ -1,18 +1,11 @@
 import { useMemo, useState } from 'react';
 import { BottomSheet } from './Overlay';
 import type { NeologismEntry } from '../data/api';
+import { segmentNeologismText } from '../data/neologismMatcher';
 
 interface Props {
   text: string;
   entries: NeologismEntry[];
-}
-
-function escapeRegExp(value: string): string {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-}
-
-function normalizeKey(value: string): string {
-  return value.trim().toLocaleLowerCase();
 }
 
 function displayExplanation(entry: NeologismEntry): string {
@@ -23,31 +16,23 @@ export default function NeologismText({ text, entries }: Props) {
   const [sheetEntry, setSheetEntry] = useState<NeologismEntry | null>(null);
   const [hoverEntry, setHoverEntry] = useState<NeologismEntry | null>(null);
 
-  const { pattern, byKey } = useMemo(() => {
-    const usable = entries
-      .filter(entry => entry.term.trim() && displayExplanation(entry))
-      .sort((a, b) => b.term.length - a.term.length);
-    const map = new Map<string, NeologismEntry>();
-    usable.forEach(entry => map.set(normalizeKey(entry.term), entry));
-    return {
-      pattern: usable.length
-        ? new RegExp(`(${usable.map(entry => escapeRegExp(entry.term)).join('|')})`, 'gi')
-        : null,
-      byKey: map,
-    };
-  }, [entries]);
+  const segments = useMemo(() => {
+    const demoMode = import.meta.env.VITE_DEMO_POLISHED_FEED === '1'
+      || import.meta.env.VITE_HIDE_DEMO_ARTICLES === '1';
+    return segmentNeologismText(text, entries, { demoMode, maxMatches: 4 });
+  }, [entries, text]);
 
   if (!text) return null;
-  if (!pattern) return <>{text}</>;
-
-  const parts = text.split(pattern).filter(part => part.length > 0);
+  if (segments.length === 1 && !segments[0].entry) return <>{text}</>;
 
   return (
     <>
-      {parts.map((part, index) => {
-        const entry = byKey.get(normalizeKey(part));
+      {segments.map((segment, index) => {
+        const { entry } = segment;
+        const part = segment.text;
         if (!entry) return <span key={`${part}-${index}`}>{part}</span>;
         const explanation = displayExplanation(entry);
+        if (!explanation) return <span key={`${part}-${index}`}>{part}</span>;
         return (
           <span
             key={`${part}-${index}`}
