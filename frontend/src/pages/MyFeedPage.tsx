@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { fetchFeed, postOnboarding } from '../data/api';
+import { fetchFeed, postOnboarding, recordArticleView } from '../data/api';
 import type { Article } from '../data/articles';
 import ArticleCard from '../components/ArticleCard';
 import DetailPage from './DetailPage';
@@ -67,6 +67,11 @@ export default function MyFeedPage({ bm, interests, onInterestsChange, userId, t
         console.warn('[MyFeed] 관심 주제 백엔드 동기화 실패 — 로컬 상태는 유지'),
       );
     }
+  };
+
+  const openArticle = (article: FeedItem) => {
+    if (userId) recordArticleView(userId, article.urlHash).catch(() => {});
+    setDetail(article);
   };
 
   if (detail) return (
@@ -149,7 +154,7 @@ export default function MyFeedPage({ bm, interests, onInterestsChange, userId, t
                   article={article}
                   bookmarked={bm.isBookmarked(article.urlHash)}
                   onBookmark={bm.toggle}
-                  onClick={() => setDetail(article)}
+                  onClick={() => openArticle(article)}
                   tone={tone}
                 />
                 {article.similarity !== undefined && (
@@ -181,7 +186,7 @@ export default function MyFeedPage({ bm, interests, onInterestsChange, userId, t
               bm.bookmarkedList.map((article, i) => (
                 <ArticleCard key={article.urlHash} article={article}
                   bookmarked={bm.isBookmarked(article.urlHash)} onBookmark={bm.toggle}
-                  onClick={() => setDetail(article)}
+                  onClick={() => openArticle(article)}
                   tone={tone}
                   style={{ animation: `fadeSlide 0.25s ${i * 0.05}s ease both` }}
                 />

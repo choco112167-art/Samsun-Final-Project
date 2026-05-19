@@ -68,7 +68,7 @@ def _coerce_vector(raw: Any) -> list[float]:
     return out
 
 
-def blend_vectors(base: list[float], clicked: list[float], click_weight: float = 0.25) -> list[float]:
+def blend_vectors(base: list[float], clicked: list[float], click_weight: float = 0.4) -> list[float]:
     """Blend a user's existing interest vector with a clicked article vector."""
     alpha = max(0.0, min(1.0, click_weight))
     base_v = _coerce_vector(base)

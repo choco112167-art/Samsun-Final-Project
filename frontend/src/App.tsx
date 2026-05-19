@@ -8,7 +8,7 @@ import SearchPage from './pages/SearchPage';
 import MyFeedPage from './pages/MyFeedPage';
 import { useBookmarks } from './hooks/useBookmarks';
 import { useTonePreference } from './hooks/useTonePreference';
-import { recordArticleView, logArticleView, fetchAbsenceSummary, markUserSeen, type AbsenceSummaryResponse } from './data/api';
+import { recordArticleView, fetchAbsenceSummary, markUserSeen, type AbsenceSummaryResponse } from './data/api';
 import { getSamsunUserId, tossHaptic } from './lib/toss';
 
 const LS_ONBOARDED = 'samsun_onboarded';
@@ -53,7 +53,6 @@ export default function App() {
     if (userId) {
       tossHaptic().catch(() => {});
       recordArticleView(userId, urlHash).catch(() => {});
-      logArticleView(userId, urlHash).catch(() => {});
     }
   };
 

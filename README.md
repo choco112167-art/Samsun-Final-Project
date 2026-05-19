@@ -33,7 +33,7 @@ English summary: Samsun News is an Apps in Toss mini-app that turns English AI/t
 - 팩트 라벨: `검증됨`, `미검증`, `루머 의심`, `HITL 검토 필요`를 카드와 상세에 표시합니다.
 - 보수적 안전 정책: 확실하지 않은 내용은 검증된 사실처럼 말하지 않고 `UNVERIFIED` 또는 `HITL_REQUIRED`로 낮춥니다.
 - 신조어 RAG: Supabase `neologisms`에 등록된 용어만 하이라이트하고, 모바일 bottom sheet로 설명합니다.
-- Qwen3 임베딩/RAG 추천 POC: `articles.embedding vector(1024)`, `users.user_vector`, `match_articles` 기반 로컬/admin 추천 구조를 제공합니다.
+- 개인화 추천: 온보딩 관심사와 클릭 이력을 `users.interest_tags`, `user_logs`, `users.user_vector`에 저장하고, `match_articles` pgvector RPC 또는 카테고리 fallback으로 내 피드를 구성합니다.
 - 안전한 시연 데이터: 루머/HITL 예시는 `[시연용]`, `source=DEMO`, `fact_status=rumor/unverified/hitl_required`로 명확히 표시합니다.
 
 ## 3. 전체 아키텍처
@@ -58,7 +58,7 @@ flowchart TD
 - Supabase가 데이터 백엔드입니다.
 - local Ollama `samsun-gemma4`는 데모/백필/SQLite import용입니다.
 - Supabase Edge는 localhost Ollama를 사용할 수 없으므로 cloud refresh는 OpenRouter/Gemini를 사용합니다.
-- Qwen3-Embedding-0.6B 기반 RAG는 local/admin POC이며, `.ait` 앱 실행에 필수는 아닙니다.
+- Qwen3-Embedding-0.6B 기반 임베딩은 `articles.embedding vector(1024)`와 `users.user_vector`에 사용됩니다. `.ait` 앱은 FastAPI 없이 Supabase `match_articles` RPC를 우선 시도하고, RPC/embedding이 없으면 관심 카테고리와 최근 클릭 기반 fallback 추천을 제공합니다.
 
 자세한 문서:
 - [최종 아키텍처](docs/FINAL_ARCHITECTURE.md)
@@ -78,10 +78,10 @@ flowchart TD
 | 신조어 하이라이트/bottom sheet | 실제 구현 | `frontend/src/components/NeologismText.tsx`, `frontend/src/components/Overlay.tsx` |
 | neologisms 테이블/RPC | 실제 구현 | `supabase_schema.sql`, `backend/sql/neologisms_pgvector.sql` |
 | `articles.slang_terms` / `neologism_terms` | 부분 구현 | `backend/sql/add_pipeline_tracking_fields.sql` 적용 시 저장 |
-| Qwen3 임베딩 | POC 구현 | `backend/embedder.py`, `.env.example` |
+| Qwen3 임베딩 | 실제/관리 경로 구현 | `backend/embedder.py`, `backend/save_articles.py`, `.env.example` |
 | pgvector `match_articles` | 실제 구현 | `supabase_schema.sql`, `backend/sql/add_title_ko.sql` |
-| user_vector 추천/클릭 업데이트 | POC 구현 | `backend/rag.py`, `backend/main.py` |
-| LLM re-ranking | 선택형 POC | `RAG_LLM_RERANK_ENABLED=1`일 때 local/admin 서버에서 사용 |
+| user_vector 추천/클릭 업데이트 | 실제 구현 | `frontend/src/data/api.ts`, `backend/rag.py`, `backend/main.py` |
+| LLM re-ranking | 선택형 확장 | 기본 비활성. Gemma4/OpenRouter 계열로 확장 가능하나 최종 데모 기본 경로는 pgvector/fallback |
 
 ## 4-1. 데이터 수집 소스
 
@@ -134,11 +134,11 @@ rg -n "embedding|Qwen3|pgvector|vector|user_vector|match_articles|feed-llm|reran
 | Qwen3-Embedding-0.6B | POC 구현 | `backend/embedder.py` 기본 local embedding model |
 | `match_articles` RPC | 실제 구현 | pgvector cosine similarity 검색 |
 | `hybrid_search_articles` | 실제 구현 | vector + trigram keyword fusion |
-| `users.user_vector` | POC 구현 | `supabase_schema.sql`, `backend/rag.py` |
-| 클릭 기반 vector 업데이트 | POC 구현 | `POST /users/{user_id}/click/{url_hash}` |
-| top 20 후보 추출 | POC 구현 | `fetch_recommendation_candidates(..., candidate_k=20)` |
-| LLM re-ranking | 선택형 POC | 기본 비활성, OpenRouter/Gemini key 필요 |
-| `.ait` 앱 내 개인화 추천 | 미구현 | 최종 앱은 Supabase 직접 조회 중심 |
+| `users.user_vector` | 실제 구현 | `supabase_schema.sql`, `backend/sql/personalized_recommendation_pgvector.sql`, `frontend/src/data/api.ts` |
+| 클릭 기반 vector 업데이트 | 실제 구현 | `.ait` 프론트 `recordArticleView()`와 FastAPI `/users/{user_id}/click/{url_hash}` 양쪽 지원 |
+| top 20 후보 추출 | 실제 구현 | Supabase `match_articles` RPC와 `backend/rag.py` |
+| LLM re-ranking | 선택형 확장 | 기본 비활성. 최종 데모는 안정성을 위해 pgvector/fallback 추천 사용 |
+| `.ait` 앱 내 개인화 추천 | 실제 구현 | `fetchFeed()`가 user_vector RPC를 시도하고 실패 시 관심사/최근 클릭 fallback |
 
 로컬/admin POC 실행:
 
@@ -157,10 +157,22 @@ curl http://localhost:8000/feed/demo?top_k=10
 curl -X POST http://localhost:8000/users/demo/click/<url_hash>
 ```
 
+Supabase RPC가 오래된 테이블명을 참조하면 아래 SQL을 Supabase SQL Editor에서 실행합니다.
+
+```sql
+-- backend/sql/personalized_recommendation_pgvector.sql
+```
+
+상태 점검:
+
+```bash
+python scripts/audit_recommendation_flow.py --dry-run
+```
+
 발표 표현:
-- “Qwen3-Embedding-0.6B와 pgvector 기반 추천은 최종 `.ait` 필수 런타임이 아니라, 로컬/admin POC로 구현했습니다.”
-- “보고서의 RAG 추천 구조는 `articles.embedding`, `users.user_vector`, `match_articles`, 클릭 기반 vector 업데이트까지 코드로 확인 가능합니다.”
-- “LLM 재정렬은 후속 고도화 항목이며, 현재는 선택형 POC로 비활성화되어 있습니다.”
+- “개인화 추천은 온보딩 관심사와 기사 클릭 이력을 기반으로 `user_vector`를 갱신하고, Supabase pgvector `match_articles`로 사용자별 후보를 가져옵니다.”
+- “임베딩 또는 RPC가 없는 환경에서도 앱이 깨지지 않도록 관심 카테고리, 최근 클릭 카테고리, 최신순 기반 fallback 추천을 제공합니다.”
+- “LLM 재정렬은 최종 데모 기본 경로가 아니며, Gemma4/OpenRouter 계열로 확장 가능한 선택형 고도화 항목입니다.”
 
 ## 7. Apps in Toss 제출/테스트
 
@@ -305,6 +317,6 @@ npm run ait:build
 ## 11. 현재 한계
 
 - Supabase Edge Function은 localhost Ollama를 사용할 수 없습니다. Cloud refresh는 OpenRouter/Gemini 경로를 사용합니다.
-- Qwen3 임베딩/RAG 추천은 local/admin POC이며, 최종 `.ait` 앱의 필수 사용자 흐름은 Supabase 기사 피드입니다.
-- LLM re-ranking은 선택형 POC로 남겨두었고, 실제 서비스 고도화 단계에서 평가/튜닝이 필요합니다.
+- Qwen3 임베딩/RAG 추천은 Supabase pgvector와 `.ait` 직접 조회 fallback까지 연결했습니다. 단, article embedding이 없는 행은 카테고리/최근 클릭 기반 추천으로 처리합니다.
+- LLM re-ranking은 기본 비활성 확장 옵션으로 남겨두었고, 실제 서비스 고도화 단계에서 Gemma4 계열 평가/튜닝이 필요합니다.
 - 기존 Supabase rows 중 일부는 불완전할 수 있어 polished demo mode가 May-range 처리 기사와 안전한 데모 예시를 우선합니다.

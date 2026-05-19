@@ -103,10 +103,15 @@ Embeddings are generated in the backend save path:
 - `backend/save_articles.py`: embeds `title_ko + translation`.
 - `supabase_schema.sql`: stores the result in `articles.embedding VECTOR(1024)`.
 
-The RAG recommendation POC uses:
-- `users.user_vector VECTOR(1024)` for interest vectors.
+The personalized recommendation path uses:
+- `users.interest_tags` from onboarding.
+- `users.user_vector VECTOR(1024)` for pgvector personalization when embeddings are available.
+- `user_logs` for article click history.
 - `match_articles(query_vector, top_k)` for cosine-similarity candidate retrieval.
-- `backend/rag.py` for top 20 candidates, click-based vector updates, and optional LLM reranking.
+- `frontend/src/data/api.ts` for Apps in Toss direct Supabase recommendation: RPC first, then category/recent-click/latest fallback.
+- `backend/rag.py` for local/admin testing and optional reranking extension.
+
+LLM reranking is not the default final-demo path. It remains a Gemma4/OpenRouter extension after pgvector candidate retrieval.
 
 ## 8. Demo Readiness Filtering
 

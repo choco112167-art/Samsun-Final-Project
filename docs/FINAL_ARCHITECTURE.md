@@ -40,11 +40,12 @@ flowchart TD
     DemoFields["demo readiness fields<br/>is_hidden/demo_visible/demo_priority"]
   end
 
-  subgraph RagPoc["Local/Admin RAG POC"]
+  subgraph RagPoc["Personalized Recommendation"]
     QwenEmbedding["Qwen3-Embedding-0.6B<br/>via Ollama"]
-    MatchArticles["match_articles RPC<br/>top 20 candidates"]
+    MatchArticles["match_articles RPC<br/>pgvector candidates"]
     ClickUpdate["click log<br/>user_vector update"]
-    OptionalRerank["optional OpenRouter/Gemini<br/>LLM rerank"]
+    FallbackRecommend["interest/recent-click<br/>fallback"]
+    OptionalRerank["optional Gemma4/OpenRouter<br/>LLM rerank extension"]
   end
 
   subgraph App["Apps in Toss .ait Frontend"]
@@ -72,6 +73,7 @@ flowchart TD
   Articles --> MatchArticles
   Users --> MatchArticles
   MatchArticles --> OptionalRerank
+  MatchArticles --> FallbackRecommend
   Articles --> ClickUpdate --> Users
   ProcessSQLite --> Articles
   DemoSeed --> Articles
@@ -87,19 +89,20 @@ flowchart TD
 
 ## Runtime Boundaries
 
-- `.ait` frontend: reads Supabase with anon key only.
+- `.ait` frontend: reads Supabase with anon key only, records onboarding interests and article clicks, and calls Supabase recommendation RPC when available.
 - Supabase: production data platform and public read source.
 - Local Ollama: demo/backfill only, running on the developer machine.
 - Supabase Edge/Cron: cloud automation path using OpenRouter/Gemini, not local Ollama.
-- Qwen3-Embedding-0.6B: local/admin pgvector RAG POC through `backend/embedder.py`; article writes store 1024-dimensional vectors in `articles.embedding`.
+- Qwen3-Embedding-0.6B: article/user embedding model for pgvector recommendation through `backend/embedder.py`; article writes store 1024-dimensional vectors in `articles.embedding`.
 
 ## Embedding And RAG Implementation
 
 - Schema: `supabase_schema.sql` creates `articles.embedding VECTOR(1024)`, `users.user_vector VECTOR(1024)`, and `match_articles(...)`.
 - Embedding adapter: `backend/embedder.py` uses `LOCAL_EMBEDDING_MODEL=qwen3-embedding:0.6b` in local mode and fits all vectors to 1024 dimensions.
 - Article upsert: `backend/save_articles.py` embeds `title_ko + translation` and writes `articles.embedding`.
-- Recommendation POC: `backend/rag.py` saves interest vectors, extracts top 20 pgvector candidates, records clicks, blends clicked article vectors into `users.user_vector`, and optionally reranks with OpenRouter/Gemini.
-- Admin endpoints: `backend/main.py` exposes `/onboarding`, `/feed/{user_id}`, and `/users/{user_id}/click/{url_hash}`. The `.ait` app itself still reads Supabase directly.
+- Frontend recommendation: `frontend/src/data/api.ts` stores `interest_tags`, records `user_logs`, updates `users.user_vector` with `old*0.6 + clicked*0.4` when embeddings exist, calls `match_articles`, and falls back to interest/recent-click/latest article ranking.
+- Admin endpoints: `backend/main.py` exposes `/onboarding`, `/feed/{user_id}`, and `/users/{user_id}/click/{url_hash}` for local/admin testing.
+- Optional reranking: `backend/rag.py` has a disabled-by-default reranking hook. Final demo messaging should describe it as a Gemma4/OpenRouter extension, not the default path.
 
 ## HITL Path
 

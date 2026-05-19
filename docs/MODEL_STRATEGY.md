@@ -47,8 +47,9 @@ OpenRouter/Gemini are used in the cloud refresh path because:
 | --- | --- | --- |
 | Base Gemma/Gemma4 | Foundation model family | Training/evaluation reference |
 | `samsun-gemma4` | Local demo/backfill model | Ollama on developer machine |
-| `Qwen3-Embedding-0.6B` | 1024-dim local embedding for pgvector RAG POC | Ollama on developer machine |
+| `Qwen3-Embedding-0.6B` | 1024-dim article/user embeddings for pgvector recommendation | Ollama on developer/admin machine |
 | OpenRouter/Gemini | Production cloud refresh | Supabase Edge Function |
+| Gemma4 reranking extension | Optional future reranking over pgvector candidates | Disabled in final `.ait` demo |
 
 ## Embedding / RAG Strategy
 
@@ -62,12 +63,20 @@ LOCAL_EMBEDDING_MODEL=qwen3-embedding:0.6b
 
 `backend/embedder.py` calls Ollama, normalizes the result to 1024 dimensions, and `backend/save_articles.py` writes article embeddings based on `title_ko + translation` into `articles.embedding VECTOR(1024)`.
 
-Personalization is implemented as a local/admin POC:
-- `supabase_schema.sql` defines `users.user_vector VECTOR(1024)` and `match_articles(...)`.
-- `backend/rag.py` saves interest vectors, pulls top 20 vector candidates, records clicked articles, updates `user_vector`, and includes an optional OpenRouter/Gemini reranking hook.
-- `backend/main.py` exposes `/onboarding`, `/feed/{user_id}`, and `/users/{user_id}/click/{url_hash}`.
+Personalization is implemented in two compatible paths:
+- Apps in Toss frontend path: `frontend/src/data/api.ts` saves onboarding `interest_tags`, records `user_logs`, updates `users.user_vector` when clicked article embeddings exist, calls Supabase `match_articles`, and falls back to category/recent-click/latest recommendations.
+- Local/admin path: `backend/rag.py` and `backend/main.py` expose `/onboarding`, `/feed/{user_id}`, and `/users/{user_id}/click/{url_hash}` for batch tests and admin demos.
 
-The `.ait` frontend still reads Supabase directly and does not depend on the local/admin FastAPI server.
+The final `.ait` demo does not depend on FastAPI. It reads Supabase directly with the anon key.
+
+## LLM Re-ranking Position
+
+LLM re-ranking is not a default final-demo feature. The stable path is:
+1. Qwen3-Embedding-0.6B creates article/user vectors.
+2. Supabase pgvector `match_articles` returns candidates.
+3. The frontend shows deterministic reasons such as interest match, recent-click category, or vector similarity.
+
+Gemma4/OpenRouter-based reranking remains a selectable extension for later evaluation. Do not present Qwen3.5-4B as the final recommendation LLM.
 
 ## Formal/Casual Summaries
 

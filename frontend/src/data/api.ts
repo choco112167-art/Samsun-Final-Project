@@ -90,6 +90,7 @@ export interface ApiArticle {
   is_hidden?: boolean;
   demo_visible?: boolean;
   demo_priority?: number;
+  embedding?: unknown;
   is_new: boolean;
   is_breaking: boolean;
   time_ago: string;
@@ -117,6 +118,11 @@ export interface NeologismEntry {
 export interface OnboardingRequest { user_id: string; interest_tags: string[]; }
 export interface OnboardingResponse { message: string; }
 export interface SearchResult extends ApiArticle { similarity?: number; }
+interface UserProfileRow {
+  user_id: string;
+  interest_tags?: string[] | null;
+  user_vector?: unknown;
+}
 
 function requireSupabase(): void {
   if (!isSupabaseConfigured()) {
@@ -342,7 +348,130 @@ export async function postOnboarding(userId: string, interestTags: string[]): Pr
   } catch {
     // local persistence is a convenience only
   }
-  return { message: 'saved locally' };
+  if (!isSupabaseConfigured()) return { message: 'saved locally' };
+
+  try {
+    await upsertUserProfile(userId, interestTags);
+  } catch (error) {
+    if (import.meta.env.DEV) {
+      console.warn('[api] onboarding Supabase sync failed', error);
+    }
+    return { message: 'saved locally; supabase sync skipped' };
+  }
+
+  return { message: 'saved' };
+}
+
+function parsePgVector(raw: unknown): number[] | null {
+  if (!raw) return null;
+  if (Array.isArray(raw)) return raw.map(Number).filter(Number.isFinite);
+  if (typeof raw !== 'string') return null;
+  const text = raw.trim();
+  if (!text) return null;
+  try {
+    const parsed = JSON.parse(text);
+    if (Array.isArray(parsed)) return parsed.map(Number).filter(Number.isFinite);
+  } catch {
+    // pgvector often returns "[0.1,0.2,...]"; JSON parsing covers that shape.
+  }
+  const values = text
+    .replace(/^\[/, '')
+    .replace(/\]$/, '')
+    .split(',')
+    .map(value => Number(value.trim()))
+    .filter(Number.isFinite);
+  return values.length > 0 ? values : null;
+}
+
+function serializePgVector(vector: number[]): string {
+  return `[${vector.map(value => Number.isFinite(value) ? Number(value.toFixed(8)) : 0).join(',')}]`;
+}
+
+function blendUserVector(current: number[] | null, clicked: number[], clickWeight = 0.4): number[] {
+  const dim = Math.min(clicked.length, current?.length ?? clicked.length);
+  if (!current || current.length === 0) return clicked.slice(0, dim);
+  return Array.from({ length: dim }, (_, index) => current[index] * (1 - clickWeight) + clicked[index] * clickWeight);
+}
+
+function localInterestsFor(userId: string): string[] {
+  try {
+    return JSON.parse(localStorage.getItem(`samsun_interests_${userId}`) ?? localStorage.getItem('samsun_interests') ?? '[]');
+  } catch {
+    return [];
+  }
+}
+
+async function upsertUserProfile(userId: string, interestTags: string[]): Promise<void> {
+  const now = new Date().toISOString();
+  const base = {
+    user_id: userId,
+    interest_tags: interestTags,
+    last_seen_at: now,
+  };
+  const result = await supabase
+    .from('users')
+    .upsert({ ...base, updated_at: now }, { onConflict: 'user_id' });
+  if (!result.error) return;
+  if (result.error.code === 'PGRST204' || result.error.message?.includes('updated_at')) {
+    const fallback = await supabase.from('users').upsert(base, { onConflict: 'user_id' });
+    if (!fallback.error) return;
+    throw fallback.error;
+  }
+  throw result.error;
+}
+
+async function updateUserVector(userId: string, vector: number[]): Promise<void> {
+  const now = new Date().toISOString();
+  const base = {
+    user_vector: serializePgVector(vector),
+    last_seen_at: now,
+  };
+  const result = await supabase
+    .from('users')
+    .update({ ...base, updated_at: now })
+    .eq('user_id', userId);
+  if (!result.error) return;
+  if (result.error.code === 'PGRST204' || result.error.message?.includes('updated_at')) {
+    const fallback = await supabase.from('users').update(base).eq('user_id', userId);
+    if (!fallback.error) return;
+    throw fallback.error;
+  }
+  throw result.error;
+}
+
+async function fetchUserProfile(userId: string): Promise<UserProfileRow | null> {
+  if (!isSupabaseConfigured()) return null;
+  const { data, error } = await supabase
+    .from('users')
+    .select('user_id,interest_tags,user_vector')
+    .eq('user_id', userId)
+    .maybeSingle();
+  if (error) {
+    if (import.meta.env.DEV) console.warn('[api] user profile unavailable', error.message);
+    return null;
+  }
+  return data as UserProfileRow | null;
+}
+
+async function fetchRecentClickCategories(userId: string): Promise<string[]> {
+  if (!isSupabaseConfigured()) return [];
+  const { data, error } = await supabase
+    .from('user_logs')
+    .select('url_hash')
+    .eq('user_id', userId)
+    .order('created_at', { ascending: false })
+    .limit(20);
+  if (error || !data?.length) return [];
+  const hashes = data.map(row => row.url_hash).filter(Boolean);
+  if (hashes.length === 0) return [];
+  const articles = await supabase
+    .from('articles')
+    .select('category,source,title,title_ko')
+    .in('url_hash', hashes);
+  if (articles.error) return [];
+  return [...new Set((articles.data ?? []).map(row =>
+    normalizeCategory(row.category, row.source, `${row.title ?? ''} ${row.title_ko ?? ''}`),
+  ))];
 }
 
 function scoreByInterests(article: Article, interests: string[]): number {
@@ -356,18 +485,50 @@ export async function fetchFeed(
   userId: string,
   topK = 10,
 ): Promise<(Article & { similarity?: number; reason?: string })[]> {
-  let interests: string[] = [];
-  try {
-    interests = JSON.parse(localStorage.getItem(`samsun_interests_${userId}`) ?? localStorage.getItem('samsun_interests') ?? '[]');
-  } catch {
-    interests = [];
+  const profile = await fetchUserProfile(userId);
+  const interests = (profile?.interest_tags?.length ? profile.interest_tags : localInterestsFor(userId)).map(String);
+  const recentCategories = await fetchRecentClickCategories(userId);
+  const userVector = parsePgVector(profile?.user_vector);
+
+  if (userVector?.length) {
+    const rpc = await supabase.rpc('match_articles', {
+      query_vector: serializePgVector(userVector),
+      top_k: Math.max(topK * 4, 40),
+    });
+    if (!rpc.error && rpc.data?.length) {
+      const rows = await attachOptionalPresentationFields(rpc.data as unknown as ApiArticle[]);
+      const vectorArticles = toArticleList(rows)
+        .filter(article => !isPresentationHidden(article))
+        .filter(article => !DEMO_POLISHED_FEED || (isDemoRangeArticle(article) && isCompletePresentationArticle(article)))
+        .slice(0, Math.max(topK * 2, topK));
+      if (vectorArticles.length > 0) {
+        return vectorArticles
+          .slice(0, topK)
+          .map(article => ({
+            ...article,
+            similarity: typeof (rows.find(row => row.url_hash === article.urlHash) as SearchResult | undefined)?.similarity === 'number'
+              ? (rows.find(row => row.url_hash === article.urlHash) as SearchResult).similarity
+              : undefined,
+            reason: '사용자 관심 벡터와 유사도가 높은 기사입니다.',
+          }));
+      }
+    } else if (rpc.error && import.meta.env.DEV) {
+      console.warn('[api] match_articles RPC failed; using fallback feed', rpc.error.message);
+    }
   }
+
   const articles = await fetchArticles({ limit: Math.max(topK * 4, 40) });
   const feed = articles
     .map(article => ({
       ...article,
-      similarity: Math.min(1, scoreByInterests(article, interests) / 2),
-      reason: interests.length ? '관심 주제와 제목/요약이 가까운 기사입니다' : '최신 기사 기반 추천입니다',
+      similarity: Math.min(1, (scoreByInterests(article, interests) + (recentCategories.includes(article.category) ? 1 : 0)) / 3),
+      reason: recentCategories.includes(article.category)
+        ? `최근 읽은 기사와 같은 '${article.category}' 분야 기사입니다.`
+        : interests.includes(article.category)
+          ? `선택한 관심사 '${article.category}'와 맞는 기사입니다.`
+          : interests.length
+            ? '선택한 관심사와 제목/요약이 가까운 기사입니다.'
+            : '최근 업데이트된 완성 기사입니다.',
     }))
     .sort((a, b) => (b.similarity ?? 0) - (a.similarity ?? 0))
     .slice(0, topK)
@@ -425,7 +586,38 @@ export async function recordArticleView(userId: string, urlHash: string): Promis
     const prev = JSON.parse(localStorage.getItem(key) ?? '[]') as string[];
     localStorage.setItem(key, JSON.stringify([urlHash, ...prev].slice(0, 200)));
   } catch {
-    // no-op; runtime has no backend writer
+    // local fallback only
+  }
+
+  if (!isSupabaseConfigured()) return;
+
+  try {
+    const now = new Date().toISOString();
+    await upsertUserProfile(userId, localInterestsFor(userId));
+
+    const logResult = await supabase
+      .from('user_logs')
+      .insert({ user_id: userId, url_hash: urlHash, action: 'view', created_at: now });
+    if (logResult.error && import.meta.env.DEV) {
+      console.warn('[api] user_logs insert failed', logResult.error.message);
+    }
+
+    const articleResult = await supabase
+      .from('articles')
+      .select('embedding')
+      .eq('url_hash', urlHash)
+      .maybeSingle();
+    const clickedVector = parsePgVector((articleResult.data as Partial<ApiArticle> | null)?.embedding);
+    if (!clickedVector?.length) return;
+
+    const user = await fetchUserProfile(userId);
+    const currentVector = parsePgVector(user?.user_vector);
+    const nextVector = blendUserVector(currentVector, clickedVector);
+    await updateUserVector(userId, nextVector);
+  } catch (error) {
+    if (import.meta.env.DEV) {
+      console.warn('[api] recordArticleView failed; UI continues', error);
+    }
   }
 }
 
@@ -489,7 +681,14 @@ export async function markUserSeen(userId: string): Promise<void> {
 }
 
 export async function logArticleView(userId: string, urlHash: string): Promise<void> {
-  await recordArticleView(userId, urlHash);
+  if (!userId?.trim() || !urlHash) return;
+  try {
+    const key = `samsun_view_log_${userId}`;
+    const prev = JSON.parse(localStorage.getItem(key) ?? '[]') as string[];
+    localStorage.setItem(key, JSON.stringify([urlHash, ...prev].slice(0, 200)));
+  } catch {
+    // no-op
+  }
 }
 
 export async function fetchHot(date: string): Promise<(Article & { view_count: number })[]> {
