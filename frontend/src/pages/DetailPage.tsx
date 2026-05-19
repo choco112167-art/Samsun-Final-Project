@@ -21,7 +21,7 @@ import { tossOpenURL } from '../lib/toss';
 import NeologismText from '../components/NeologismText';
 import TonePreferenceControl from '../components/TonePreferenceControl';
 import { toneLabel, type SummaryTone } from '../hooks/useTonePreference';
-import { FactStatusBadge, factStatusText } from '../components/FactStatusBadge';
+import { FactStatusBadge, factStatusDescription, factStatusText } from '../components/FactStatusBadge';
 
 interface Props {
   article: Article;
@@ -85,6 +85,19 @@ function StatusPill({ ready, label }: { ready: boolean; label: string }) {
   );
 }
 
+function normalizeFactExplanationForDisplay(raw: string, fallback: string): string {
+  const text = raw.trim();
+  if (!text) return fallback;
+  if (
+    text.includes('미검증으로 표시했습니다')
+    || text.includes('루머 주의가 필요합니다')
+    || text.includes('수동 검토가 필요한 기사입니다')
+  ) {
+    return fallback;
+  }
+  return text;
+}
+
 export default function DetailPage({ article, bookmarked, onBookmark, onBack, tone, onToneChange }: Props) {
   const [copiedFormal, setCopiedFormal] = useState(false);
   const [copiedShare,  setCopiedShare]  = useState(false);
@@ -101,7 +114,10 @@ export default function DetailPage({ article, bookmarked, onBookmark, onBack, to
   const summaryReady = isValidSummary(tone === 'formal' ? article.summaryFormal : article.summaryCasual);
   const translationReady = isValidTranslation(article.translation);
   const factStatus = normalizeFactStatus(article.factLabel);
-  const needsCaution = factStatus === 'RUMOR' || factStatus === 'UNVERIFIED' || factStatus === 'HITL_REQUIRED';
+  const factDisplayExplanation = normalizeFactExplanationForDisplay(
+    factExplanation,
+    factStatusDescription(article.factLabel),
+  );
   const demoArticle = isDemoArticle(article);
   const visibleNeologisms = useMemo(() => {
     const haystack = `${selectedSummary}\n${translation}`.toLocaleLowerCase();
@@ -233,28 +249,24 @@ export default function DetailPage({ article, bookmarked, onBookmark, onBack, to
           )}
         </div>
 
-        {needsCaution && (
-          <div style={{ background: factStatus === 'RUMOR' ? '#FFF7ED' : 'var(--color-surface)', border: '0.5px solid var(--color-border)', padding: '12px 20px', marginBottom: 8 }}>
-            <p style={{ fontSize: 13, fontWeight: 700, color: factStatus === 'RUMOR' ? '#9A3412' : 'var(--color-text-primary)', marginBottom: 4 }}>
+        <div style={{
+          background: factStatus === 'RUMOR' ? '#FFF7ED' : factStatus === 'HITL_REQUIRED' ? '#F5F3FF' : 'var(--color-surface)',
+          border: '0.5px solid var(--color-border)',
+          padding: '12px 20px',
+          marginBottom: 8,
+        }}>
+            <p style={{
+              fontSize: 13,
+              fontWeight: 700,
+              color: factStatus === 'RUMOR' ? '#9A3412' : factStatus === 'HITL_REQUIRED' ? '#6D28D9' : 'var(--color-text-primary)',
+              marginBottom: 4,
+            }}>
               {factStatusText(article.factLabel)}
             </p>
             <p style={{ fontSize: 12, color: 'var(--color-text-secondary)', lineHeight: 1.6 }}>
               {demoArticle && factStatus === 'RUMOR'
                 ? '이 항목은 검증되지 않은 시연용 루머 데이터입니다.'
-                : factExplanation || (factStatus === 'HITL_REQUIRED'
-                  ? '자동 판정만으로는 판단이 어려워 사람이 추가로 확인해야 하는 기사입니다.'
-                  : '이 항목은 아직 검증이 완료되지 않았습니다. 출처와 추가 확인 결과를 함께 확인해주세요.')}
-            </p>
-          </div>
-        )}
-
-        {!needsCaution && factExplanation && (
-          <div style={{ background: 'var(--color-surface)', border: '0.5px solid var(--color-border)', padding: '12px 20px', marginBottom: 8 }}>
-            <p style={{ fontSize: 13, fontWeight: 700, color: 'var(--color-text-primary)', marginBottom: 4 }}>
-              팩트체크 인사이트
-            </p>
-            <p style={{ fontSize: 12, color: 'var(--color-text-secondary)', lineHeight: 1.6 }}>
-              {factExplanation}
+                : factDisplayExplanation}
             </p>
             {typeof article.credibilityScore === 'number' && (
               <p style={{ marginTop: 6, fontSize: 11, color: 'var(--color-text-tertiary)' }}>
@@ -262,7 +274,6 @@ export default function DetailPage({ article, bookmarked, onBookmark, onBack, to
               </p>
             )}
           </div>
-        )}
 
         <div style={{ background: 'var(--color-surface)', padding: '14px 20px', marginBottom: 8 }}>
           <p style={{ fontSize: 11, fontWeight: 600, color: 'var(--color-text-tertiary)', letterSpacing: '0.04em', textTransform: 'uppercase', marginBottom: 10 }}>요약 말투</p>

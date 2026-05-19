@@ -43,7 +43,7 @@
 
 - [ ] Cards show fact badges.
 - [ ] Detail page shows fact status explanation.
-- [ ] `검증됨`, `미검증`, `루머 의심`, `HITL 검토 필요` examples exist.
+- [ ] `검증됨`, `확인 필요`, `루머 주의`, `분석글`, `전문가 검토 필요` examples exist.
 - [ ] Rumor article says it is unverified demo rumor data.
 - [ ] Trust bars: top 3 ranked items blue, lower ranks gray unless rumor/HITL/unverified status overrides.
 - [ ] Category/ranking numbers are labeled as `신뢰도 순위` or `검증 우선순위`.

@@ -46,13 +46,13 @@ OPTIONAL_FIELDS = [
 ]
 
 REASONS = {
-    "UNVERIFIED": "출처는 확인되지만 독립 교차검증 정보가 부족해 미검증으로 표시했습니다.",
-    "RUMOR": "공식 발표보다 추정성 표현이 많아 루머 주의가 필요합니다.",
-    "HITL_REQUIRED": "자동 판정만으로는 판단이 어려워 수동 검토가 필요한 기사입니다.",
+    "UNVERIFIED": "출처는 확인되지만 독립 교차검증 정보가 부족해 추가 확인이 필요한 기사입니다.",
+    "RUMOR": "공식 발표보다 추정성 표현이 많아 주의가 필요한 기사입니다.",
+    "HITL_REQUIRED": "자동 판정만으로는 판단이 어려워 사람이 추가로 확인해야 하는 기사입니다.",
     "FACT": "신뢰도 높은 출처와 명확한 보도 형식으로 확인된 기사입니다.",
     "VERIFIED": "신뢰도 높은 출처와 명확한 보도 형식으로 확인된 기사입니다.",
-    "INSIGHT": "분석/해설 성격의 기사로, 출처 신뢰도와 보도 맥락을 함께 참고해야 합니다.",
-    "FACT_INSIGHT": "신뢰도 높은 출처의 분석 기사로, 사실 보도와 해설 맥락을 함께 제공합니다.",
+    "INSIGHT": "사실 보도보다 전문가 해설·관점이 중심인 기사입니다.",
+    "FACT_INSIGHT": "사실 보도보다 전문가 해설·관점이 중심인 기사입니다.",
 }
 
 
@@ -74,7 +74,7 @@ def normalize_fact(row: dict[str, Any]) -> str:
     if bool(row.get("hitl_required")):
         return "HITL_REQUIRED"
     raw = str(row.get("fact_status") or row.get("fact_label") or "").strip().upper()
-    if raw in {"HITL", "HUMAN_REVIEW_REQUIRED"}:
+    if raw in {"HITL", "HUMAN_REVIEW", "HUMAN_REVIEW_REQUIRED"}:
         return "HITL_REQUIRED"
     if raw in {"VERIFIED", "FACT", "INSIGHT", "FACT_INSIGHT", "RUMOR", "UNVERIFIED", "HITL_REQUIRED"}:
         return raw

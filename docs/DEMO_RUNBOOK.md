@@ -131,7 +131,7 @@ frontend/samsun-newsapp.ait
 - First screen shows Korean titles only.
 - First screen shows processed May 1-May 18 articles and clearly marked demo cards before old RSS rows.
 - Cards show 3-line summaries, fact badges, and trust indicators.
-- Status examples are visible: `검증됨`, `미검증`, `루머 의심`, `HITL 검토 필요`.
+- Status examples are visible: `검증됨`, `확인 필요`, `루머 주의`, `분석글`, `전문가 검토 필요`.
 - Rumor detail page shows: `이 항목은 검증되지 않은 시연용 루머 데이터입니다.`
 - Neologism terms such as `프롬프트 주입`, `가드레일`, and `HITL` highlight and open explanations.
 - `원문 보기` opens the safe source URL.

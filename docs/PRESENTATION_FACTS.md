@@ -29,7 +29,7 @@
 | 7개 카테고리 | 구현 | AI 연구, AI 심층, AI 스타트업, AI 윤리, AI 비즈니스, AI 커뮤니티, 테크 전반 |
 | 개인화 추천 | 구현 | interest_tags, user_logs, user_vector, match_articles RPC와 fallback을 사용한다 |
 | 신조어 RAG | 구현 | Supabase `neologisms`에 등록된 설명만 bottom sheet로 보여준다 |
-| fact label | 구현 | FACT/UNVERIFIED/RUMOR/HITL_REQUIRED 상태를 카드/상세에 표시한다 |
+| fact label | 구현 | FACT/UNVERIFIED/RUMOR/INSIGHT/HITL_REQUIRED 상태를 카드/상세에 표시한다 |
 | fact insight | 구현 | `fact_reason`/`fact_insight`가 있는 경우 상세에 보수적 설명을 표시한다 |
 | HITL | 구현 범위 제한 | 완전한 관리자 승인 시스템이 아니라 검토 대상 분리 및 표시 구현 |
 
@@ -82,11 +82,29 @@ flowchart LR
 
 발표 표현:
 
-> 삼선뉴스는 자동 팩트체크 결과가 불확실한 기사를 `HITL_REQUIRED`로 분류해 사람 검토가 필요한 대상으로 분리한다. 최종 데모에서는 기사 상세 화면에 `FACT`/`UNVERIFIED`/`RUMOR`/`HITL_REQUIRED` 라벨과 fact insight를 표시하며, 실제 운영 단계에서는 관리자가 최종 판정을 내리는 HITL 관리자 플로우로 확장할 수 있도록 설계했다.
+> 팩트체크 파이프라인은 testset 200건과 DebateCV 검증용 실제 기사 1건, 총 201건으로 평가했으며, 최종 신뢰도 분류 정확도 98.5%, RUMOR recall 1.0, FACT F1 0.989를 달성했다. 앱에서는 AI가 자동 판정한 `FACT`/`UNVERIFIED`/`RUMOR`/`INSIGHT` 라벨을 표시하고, 자동 판정만으로 어려운 기사는 전문가 검토 필요(`HITL_REQUIRED`) 대상으로 분리한다. `INSIGHT`는 TIER 0/1 전문가 사설·분석글을 DROP하지 않고 보존하기 위한 라벨이다.
+
+슬라이드용 3문장:
+
+1. 수집 직후 팩트체커가 FACT/RUMOR/UNVERIFIED/INSIGHT/DROP 5라벨을 먼저 판정합니다.
+2. 자동 판정이 불확실한 기사는 전문가 검토 필요 상태로 분리해 사람이 확인할 수 있게 설계했습니다.
+3. 201건 평가에서 최종 정확도 98.5%, RUMOR recall 1.0을 달성했습니다.
+
+앱 표시 기준:
+
+| 내부 라벨 | 사용자 표시 | 설명 |
+| --- | --- | --- |
+| `FACT` / `VERIFIED` | 검증됨 | 신뢰도 높은 출처와 명확한 보도 형식으로 확인된 기사 |
+| `UNVERIFIED` | 확인 필요 | 독립 교차검증 정보가 부족해 추가 확인이 필요한 기사 |
+| `RUMOR` | 루머 주의 | 공식 발표보다 추정성 표현이 많아 주의가 필요한 기사 |
+| `INSIGHT` | 분석글 | 사실 보도보다 전문가 해설·관점이 중심인 기사 |
+| `HITL_REQUIRED` / `HITL` / `HUMAN_REVIEW` | 전문가 검토 필요 | 자동 판정만으로는 판단이 어려워 사람이 추가 확인해야 하는 기사 |
+| `DROP` | 사용자 피드 미노출 | 노이즈 또는 최종 피드 부적합 항목 |
 
 주의:
 - “완전한 관리자 승인 시스템 구현 완료”라고 말하지 않는다.
-- “HITL 검토 대상 분리 및 표시 구현”이라고 표현한다.
+- “전문가 검토 대상 분리 및 표시 구현”이라고 표현한다.
+- `INSIGHT`는 “전문가 분석글 보존 라벨”로 설명한다.
 - fact insight는 보수적 설명이며, 없는 경우 빈 박스를 띄우지 않는다.
 
 ## 데이터 수집 슬라이드 구조

@@ -110,4 +110,4 @@ When an article contains ambiguous claims or insufficient evidence, the pipeline
 - `fact_label=HITL_REQUIRED`
 - `hitl_required=true` if the optional column exists
 
-The UI displays this as `HITL 검토 필요`, signaling that human review is required before treating the item as verified.
+The UI displays this as `전문가 검토 필요`, signaling that human review is required before treating the item as verified. This is review-target separation and display, not a complete admin approval workflow.
