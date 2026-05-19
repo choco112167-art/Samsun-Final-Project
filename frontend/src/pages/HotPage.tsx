@@ -1,10 +1,11 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { fetchHot } from '../data/api';
 import { articleDisplayTitle, factStatusWeight, hasKoreanTitle, normalizeFactStatus, type Article } from '../data/articles';
 import { FactStatusBadge } from '../components/FactStatusBadge';
 import DetailPage from './DetailPage';
 import type { BookmarkHook } from '../hooks/useBookmarks';
 import type { SummaryTone } from '../hooks/useTonePreference';
+import { restoreArticleListScroll, useArticleDetailNavigation } from '../hooks/useArticleDetailNavigation';
 
 type HotArticle = Article & { view_count?: number };
 
@@ -74,12 +75,12 @@ export default function HotPage({ bm, userId: _userId, onArticleClick, tone, onT
     setDetail(article);
   };
 
-  const closeDetail = () => {
+  const closeDetail = useCallback(() => {
     setDetail(null);
-    requestAnimationFrame(() => {
-      if (mainRef.current) mainRef.current.scrollTop = scrollPos.current;
-    });
-  };
+    restoreArticleListScroll(mainRef, scrollPos.current);
+  }, []);
+
+  useArticleDetailNavigation(Boolean(detail), closeDetail);
 
   if (detail) return (
     <DetailPage article={detail} bookmarked={bm.isBookmarked(detail.urlHash)} onBookmark={bm.toggle} onBack={closeDetail} tone={tone} onToneChange={onToneChange} />

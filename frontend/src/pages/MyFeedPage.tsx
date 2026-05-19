@@ -6,6 +6,7 @@ import DetailPage from './DetailPage';
 import type { BookmarkHook } from '../hooks/useBookmarks';
 import type { SummaryTone } from '../hooks/useTonePreference';
 import type { Interest } from './OnboardingPage';
+import { restoreArticleListScroll, useArticleDetailNavigation } from '../hooks/useArticleDetailNavigation';
 
 type FeedItem = Article & { similarity?: number; reason?: string };
 
@@ -78,12 +79,12 @@ export default function MyFeedPage({ bm, interests, onInterestsChange, onResetOn
     setDetail(article);
   };
 
-  const closeDetail = () => {
+  const closeDetail = useCallback(() => {
     setDetail(null);
-    requestAnimationFrame(() => {
-      if (mainRef.current) mainRef.current.scrollTop = scrollPos.current;
-    });
-  };
+    restoreArticleListScroll(mainRef, scrollPos.current);
+  }, []);
+
+  useArticleDetailNavigation(Boolean(detail), closeDetail);
 
   if (detail) return (
     <DetailPage
