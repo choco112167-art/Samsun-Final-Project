@@ -172,6 +172,34 @@ def main() -> int:
         and dt >= windows["24h"]
         and (bool(row.get("is_hidden")) or missing_ai(row))
     )
+    collected_recent_hidden = {
+        name: sum(
+            1
+            for row in rows
+            if (dt := parse_dt(row.get("published_at"))) is not None
+            and dt >= start
+            and bool(row.get("is_hidden"))
+        )
+        for name, start in windows.items()
+    }
+    collected_recent_missing_ai = {
+        name: sum(
+            1
+            for row in rows
+            if (dt := parse_dt(row.get("published_at"))) is not None
+            and dt >= start
+            and missing_ai(row)
+        )
+        for name, start in windows.items()
+    }
+    hidden_latest = [
+        row for row in rows
+        if bool(row.get("is_hidden")) and parse_dt(row.get("published_at")) is not None
+    ]
+    hidden_latest.sort(
+        key=lambda row: parse_dt(row.get("published_at")) or datetime.min.replace(tzinfo=timezone.utc),
+        reverse=True,
+    )
 
     latest_by_source: dict[str, datetime | None] = defaultdict(lambda: None)
     for row in rows:
@@ -188,6 +216,16 @@ def main() -> int:
     print(f"recent_all_articles: 6h={all_by_window['6h']} 24h={all_by_window['24h']} 3d={all_by_window['3d']} 7d={all_by_window['7d']}")
     print(f"recent_complete_visible_articles: 6h={complete_by_window['6h']} 24h={complete_by_window['24h']} 3d={complete_by_window['3d']} 7d={complete_by_window['7d']}")
     print(f"recent_24h_hidden_or_missing_ai: {recent_24_missing_or_hidden}")
+    print(
+        "collected_but_hidden_articles: "
+        f"6h={collected_recent_hidden['6h']} 24h={collected_recent_hidden['24h']} "
+        f"3d={collected_recent_hidden['3d']} 7d={collected_recent_hidden['7d']}"
+    )
+    print(
+        "collected_but_missing_ai_outputs: "
+        f"6h={collected_recent_missing_ai['6h']} 24h={collected_recent_missing_ai['24h']} "
+        f"3d={collected_recent_missing_ai['3d']} 7d={collected_recent_missing_ai['7d']}"
+    )
     print("visible_by_category:")
     for category, count in Counter(category_for(row) for row in visible).most_common():
         print(f"  {category}: {count}")
@@ -199,9 +237,20 @@ def main() -> int:
         print(f"  {source}: {fmt_dt(latest_by_source.get(source))}")
     print("app_top_20:")
     for index, row in enumerate(visible[:20], 1):
+        summary_text = str(row.get("summary_formal") or row.get("summary_casual") or row.get("summary_ko") or "")
         print(
             f"  {index:02d}. {row.get('published_at')} | {category_for(row)} | "
-            f"{row.get('source')} | {row.get('title_ko') or row.get('title')}"
+            f"{row.get('source')} | hidden={bool(row.get('is_hidden'))} | "
+            f"translation_len={len(str(row.get('translation') or ''))} | "
+            f"summary_len={len(summary_text)} | "
+            f"{row.get('title_ko') or row.get('title')}"
+        )
+    print("latest_hidden_or_pending_top_10:")
+    for index, row in enumerate(hidden_latest[:10], 1):
+        print(
+            f"  {index:02d}. {row.get('published_at')} | {category_for(row)} | "
+            f"{row.get('source')} | missing_ai={missing_ai(row)} | "
+            f"{row.get('title_ko') or row.get('title')}"
         )
     return 0
 
