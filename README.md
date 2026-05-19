@@ -163,6 +163,8 @@ Supabase RPC가 오래된 테이블명을 참조하면 아래 SQL을 Supabase SQ
 -- backend/sql/final_demo_supabase_patch.sql
 ```
 
+이 파일은 Supabase free tier에서도 실행되도록 벡터 인덱스 생성을 포함하지 않습니다. 발표용 소규모 데이터에서는 `match_articles` RPC만으로 동작하며, pgvector/visibility 인덱스는 선택 파일 `backend/sql/optional_pgvector_indexes.sql`로 분리했습니다.
+
 상태 점검:
 
 ```bash

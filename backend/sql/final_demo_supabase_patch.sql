@@ -38,14 +38,11 @@ CREATE TABLE IF NOT EXISTS public.user_logs (
   created_at timestamptz DEFAULT now()
 );
 
-CREATE INDEX IF NOT EXISTS idx_articles_embedding
-  ON public.articles USING ivfflat (embedding vector_cosine_ops)
-  WITH (lists = 100);
-CREATE INDEX IF NOT EXISTS idx_articles_demo_visibility
-  ON public.articles (is_hidden, is_demo, demo_visible, published_at DESC);
-CREATE INDEX IF NOT EXISTS idx_users_last_seen_at ON public.users(last_seen_at DESC);
-CREATE INDEX IF NOT EXISTS idx_user_logs_user_id_created_at ON public.user_logs(user_id, created_at DESC);
-CREATE INDEX IF NOT EXISTS idx_user_logs_url_hash ON public.user_logs(url_hash);
+-- Index creation is intentionally not included here.
+-- Supabase free-tier projects may fail vector index creation with:
+--   ERROR 54000: memory required is 41 MB, maintenance_work_mem is 32 MB
+-- For the final demo's small visible dataset, the RPC below works without a vector index.
+-- Optional indexes live in backend/sql/optional_pgvector_indexes.sql.
 
 CREATE OR REPLACE FUNCTION public.match_articles(
   query_vector vector(1024),

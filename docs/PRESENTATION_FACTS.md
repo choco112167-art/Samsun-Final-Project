@@ -104,6 +104,12 @@ backend/sql/final_demo_supabase_patch.sql
 
 이 SQL은 `public.articles` 기준 `match_articles` RPC를 다시 만들고, `users`, `user_logs`, `source_url/original_url`, `fact_reason/fact_insight`, demo visibility 필드를 보강한다. GitHub push만으로 Supabase SQL이 자동 적용되지는 않는다.
 
+벡터 인덱스는 선택사항이다. Supabase free tier에서는 `maintenance_work_mem` 한도 때문에 ivfflat/hnsw index 생성이 실패할 수 있으므로, 발표 전에는 `final_demo_supabase_patch.sql`만 실행해도 된다. 성능 인덱스가 필요할 때만 별도 파일을 실행한다:
+
+```text
+backend/sql/optional_pgvector_indexes.sql
+```
+
 ## 커뮤니티 수집 소스
 
 - Lemmy Technology: RSS + Lemmy API `post_view.post.embed_description`.
