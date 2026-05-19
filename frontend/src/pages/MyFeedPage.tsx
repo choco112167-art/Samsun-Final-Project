@@ -131,6 +131,23 @@ export default function MyFeedPage({ bm, interests, onInterestsChange, onResetOn
             }}>{label}</button>
           ))}
         </div>
+
+        <button
+          onClick={onResetOnboarding}
+          style={{
+            width: '100%',
+            minHeight: 42,
+            marginBottom: 14,
+            borderRadius: 'var(--radius-sm)',
+            background: 'rgba(255,255,255,0.12)',
+            border: '1px solid rgba(255,255,255,0.22)',
+            color: 'var(--color-header-text)',
+            fontSize: 13,
+            fontWeight: 700,
+          }}
+        >
+          데모 초기화 / 관심사 다시 선택
+        </button>
       </header>
 
       <main ref={mainRef} style={{ flex: 1, overflowY: 'auto', WebkitOverflowScrolling: 'touch', background: 'var(--color-bg)', borderRadius: '32px 32px 0 0' }}>
@@ -262,30 +279,9 @@ export default function MyFeedPage({ bm, interests, onInterestsChange, onResetOn
               })}
             </div>
 
-            <div style={{
-              marginTop: 18,
-              paddingTop: 14,
-              borderTop: '1px solid var(--color-border)',
-            }}>
-              <button
-                onClick={onResetOnboarding}
-                style={{
-                  width: '100%',
-                  minHeight: 44,
-                  borderRadius: 'var(--radius-sm)',
-                  background: 'var(--color-surface)',
-                  border: '1px solid var(--color-border)',
-                  color: 'var(--color-text-secondary)',
-                  fontSize: 13,
-                  fontWeight: 600,
-                }}
-              >
-                온보딩 다시 보기
-              </button>
-              <p style={{ marginTop: 8, fontSize: 11, lineHeight: 1.45, color: 'var(--color-text-tertiary)' }}>
-                녹화·시연용으로 이 기기 안의 관심 주제 설정만 초기화합니다.
-              </p>
-            </div>
+            <p style={{ marginTop: 16, fontSize: 11, lineHeight: 1.45, color: 'var(--color-text-tertiary)' }}>
+              녹화·시연용 초기화는 상단의 “데모 초기화 / 관심사 다시 선택” 버튼을 사용하세요. 이 기기 안의 온보딩·관심사 캐시만 초기화합니다.
+            </p>
           </div>
         )}
       </main>

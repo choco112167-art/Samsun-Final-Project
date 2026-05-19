@@ -10,10 +10,11 @@ import { useBookmarks } from './hooks/useBookmarks';
 import { useTonePreference } from './hooks/useTonePreference';
 import { recordArticleView, fetchAbsenceSummary, markUserSeen, type AbsenceSummaryResponse } from './data/api';
 import { getSamsunUserId, tossHaptic } from './lib/toss';
+import { goToOnboardingResetUrl, resetDemoState } from './utils/resetDemoState';
 
 const LS_ONBOARDED = 'samsun_onboarded';
 const LS_INTERESTS = 'samsun_interests';
-const LS_USER_ID = 'samsun_user_id';
+const BUILD_MARKER = 'b214982+demo-reset-20260520';
 
 /** 개발 중 강제 온보딩 화면 — 배포 전 반드시 false */
 const DEV_FORCE_ONBOARDING = false;
@@ -28,37 +29,34 @@ function hasOnboardingResetQuery(): boolean {
   return params.get('resetOnboarding') === '1' || params.get('onboarding') === '1';
 }
 
-function clearLocalOnboardingState() {
-  localStorage.removeItem(LS_ONBOARDED);
-  localStorage.removeItem(LS_INTERESTS);
-  localStorage.removeItem(LS_USER_ID);
-
-  const keysToRemove: string[] = [];
-  for (let i = 0; i < localStorage.length; i += 1) {
-    const key = localStorage.key(i);
-    if (key?.startsWith('samsun_interests_')) keysToRemove.push(key);
-  }
-  keysToRemove.forEach(key => localStorage.removeItem(key));
-}
-
 function initialOnboardedState(): boolean {
-  if (hasOnboardingResetQuery()) {
-    clearLocalOnboardingState();
-    return false;
-  }
-  return DEV_FORCE_ONBOARDING ? false : localStorage.getItem(LS_ONBOARDED) === 'true';
+  if (hasOnboardingResetQuery() || DEV_FORCE_ONBOARDING) return false;
+  const storedInterests = loadInterests();
+  return localStorage.getItem(LS_ONBOARDED) === 'true' && storedInterests.length > 0 && Boolean(localStorage.getItem('samsun_user_id'));
 }
 
 export default function App() {
   const [onboarded, setOnboarded] = useState(initialOnboardedState);
-  const [interests, setInterests] = useState<Interest[]>(loadInterests);
-  const [userId, setUserId] = useState(() => {
-    return getSamsunUserId();
-  });
+  const [interests, setInterests] = useState<Interest[]>(() => (onboarded ? loadInterests() : []));
+  const [userId, setUserId] = useState<string | null>(() => (onboarded ? getSamsunUserId() : null));
   const [activeTab, setActiveTab] = useState<TabId>('home');
   const bm = useBookmarks();
   const { tone, setTone } = useTonePreference();
   const [absenceData, setAbsenceData] = useState<AbsenceSummaryResponse | null>(null);
+
+  useEffect(() => {
+    console.log(`[SamsunNews] build ${BUILD_MARKER} onboarding reset enabled`);
+    if (!hasOnboardingResetQuery()) return;
+
+    resetDemoState().finally(() => {
+      setInterests([]);
+      setUserId(null);
+      setAbsenceData(null);
+      setActiveTab('home');
+      setOnboarded(false);
+      window.history.replaceState(null, '', window.location.pathname || '/');
+    });
+  }, []);
 
   // 앱 진입 시 부재 요약 확인
   useEffect(() => {
@@ -74,13 +72,14 @@ export default function App() {
   };
 
   const resetOnboarding = () => {
-    clearLocalOnboardingState();
-    const nextUserId = getSamsunUserId();
-    setInterests([]);
-    setUserId(nextUserId);
-    setAbsenceData(null);
-    setActiveTab('home');
-    setOnboarded(false);
+    resetDemoState().finally(() => {
+      setInterests([]);
+      setUserId(null);
+      setAbsenceData(null);
+      setActiveTab('home');
+      setOnboarded(false);
+      goToOnboardingResetUrl();
+    });
   };
 
   // 모든 탭에서 기사 클릭 시 호출 — user_vector 업데이트 + 조회수 기록
@@ -91,7 +90,7 @@ export default function App() {
     }
   };
 
-  if (!onboarded) {
+  if (!onboarded || !userId || interests.length === 0) {
     return (
       <div style={{ height: '100dvh', maxWidth: 480, margin: '0 auto', overflow: 'hidden' }}>
         <OnboardingPage onDone={(selected, uid) => {
