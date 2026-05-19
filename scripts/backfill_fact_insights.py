@@ -6,6 +6,10 @@ Default is dry-run:
 
 Apply updates:
     python scripts/backfill_fact_insights.py --run
+
+If the visible feed has no HITL examples, promote up to 1-3 existing
+UNVERIFIED real articles to HITL_REQUIRED for the final demo:
+    python scripts/backfill_fact_insights.py --run --promote-hitl-samples 2
 """
 
 from __future__ import annotations
@@ -35,6 +39,7 @@ OPTIONAL_FIELDS = [
     "fact_status",
     "fact_reason",
     "fact_insight",
+    "hitl_required",
     "is_demo",
     "is_hidden",
     "demo_visible",
@@ -66,6 +71,8 @@ def fetch_all(sb, fields: list[str]) -> list[dict[str, Any]]:
 
 
 def normalize_fact(row: dict[str, Any]) -> str:
+    if bool(row.get("hitl_required")):
+        return "HITL_REQUIRED"
     raw = str(row.get("fact_status") or row.get("fact_label") or "").strip().upper()
     if raw in {"HITL", "HUMAN_REVIEW_REQUIRED"}:
         return "HITL_REQUIRED"
@@ -104,12 +111,39 @@ def needs_insight(row: dict[str, Any]) -> bool:
     return is_blank(row.get("fact_reason")) and is_blank(row.get("fact_insight"))
 
 
+def insight_payload(optional: list[str], label: str, *, promote_hitl: bool = False) -> dict[str, Any]:
+    reason = REASONS.get(label, REASONS["UNVERIFIED"])
+    payload: dict[str, Any] = {}
+    if "fact_reason" in optional:
+        payload["fact_reason"] = reason
+    if "fact_insight" in optional:
+        payload["fact_insight"] = reason
+    if promote_hitl:
+        payload["fact_label"] = "HITL_REQUIRED"
+        if "fact_status" in optional:
+            payload["fact_status"] = "HITL_REQUIRED"
+        if "hitl_required" in optional:
+            payload["hitl_required"] = True
+    return payload
+
+
+def print_row(prefix: str, row: dict[str, Any], label: str, reason: str) -> None:
+    print(f"{prefix} {label} | {row.get('source')} | {row.get('title_ko') or row.get('title')}")
+    print(f"      {reason}")
+
+
 def main() -> int:
     configure_stdio()
     parser = argparse.ArgumentParser()
     parser.add_argument("--run", action="store_true", help="Apply updates. Default is dry-run.")
     parser.add_argument("--dry-run", action="store_true", help="Preview only. This is the default.")
     parser.add_argument("--limit", type=int, default=10)
+    parser.add_argument(
+        "--promote-hitl-samples",
+        type=int,
+        default=0,
+        help="With --run, promote up to this many visible UNVERIFIED real articles to HITL_REQUIRED. Max 3.",
+    )
     args = parser.parse_args()
 
     sb = get_supabase_client()
@@ -121,6 +155,20 @@ def main() -> int:
     candidates = [row for row in visible if needs_insight(row)]
     candidates.sort(key=lambda row: (priority_order.get(normalize_fact(row), 9), str(row.get("published_at") or "")), reverse=False)
     selected = candidates[: max(args.limit, 0)]
+    promote_count = min(max(args.promote_hitl_samples, 0), 3)
+    hitl_promote_candidates = [
+        row for row in visible
+        if normalize_fact(row) == "UNVERIFIED"
+    ]
+    hitl_promote_candidates.sort(
+        key=lambda row: (0 if needs_insight(row) else 1, str(row.get("published_at") or "")),
+        reverse=False,
+    )
+    selected_hitl_promotions: list[dict[str, Any]] = []
+    if fact_counts.get("HITL_REQUIRED", 0) == 0 and promote_count > 0:
+        selected_hitl_promotions = hitl_promote_candidates[:promote_count]
+        promotion_hashes = {str(row.get("url_hash") or "") for row in selected_hitl_promotions}
+        selected = [row for row in candidates if str(row.get("url_hash") or "") not in promotion_hashes][: max(args.limit, 0)]
 
     print("[fact-insight-backfill]")
     print(f"mode: {'run' if args.run else 'dry-run'}")
@@ -128,31 +176,58 @@ def main() -> int:
     print("fact_label_distribution:")
     for key, count in fact_counts.most_common():
         print(f"  {key}: {count}")
+    print(f"visible_hitl_required: {fact_counts.get('HITL_REQUIRED', 0)}")
+    print(f"visible_unverified: {fact_counts.get('UNVERIFIED', 0)}")
+    print(f"visible_rumor: {fact_counts.get('RUMOR', 0)}")
+    print(f"visible_fact_or_verified: {fact_counts.get('FACT', 0) + fact_counts.get('VERIFIED', 0)}")
     print(f"hitl_unverified_rumor_visible: {sum(fact_counts.get(key, 0) for key in ('HITL_REQUIRED', 'UNVERIFIED', 'RUMOR'))}")
     print(f"missing_fact_reason_or_insight_visible: {len(candidates)}")
     print(f"selected_for_update: {len(selected)}")
+    if fact_counts.get("HITL_REQUIRED", 0) == 0:
+        print(f"hitl_promotion_candidates: {len(hitl_promote_candidates)}")
+        for idx, row in enumerate(hitl_promote_candidates[:10], start=1):
+            print(f"  candidate {idx:02d}. {row.get('source')} | {row.get('title_ko') or row.get('title')}")
+    print(f"selected_for_hitl_promotion: {len(selected_hitl_promotions)}")
 
     if "fact_reason" not in optional and "fact_insight" not in optional:
         print("Missing columns: fact_reason/fact_insight. Run backend/sql/final_demo_supabase_patch.sql first.")
         return 2 if args.run else 0
 
+    updated_rows = 0
+    fact_reason_backfilled = 0
+    fact_insight_backfilled = 0
     for idx, row in enumerate(selected, start=1):
         label = normalize_fact(row)
         reason = REASONS.get(label, REASONS["UNVERIFIED"])
-        print(f"  {idx:02d}. {label} | {row.get('source')} | {row.get('title_ko') or row.get('title')}")
-        print(f"      {reason}")
+        print_row(f"  {idx:02d}.", row, label, reason)
         if args.run:
-            payload: dict[str, str] = {}
-            if "fact_reason" in optional:
-                payload["fact_reason"] = reason
-            if "fact_insight" in optional:
-                payload["fact_insight"] = reason
+            payload = insight_payload(optional, label)
             sb.table("articles").update(payload).eq("url_hash", row["url_hash"]).execute()
+            updated_rows += 1
+            fact_reason_backfilled += int("fact_reason" in payload)
+            fact_insight_backfilled += int("fact_insight" in payload)
+
+    promoted_rows = 0
+    if selected_hitl_promotions:
+        print("hitl_promotions:")
+    for idx, row in enumerate(selected_hitl_promotions, start=1):
+        reason = REASONS["HITL_REQUIRED"]
+        print_row(f"  promote {idx:02d}.", row, "HITL_REQUIRED", reason)
+        if args.run:
+            payload = insight_payload(optional, "HITL_REQUIRED", promote_hitl=True)
+            sb.table("articles").update(payload).eq("url_hash", row["url_hash"]).execute()
+            updated_rows += 1
+            promoted_rows += 1
+            fact_reason_backfilled += int("fact_reason" in payload and is_blank(row.get("fact_reason")))
+            fact_insight_backfilled += int("fact_insight" in payload and is_blank(row.get("fact_insight")))
 
     if not args.run:
         print("No updates applied. Re-run with --run to update Supabase.")
     else:
-        print(f"updated_rows: {len(selected)}")
+        print(f"updated_rows: {updated_rows}")
+        print(f"fact_reason_backfilled: {fact_reason_backfilled}")
+        print(f"fact_insight_backfilled: {fact_insight_backfilled}")
+        print(f"promoted_hitl_rows: {promoted_rows}")
     return 0
 
 

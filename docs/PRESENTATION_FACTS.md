@@ -10,6 +10,8 @@
 - 내 피드는 Supabase `match_articles` pgvector RPC를 우선 사용하고, 실패 시 관심 카테고리/최근 클릭 카테고리/최신 완성 기사 fallback을 사용한다.
 - 신조어 설명은 Supabase `neologisms`에 등록된 설명만 사용한다. `The`, `Tech`, `AI`, `Meta`처럼 일반 단어나 설명 없는 용어는 발표용 하이라이트에서 제외한다.
 - 팩트 라벨은 `검증됨`, `미검증`, `루머 의심`, `HITL 검토 필요`로 표시한다.
+- 상세 화면은 `fact_insight` 또는 `fact_reason`이 있는 기사에만 보수적인 판정 근거를 표시한다.
+- 삼선뉴스는 자동 팩트체크 결과가 불확실한 기사를 `HITL_REQUIRED`로 분류해 사람 검토가 필요한 대상으로 분리한다. 최종 데모에서는 기사 상세 화면에 `FACT`/`UNVERIFIED`/`RUMOR`/`HITL_REQUIRED` 라벨과 fact insight를 표시하며, 실제 운영 단계에서는 관리자가 최종 판정을 내리는 HITL 관리자 플로우로 확장할 수 있도록 설계했다.
 
 ## 추천 기능 구현 상태 표
 
@@ -30,6 +32,7 @@
 - Qwen3.5-4B를 최종 추천 LLM으로 사용한다고 말하지 않는다.
 - Gemma4/OpenRouter 기반 LLM reranking은 pgvector 후보를 받은 뒤 적용할 수 있는 선택형 확장안이다.
 - 정량 평가(BLEU/COMET/G-Eval)와 대규모 임베딩 백필은 후속 개선 항목이다.
+- HITL은 최종 데모에서 “검토 대상 분리 및 표시”까지 구현했다. 완전한 관리자 승인/반려 워크플로우는 운영 단계 확장 항목이다.
 
 ## 개인화 추천 설명 3문장
 

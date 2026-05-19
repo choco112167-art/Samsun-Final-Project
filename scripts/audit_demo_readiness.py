@@ -89,6 +89,12 @@ def normalize_fact(value: object) -> str:
     return "unverified"
 
 
+def row_fact_status(row: dict[str, Any]) -> str:
+    if bool(row.get("hitl_required")):
+        return "hitl_required"
+    return normalize_fact(row.get("fact_status") or row.get("fact_label"))
+
+
 def is_demo_or_sample(row: dict[str, Any]) -> bool:
     title = f"{row.get('title') or ''} {row.get('title_ko') or ''}".upper()
     return (
@@ -195,8 +201,9 @@ def main() -> int:
         ),
         reverse=True,
     )
-    fact_counts = Counter(normalize_fact(row.get("fact_status") or row.get("fact_label")) for row in rows)
-    demo_fact_counts = Counter(normalize_fact(row.get("fact_status") or row.get("fact_label")) for row in demo_rows)
+    fact_counts = Counter(row_fact_status(row) for row in rows)
+    demo_fact_counts = Counter(row_fact_status(row) for row in demo_rows)
+    visible_fact_counts = Counter(row_fact_status(row) for row in final_visible_rows)
     with_translation = sum(1 for row in rows if has_translation(row))
     with_summary_formal = sum(1 for row in rows if not is_weak_summary(row.get("summary_formal")))
     with_summary_casual = sum(1 for row in rows if not is_weak_summary(row.get("summary_casual")))
@@ -215,7 +222,12 @@ def main() -> int:
     incomplete_visible_violations = [row for row in final_visible_rows if is_incomplete(row)]
     visible_missing_url = [row for row in final_visible_rows if not source_url(row)]
     visible_invalid_url = [row for row in final_visible_rows if source_url(row) and not is_valid_http_url(source_url(row))]
+    with_fact_reason = sum(1 for row in rows if not is_blank(row.get("fact_reason")))
+    with_fact_insight_only = sum(1 for row in rows if not is_blank(row.get("fact_insight")))
     with_fact_insight = sum(1 for row in rows if not is_blank(row.get("fact_reason")) or not is_blank(row.get("fact_insight")))
+    visible_with_fact_reason = sum(1 for row in final_visible_rows if not is_blank(row.get("fact_reason")))
+    visible_with_fact_insight = sum(1 for row in final_visible_rows if not is_blank(row.get("fact_insight")))
+    hitl_targets = [row for row in final_visible_rows if row_fact_status(row) == "hitl_required"]
     hot_candidates = [
         row for row in final_visible_rows
         if has_fact(row) and has_translation(row) and has_valid_summary(row)
@@ -244,7 +256,11 @@ def main() -> int:
     if "summary_ko" in optional:
         print(f"articles_with_valid_summary_ko: {with_summary_ko}")
     print(f"articles_with_fact_status_or_label: {with_fact}")
+    print(f"articles_with_fact_reason: {with_fact_reason}")
+    print(f"articles_with_fact_insight: {with_fact_insight_only}")
     print(f"articles_with_fact_reason_or_insight: {with_fact_insight}")
+    print(f"visible_articles_with_fact_reason: {visible_with_fact_reason}")
+    print(f"visible_articles_with_fact_insight: {visible_with_fact_insight}")
     if fact_checks is not None:
         print(f"fact_checks_rows: {fact_checks}")
     print(f"articles_with_neologism_terms: {with_neologisms}")
@@ -260,9 +276,16 @@ def main() -> int:
     print(f"demo_articles: {len(demo_rows)}")
     print(f"demo_rumor_articles: {demo_fact_counts.get('rumor', 0)}")
     print(f"hitl_required_articles: {fact_counts.get('hitl_required', 0)}")
+    print(f"visible_hitl_required_articles: {visible_fact_counts.get('hitl_required', 0)}")
+    print(f"visible_unverified_articles: {visible_fact_counts.get('unverified', 0)}")
+    print(f"visible_rumor_articles: {visible_fact_counts.get('rumor', 0)}")
+    print(f"visible_verified_articles: {visible_fact_counts.get('verified', 0)}")
     print("fact_status_counts:")
     for key in ("verified", "unverified", "rumor", "hitl_required", "missing"):
         print(f"  {key}: {fact_counts.get(key, 0)}")
+    print("visible_fact_status_counts:")
+    for key in ("verified", "unverified", "rumor", "hitl_required", "missing"):
+        print(f"  {key}: {visible_fact_counts.get(key, 0)}")
     print("visible_by_category:")
     for key in FINAL_CATEGORIES:
         print(f"  {key}: {visible_by_category.get(key, 0)}")
@@ -281,6 +304,14 @@ def main() -> int:
             f"  {idx:02d}. {title} | category={fallback_category(row)} | "
             f"source={row.get('source')} | published_at={row.get('published_at')} | "
             f"translation_len={text_len(row.get('translation'))} | summary_len={summary_len}"
+        )
+    print("hitl_review_targets_top10:")
+    for idx, row in enumerate(hitl_targets[:10], start=1):
+        title = row.get("title_ko") or row.get("title") or "(untitled)"
+        insight = row.get("fact_insight") or row.get("fact_reason") or "(none)"
+        print(
+            f"  {idx:02d}. {title} | source={row.get('source')} | "
+            f"fact={row.get('fact_status') or row.get('fact_label')} | insight={insight}"
         )
 
     if len(final_visible_rows) < 100:

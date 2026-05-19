@@ -24,6 +24,7 @@ This audit records what is actually implemented for final submission. It is inte
 | Frontend neologism lookup | Actually implemented | `frontend/src/data/api.ts`, `frontend/src/pages/DetailPage.tsx` | Fetches dictionary, per-article rows, and term-specific rows. Failures return `[]` and do not block article rendering. |
 | Frontend inline highlight + bottom sheet | Actually implemented | `frontend/src/components/NeologismText.tsx`, `frontend/src/components/Overlay.tsx` | Known terms with DB explanations are highlighted. Tap opens bottom sheet; desktop hover shows tooltip. |
 | Unknown term explanation policy | Actually implemented/documented | `frontend/src/components/NeologismText.tsx`, `docs/DATA_PIPELINE.md` | UI filters out entries without explanation; unknown terms are not faked. |
+| HITL target separation + fact insight display | Actually implemented for demo display | `scripts/backfill_fact_insights.py`, `frontend/src/pages/DetailPage.tsx`, `backend/sql/final_demo_supabase_patch.sql` | Visible real articles can receive conservative `fact_reason`/`fact_insight`. `HITL_REQUIRED` is displayed as a human-review target. This is not a full admin approval system. |
 
 ## How To Demonstrate Embedding / RAG
 

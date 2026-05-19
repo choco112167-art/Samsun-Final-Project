@@ -275,7 +275,7 @@ export function toArticle(api: ApiArticle): Article {
     content:     api.content ?? '',
 
     credibilityScore: api.credibility_score ?? 0,
-    factLabel:        api.fact_label ?? 'UNVERIFIED',
+    factLabel:        (api.fact_label ?? normalizeFactStatus(api.fact_status)) as Article['factLabel'],
     factConfidence:   api.fact_confidence,
     factStatus:       api.fact_status,
     factReason:       api.fact_reason,

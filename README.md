@@ -31,10 +31,17 @@ English summary: Samsun News is an Apps in Toss mini-app that turns English AI/t
 - 번역 전문: 상세 화면에서 짧은 요약이 아니라 `translation` 전체 본문을 접이식으로 보여줍니다.
 - 말투 선택: `격식체` / `일상체` 요약 선택을 localStorage에 저장하고 전체 카드/상세에 적용합니다.
 - 팩트 라벨: `검증됨`, `미검증`, `루머 의심`, `HITL 검토 필요`를 카드와 상세에 표시합니다.
+- Fact insight: 상세 화면에서 `fact_insight` 또는 `fact_reason`이 있는 경우에만 보수적인 판정 근거를 표시하고, 빈 설명 박스는 노출하지 않습니다.
 - 보수적 안전 정책: 확실하지 않은 내용은 검증된 사실처럼 말하지 않고 `UNVERIFIED` 또는 `HITL_REQUIRED`로 낮춥니다.
 - 신조어 RAG: Supabase `neologisms`에 등록된 용어만 하이라이트하고, 모바일 bottom sheet로 설명합니다.
 - 개인화 추천: 온보딩 관심사와 클릭 이력을 `users.interest_tags`, `user_logs`, `users.user_vector`에 저장하고, `match_articles` pgvector RPC 또는 카테고리 fallback으로 내 피드를 구성합니다.
 - 안전한 시연 데이터: 루머/HITL 예시는 `[시연용]`, `source=DEMO`, `fact_status=rumor/unverified/hitl_required`로 명확히 표시합니다.
+
+HITL 표현 범위:
+
+> 삼선뉴스는 자동 팩트체크 결과가 불확실한 기사를 `HITL_REQUIRED`로 분류해 사람 검토가 필요한 대상으로 분리한다. 최종 데모에서는 기사 상세 화면에 `FACT`/`UNVERIFIED`/`RUMOR`/`HITL_REQUIRED` 라벨과 fact insight를 표시하며, 실제 운영 단계에서는 관리자가 최종 판정을 내리는 HITL 관리자 플로우로 확장할 수 있도록 설계했다.
+
+완전한 관리자 승인 시스템을 구현 완료했다고 주장하지 않고, 최종 데모 범위는 “HITL 검토 대상 분리 및 표시 구현”입니다.
 
 ## 3. 전체 아키텍처
 
