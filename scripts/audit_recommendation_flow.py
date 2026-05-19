@@ -84,6 +84,14 @@ def rpc_match_articles(sb, vector: list[float], top_k: int = 5) -> tuple[bool, l
         return False, [], str(exc)
 
 
+def rpc_call(sb, name: str, params: dict[str, Any]) -> tuple[bool, str]:
+    try:
+        sb.rpc(name, params).execute()
+        return True, "rpc ok"
+    except Exception as exc:  # noqa: BLE001 - audit should keep going
+        return False, str(exc)
+
+
 def fallback_candidates(sb, interest_tags: list[str], top_k: int = 5) -> list[dict[str, Any]]:
     rows = fetch_rows(
         sb,
@@ -117,21 +125,45 @@ def run_write_smoke(sb, article: dict[str, Any], vector: list[float], keep_test_
         "user_vector": serialize_vector(vector),
         "last_seen_at": now,
     }
-    try:
-        sb.table("users").upsert({**user_payload, "updated_at": now}, on_conflict="user_id").execute()
-    except Exception as exc:  # noqa: BLE001
-        if "updated_at" not in str(exc):
-            raise
-        sb.table("users").upsert(user_payload, on_conflict="user_id").execute()
-    status("interest_tags 저장", True, TEST_USER_ID)
+    interests_ok, interests_detail = rpc_call(sb, "save_user_interests", {
+        "p_user_id": TEST_USER_ID,
+        "p_interest_tags": user_payload["interest_tags"],
+    })
+    if interests_ok:
+        status("interest_tags 저장", True, f"{TEST_USER_ID} via save_user_interests RPC")
+    else:
+        try:
+            sb.table("users").upsert({**user_payload, "updated_at": now}, on_conflict="user_id").execute()
+            status("interest_tags 저장", True, f"{TEST_USER_ID} via direct upsert")
+        except Exception as exc:  # noqa: BLE001
+            try:
+                if "updated_at" not in str(exc):
+                    raise
+                sb.table("users").upsert(user_payload, on_conflict="user_id").execute()
+                status("interest_tags 저장", True, f"{TEST_USER_ID} via direct upsert without updated_at")
+            except Exception as fallback_exc:  # noqa: BLE001
+                status("interest_tags 저장", False, f"RPC failed ({interests_detail}); direct write blocked ({fallback_exc})")
 
-    sb.table("user_logs").insert({
-        "user_id": TEST_USER_ID,
-        "url_hash": url_hash,
-        "action": "view",
-        "created_at": now,
-    }).execute()
-    status("user_logs 저장", True, url_hash)
+    view_ok, view_detail = rpc_call(sb, "record_article_view", {
+        "p_user_id": TEST_USER_ID,
+        "p_url_hash": url_hash,
+    })
+    if view_ok:
+        status("user_logs 저장", True, f"{url_hash} via record_article_view RPC")
+        status("user_vector 업데이트", True, "record_article_view RPC updates vector when article embedding exists")
+    else:
+        try:
+            sb.table("user_logs").insert({
+                "user_id": TEST_USER_ID,
+                "url_hash": url_hash,
+                "action": "view",
+                "created_at": now,
+            }).execute()
+            status("user_logs 저장", True, f"{url_hash} via direct insert")
+        except Exception as exc:  # noqa: BLE001
+            status("user_logs 저장", False, f"RPC failed ({view_detail}); direct write blocked ({exc})")
+            print("  fix: run backend/sql/final_demo_supabase_patch.sql in Supabase SQL Editor")
+            return
 
     user = sb.table("users").select("user_vector").eq("user_id", TEST_USER_ID).maybe_single().execute()
     current = coerce_vector((user.data or {}).get("user_vector")) or vector
@@ -139,21 +171,32 @@ def run_write_smoke(sb, article: dict[str, Any], vector: list[float], keep_test_
     update_payload = {
         "user_vector": serialize_vector(next_vector),
     }
-    try:
-        sb.table("users").update({
-            **update_payload,
-            "updated_at": datetime.now(timezone.utc).isoformat(),
-        }).eq("user_id", TEST_USER_ID).execute()
-    except Exception as exc:  # noqa: BLE001
-        if "updated_at" not in str(exc):
-            raise
-        sb.table("users").update(update_payload).eq("user_id", TEST_USER_ID).execute()
-    status("user_vector 업데이트", True, "old*0.6 + article*0.4")
+    if not view_ok:
+        try:
+            sb.table("users").update({
+                **update_payload,
+                "updated_at": datetime.now(timezone.utc).isoformat(),
+            }).eq("user_id", TEST_USER_ID).execute()
+            status("user_vector 업데이트", True, "old*0.6 + article*0.4 via direct update")
+        except Exception as exc:  # noqa: BLE001
+            try:
+                if "updated_at" not in str(exc):
+                    raise
+                sb.table("users").update(update_payload).eq("user_id", TEST_USER_ID).execute()
+                status("user_vector 업데이트", True, "old*0.6 + article*0.4 via direct update without updated_at")
+            except Exception as fallback_exc:  # noqa: BLE001
+                status("user_vector 업데이트", False, str(fallback_exc))
 
     if not keep_test_user:
-        sb.table("user_logs").delete().eq("user_id", TEST_USER_ID).execute()
-        sb.table("users").delete().eq("user_id", TEST_USER_ID).execute()
-        status("테스트 데이터 정리", True, TEST_USER_ID)
+        cleaned = True
+        try:
+            sb.table("user_logs").delete().eq("user_id", TEST_USER_ID).execute()
+            sb.table("users").delete().eq("user_id", TEST_USER_ID).execute()
+        except Exception as exc:  # noqa: BLE001
+            cleaned = False
+            status("테스트 데이터 정리", False, f"RLS may block cleanup for anon key: {exc}")
+        if cleaned:
+            status("테스트 데이터 정리", True, TEST_USER_ID)
 
 
 def main() -> int:

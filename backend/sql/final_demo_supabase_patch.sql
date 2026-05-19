@@ -129,6 +129,34 @@ AS $$
   LIMIT GREATEST(top_k, 1);
 $$;
 
+CREATE OR REPLACE FUNCTION public.blend_vectors_1024(
+  p_base vector(1024),
+  p_clicked vector(1024),
+  p_base_weight double precision DEFAULT 0.6,
+  p_clicked_weight double precision DEFAULT 0.4
+)
+RETURNS vector(1024)
+LANGUAGE sql
+IMMUTABLE
+AS $$
+  SELECT CASE
+    WHEN p_clicked IS NULL THEN p_base
+    WHEN p_base IS NULL THEN p_clicked
+    ELSE (
+      SELECT (
+        '[' || string_agg(
+          ((base_vals.val::double precision * p_base_weight)
+            + (clicked_vals.val::double precision * p_clicked_weight))::text,
+          ',' ORDER BY base_vals.ord
+        ) || ']'
+      )::vector(1024)
+      FROM unnest(string_to_array(trim(both '[]' from p_base::text), ',')) WITH ORDINALITY AS base_vals(val, ord)
+      JOIN unnest(string_to_array(trim(both '[]' from p_clicked::text), ',')) WITH ORDINALITY AS clicked_vals(val, ord)
+        ON base_vals.ord = clicked_vals.ord
+    )
+  END;
+$$;
+
 CREATE OR REPLACE FUNCTION public.record_article_view(
   p_user_id text,
   p_url_hash text
@@ -164,7 +192,7 @@ BEGIN
   UPDATE public.users
   SET user_vector = CASE
       WHEN existing_vector IS NULL THEN clicked_vector
-      ELSE existing_vector * 0.6 + clicked_vector * 0.4
+      ELSE public.blend_vectors_1024(existing_vector, clicked_vector, 0.6, 0.4)
     END,
     last_seen_at = now(),
     updated_at = now()
@@ -172,5 +200,25 @@ BEGIN
 END;
 $$;
 
+CREATE OR REPLACE FUNCTION public.save_user_interests(
+  p_user_id text,
+  p_interest_tags text[]
+)
+RETURNS void
+LANGUAGE plpgsql
+SECURITY DEFINER
+AS $$
+BEGIN
+  INSERT INTO public.users(user_id, interest_tags, last_seen_at, updated_at)
+  VALUES (p_user_id, COALESCE(p_interest_tags, '{}'), now(), now())
+  ON CONFLICT (user_id) DO UPDATE
+    SET interest_tags = COALESCE(p_interest_tags, public.users.interest_tags),
+        last_seen_at = now(),
+        updated_at = now();
+END;
+$$;
+
 GRANT EXECUTE ON FUNCTION public.match_articles(vector, int, varchar) TO anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.blend_vectors_1024(vector, vector, double precision, double precision) TO anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.record_article_view(text, text) TO anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.save_user_interests(text, text[]) TO anon, authenticated;

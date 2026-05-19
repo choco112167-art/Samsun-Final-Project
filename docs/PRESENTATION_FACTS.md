@@ -105,7 +105,9 @@ flowchart LR
 backend/sql/final_demo_supabase_patch.sql
 ```
 
-이 SQL은 `public.articles` 기준 `match_articles` RPC를 다시 만들고, `users`, `user_logs`, `source_url/original_url`, `fact_reason/fact_insight`, demo visibility 필드를 보강한다. GitHub push만으로 Supabase SQL이 자동 적용되지는 않는다.
+이 SQL은 `public.articles` 기준 `match_articles` RPC를 다시 만들고, `record_article_view`, `save_user_interests`, `blend_vectors_1024`, `users`, `user_logs`, `source_url/original_url`, `fact_reason/fact_insight`, demo visibility 필드를 보강한다. GitHub push만으로 Supabase SQL이 자동 적용되지는 않는다.
+
+중요: 이전 버전의 `record_article_view` RPC가 이미 Supabase에 있으면, 최종 발표 전 반드시 이 SQL을 다시 실행한다. 최신 SQL은 pgvector scalar multiplication 대신 `blend_vectors_1024` helper를 사용하므로 `vector * numeric` 오류를 피한다.
 
 벡터 인덱스는 선택사항이다. Supabase free tier에서는 `maintenance_work_mem` 한도 때문에 ivfflat/hnsw index 생성이 실패할 수 있으므로, 발표 전에는 `final_demo_supabase_patch.sql`만 실행해도 된다. 성능 인덱스가 필요할 때만 별도 파일을 실행한다:
 

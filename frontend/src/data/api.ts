@@ -429,6 +429,14 @@ async function upsertUserProfile(userId: string, interestTags: string[]): Promis
     interest_tags: interestTags,
     last_seen_at: now,
   };
+  const rpc = await supabase.rpc('save_user_interests', {
+    p_user_id: userId,
+    p_interest_tags: interestTags,
+  });
+  if (!rpc.error) return;
+  if (import.meta.env.DEV) {
+    console.warn('[api] save_user_interests RPC unavailable; trying direct upsert', rpc.error.message);
+  }
   const result = await supabase
     .from('users')
     .upsert({ ...base, updated_at: now }, { onConflict: 'user_id' });
@@ -613,6 +621,15 @@ export async function recordArticleView(userId: string, urlHash: string): Promis
   if (!isSupabaseConfigured()) return;
 
   try {
+    const rpc = await supabase.rpc('record_article_view', {
+      p_user_id: userId,
+      p_url_hash: urlHash,
+    });
+    if (!rpc.error) return;
+    if (import.meta.env.DEV) {
+      console.warn('[api] record_article_view RPC unavailable; trying direct write path', rpc.error.message);
+    }
+
     const now = new Date().toISOString();
     await upsertUserProfile(userId, localInterestsFor(userId));
 

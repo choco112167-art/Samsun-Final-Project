@@ -6,14 +6,14 @@ This audit records what is actually implemented for final submission. It is inte
 
 | Feature | Status | Evidence | Notes |
 | --- | --- | --- | --- |
-| `articles.embedding vector(1024)` | Actually implemented | `supabase_schema.sql`, `backend/sql/add_title_ko.sql` | Main `articles` schema includes pgvector `VECTOR(1024)` and ivfflat cosine index. |
+| `articles.embedding vector(1024)` | Actually implemented | `supabase_schema.sql`, `backend/sql/final_demo_supabase_patch.sql` | Main `articles` schema includes pgvector `VECTOR(1024)`. Heavy ivfflat/hnsw indexes are optional for the final demo. |
 | `rss_articles_gamma.embedding` | Not used in this repo | Search result: no `rss_articles_gamma` table | Final product uses canonical Supabase `articles`; the gamma table name appears to be from report/planning context, not the submitted code path. |
 | Qwen3-Embedding-0.6B local embedding adapter | Actually implemented as local POC | `backend/embedder.py`, `.env.example` | `LOCAL_EMBEDDING_MODEL=qwen3-embedding:0.6b`; vectors are fitted to 1024 dims before DB writes. |
 | Article embedding generation | Actually implemented | `backend/save_articles.py` | Builds embedding from `title_ko + translation` and writes `articles.embedding` during Supabase upsert. |
 | pgvector article search RPC | Actually implemented | `supabase_schema.sql`, `backend/sql/add_title_ko.sql` | `match_articles(query_vector vector(1024), top_k, filter_category)` uses cosine distance. |
 | Hybrid vector + keyword search | Actually implemented | `supabase_schema.sql`, `backend/main.py` | `hybrid_search_articles` exists in SQL; `/search` uses vector search plus keyword fallback. |
 | User interest vector profile | Actually implemented | `supabase_schema.sql`, `backend/sql/personalized_recommendation_pgvector.sql`, `frontend/src/data/api.ts`, `backend/rag.py` | `.ait` onboarding stores `interest_tags`; backend/admin can generate Qwen3-Embedding user vectors. |
-| Click article → user_vector update | Actually implemented | `frontend/src/data/api.ts`, `backend/rag.py`, `backend/main.py` | Article clicks insert `user_logs`; if the clicked article has embedding, `users.user_vector = old*0.6 + article*0.4`. |
+| Click article → user_vector update | Actually implemented | `frontend/src/data/api.ts`, `backend/sql/final_demo_supabase_patch.sql`, `backend/rag.py`, `backend/main.py` | Article clicks call `record_article_view`; if the clicked article has embedding, `users.user_vector = old*0.6 + article*0.4` via `blend_vectors_1024`. |
 | Top 20 vector candidates | Actually implemented | `frontend/src/data/api.ts`, `backend/rag.py`, `supabase_schema.sql` | `.ait` calls Supabase `match_articles`; backend/admin uses `fetch_recommendation_candidates(..., candidate_k=20)`. |
 | Fallback recommendation | Actually implemented | `frontend/src/data/api.ts` | If RPC/vector is unavailable, recommendation falls back to interest categories, recent click categories, then latest complete articles. |
 | LLM re-ranking | Optional extension, default disabled | `backend/rag.py` | Final demo does not claim active LLM reranking. Gemma4/OpenRouter reranking remains a follow-up option behind `RAG_LLM_RERANK_ENABLED=1`. |

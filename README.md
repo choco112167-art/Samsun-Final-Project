@@ -170,7 +170,9 @@ Supabase RPC가 오래된 테이블명을 참조하면 아래 SQL을 Supabase SQ
 -- backend/sql/final_demo_supabase_patch.sql
 ```
 
-이 파일은 Supabase free tier에서도 실행되도록 벡터 인덱스 생성을 포함하지 않습니다. 발표용 소규모 데이터에서는 `match_articles` RPC만으로 동작하며, pgvector/visibility 인덱스는 선택 파일 `backend/sql/optional_pgvector_indexes.sql`로 분리했습니다.
+이 파일은 Supabase free tier에서도 실행되도록 벡터 인덱스 생성을 포함하지 않습니다. 발표용 소규모 데이터에서는 `match_articles`, `record_article_view`, `save_user_interests`, `blend_vectors_1024` RPC/helper만으로 동작하며, pgvector/visibility 인덱스는 선택 파일 `backend/sql/optional_pgvector_indexes.sql`로 분리했습니다.
+
+이미 오래된 `record_article_view` RPC가 Supabase에 적용되어 있다면 최종 발표 전 이 파일을 다시 실행해야 합니다. 최신 버전은 `vector * numeric` 연산을 직접 쓰지 않고 `blend_vectors_1024` helper로 `old*0.6 + clicked*0.4` 업데이트를 처리합니다.
 
 상태 점검:
 
