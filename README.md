@@ -135,6 +135,49 @@ Upload this local artifact to Apps in Toss console:
 frontend/samsun-newsapp.ait
 ```
 
+## Apps in Toss Test / Demo Method
+
+Final Apps in Toss evidence:
+
+- Config: `frontend/granite.config.ts`
+- Scripts: `frontend/package.json`
+- Checklist evidence: [`docs/APPS_IN_TOSS_CHECKLIST.md`](docs/APPS_IN_TOSS_CHECKLIST.md)
+- Upload artifact: `frontend/samsun-newsapp.ait`
+
+Build the final bundle:
+
+```bash
+cd frontend
+npm run build
+npm run ait:build
+```
+
+Optional real-device dev server:
+
+```powershell
+cd frontend
+$env:AIT_WEB_HOST="192.168.0.10"
+npm run ait:dev
+```
+
+Toss Console test flow:
+
+1. Open Apps in Toss Console.
+2. Select `samsun-newsapp`.
+3. Upload `frontend/samsun-newsapp.ait` to the test/release upload area.
+4. Register the test build.
+5. Open the test app from Toss on a real device.
+
+Real-device scenario to verify:
+
+- Home feed shows Korean-first AI news cards.
+- Article detail opens and back navigation returns to the feed.
+- `격식체` / `일상체` tone selection persists.
+- `번역 전문` expands and shows the translated body.
+- Fact badges show `검증됨`, `미검증`, `루머 의심`, or `HITL 검토 필요`.
+- Highlighted neologism terms open the explanation bottom sheet.
+- `원문 보기` opens the original article link in the Toss WebView.
+
 ### Backend / Batch Environment
 
 Batch scripts use the repository root `.env`, based on `.env.example`.

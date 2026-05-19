@@ -84,3 +84,75 @@ Summarize:
 
 Final line:
 - “We built the path from raw AI news to a Korean-first trusted mobile news product.”
+
+## Apps in Toss Console / Real-Device Demo Add-On
+
+Use this flow when the evaluation includes the Apps in Toss test upload screen.
+
+### 1. Toss Console Test Registration
+
+Show:
+- Apps in Toss Console app page for `samsun-newsapp`.
+- Test/release upload area.
+- Final artifact path:
+
+```text
+frontend/samsun-newsapp.ait
+```
+
+Say:
+- The `.ait` bundle is generated with `npm run ait:build`.
+- The frontend uses only Supabase anon environment values and does not include service-role keys.
+- The app declares no unnecessary permissions in `frontend/granite.config.ts`.
+
+### 2. Real Device Launch
+
+Show:
+- Open the registered test build in the Toss app on a real device.
+- Confirm the Toss navigation area shows the 삼선뉴스 brand name/icon.
+
+Say:
+- This confirms the uploaded Apps in Toss artifact, not just the browser dev server.
+
+### 3. Home Feed
+
+Show:
+- Korean-first home feed.
+- Polished May-range articles and clearly marked demo rumor/HITL examples.
+- Empty/error states only if Supabase is unavailable.
+
+### 4. Article Detail
+
+Show:
+- Open a news card.
+- Confirm detail page layout, back navigation, and safe mobile scrolling.
+
+### 5. Tone Preference
+
+Show:
+- Toggle `격식체` / `일상체`.
+- Return to another article and confirm the tone preference remains.
+
+### 6. Fact Label
+
+Show:
+- `검증됨`, `미검증`, `루머 의심`, and `HITL 검토 필요` badges.
+- Rumor demo copy: `이 항목은 검증되지 않은 시연용 루머 데이터입니다.`
+
+### 7. Neologism Bottom Sheet
+
+Show:
+- Tap highlighted terms such as `프롬프트 주입`, `가드레일`, or `HITL`.
+- Confirm the explanation bottom sheet opens.
+
+Say:
+- The explanation comes from Supabase `neologisms`; unknown terms are not faked.
+
+### 8. Original Source Link
+
+Show:
+- Tap `원문 보기`.
+- Confirm the original URL opens through the Toss WebView/openURL path.
+
+Say:
+- Full translation and original source access are separate, so users can read the Korean body and still verify the source.
