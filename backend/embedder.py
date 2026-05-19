@@ -1,8 +1,8 @@
 """
 backend/embedder.py — 임베딩 어댑터
 
-MODE=local  → Ollama 로컬 (개발 중)
-MODE=cloud  → OpenRouter API (배포 시)
+MODE=local  → Ollama 로컬 Qwen3-Embedding-0.6B model
+MODE=cloud  → OpenRouter API embedding model
 
 .env에서 MODE 한 줄만 바꾸면 전체 전환됩니다.
 """
@@ -12,7 +12,18 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-MODE = os.getenv("MODE", "local")
+EMBEDDING_PROVIDER = os.getenv("EMBEDDING_PROVIDER") or os.getenv("MODE", "local")
+LOCAL_EMBEDDING_MODEL = os.getenv("LOCAL_EMBEDDING_MODEL", "qwen3-embedding:0.6b")
+OPENROUTER_EMBEDDING_MODEL = os.getenv("OPENROUTER_EMBEDDING_MODEL", "openai/text-embedding-3-small")
+EMBEDDING_DIM = 1024
+
+
+def _fit_1024(vector: list[float]) -> list[float]:
+    """Supabase pgvector schema is fixed at vector(1024)."""
+    fitted = [float(v) for v in vector[:EMBEDDING_DIM]]
+    if len(fitted) < EMBEDDING_DIM:
+        fitted.extend([0.0] * (EMBEDDING_DIM - len(fitted)))
+    return fitted
 
 
 # ════════════════════════════════════════════
@@ -25,10 +36,10 @@ def _embed_local(text: str) -> list[float]:
     # ollama 라이브러리로 직접 호출 (HTTP 요청보다 안정적)
     import ollama
     resp = ollama.embeddings(
-        model="qwen3-embedding:0.6b",
+        model=LOCAL_EMBEDDING_MODEL,
         prompt=text,
     )
-    return resp["embedding"][:1024]
+    return _fit_1024(resp["embedding"])
 
 
 # ════════════════════════════════════════════
@@ -48,14 +59,14 @@ def _embed_cloud(text: str) -> list[float]:
                 "Content-Type":  "application/json",
             },
             json={
-                "model": "qwen/qwen3-embedding-4b",
+                "model": OPENROUTER_EMBEDDING_MODEL,
                 "input": text,
             },
             timeout=30,
         )
         body = resp.json()
         if "data" in body:
-            return body["data"][0]["embedding"][:1024]
+            return _fit_1024(body["data"][0]["embedding"])
         # 429 rate limit 또는 일시 오류 → 재시도
         if attempt < 2:
             time.sleep(2 ** attempt)
@@ -72,9 +83,9 @@ def expand_query(q: str) -> str:
     LLM(OpenRouter)을 이용해 검색어를 확장한다.
     예: "엔비디아" → "엔비디아 NVIDIA GPU 반도체 AI가속기 블랙웰 H100 데이터센터"
 
-    MODE=local이거나 실패하면 원본 쿼리를 그대로 반환.
+    EMBEDDING_PROVIDER/MODE=local이거나 실패하면 원본 쿼리를 그대로 반환.
     """
-    if MODE != "cloud":
+    if EMBEDDING_PROVIDER not in ("cloud", "openrouter"):
         return q
 
     import requests
@@ -120,10 +131,10 @@ def make_embedding(text: str) -> list[float]:
     """
     텍스트 → 임베딩 벡터 (1024차원)
 
-    .env의 MODE 값으로 전환:
-      MODE=local  → Ollama qwen3-embedding:0.6b  (개발용, 기본값)
-      MODE=cloud  → OpenRouter qwen/qwen3-embedding-4b (Railway 배포용)
+    .env의 EMBEDDING_PROVIDER 값으로 전환:
+      local      → Ollama LOCAL_EMBEDDING_MODEL (기본 qwen3-embedding:0.6b)
+      openrouter → OpenRouter OPENROUTER_EMBEDDING_MODEL
     """
-    if MODE == "cloud":
+    if EMBEDDING_PROVIDER in ("cloud", "openrouter"):
         return _embed_cloud(text)
     return _embed_local(text)

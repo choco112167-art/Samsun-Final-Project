@@ -1,47 +1,35 @@
-import { useState, useRef } from 'react';
-import type { Article } from '../data/articles';
+import { useEffect, useMemo, useState, type MouseEvent } from 'react';
+import {
+  articleDisplayTitle,
+  articleSummaryForTone,
+  articleTranslationForDisplay,
+  hasKoreanTitle,
+  isDemoArticle,
+  isValidSummary,
+  isValidTranslation,
+  normalizeFactStatus,
+  type Article,
+} from '../data/articles';
+import {
+  fetchArticleExtras,
+  fetchArticleNeologisms,
+  fetchNeologismDictionary,
+  fetchNeologismsByTerms,
+  type NeologismEntry,
+} from '../data/api';
+import { tossOpenURL } from '../lib/toss';
+import NeologismText from '../components/NeologismText';
+import TonePreferenceControl from '../components/TonePreferenceControl';
+import { toneLabel, type SummaryTone } from '../hooks/useTonePreference';
+import { FactStatusBadge, factStatusText } from '../components/FactStatusBadge';
 
 interface Props {
   article: Article;
   bookmarked: boolean;
-  onBookmark: (id: string) => void;
+  onBookmark: (id: string, article?: Article) => void;
   onBack: () => void;
-}
-
-const JARGON: Record<string, string> = {
-  'RAG': '검색 증강 생성(Retrieval-Augmented Generation). LLM이 외부 문서를 검색해 답변을 생성하는 기법',
-  'LLM': '대규모 언어 모델(Large Language Model). GPT, Claude 같은 대형 AI 언어 모델',
-  'GPU': '그래픽 처리 장치. AI 학습·추론에 핵심적으로 쓰이는 병렬 연산 칩',
-  'API': '소프트웨어 간 통신을 위한 인터페이스(Application Programming Interface)',
-  'NPU': '신경망 처리 장치(Neural Processing Unit). AI 연산 전용 칩',
-  'SLM': '소형 언어 모델(Small Language Model). 온디바이스에서 동작 가능한 경량 AI 모델',
-  'MMLU': 'AI 모델의 다분야 언어 이해 능력을 평가하는 벤치마크',
-  'AGI': '범용 인공지능(Artificial General Intelligence). 인간 수준의 일반 지능을 갖춘 AI',
-  'RLHF': '인간 피드백 강화학습. AI 출력을 사람이 평가해 모델을 개선하는 방법',
-  '파인튜닝': '사전학습된 모델을 특정 목적에 맞게 추가 학습하는 과정(Fine-tuning)',
-  '임베딩': '텍스트·이미지 등을 수치 벡터로 변환하는 표현 방식(Embedding)',
-  '할루시네이션': 'AI가 사실이 아닌 내용을 그럴듯하게 생성하는 현상(Hallucination)',
-  'MoE': '혼합 전문가(Mixture of Experts). 여러 전문 네트워크를 조합해 효율을 높이는 구조',
-  'CoT': '연쇄적 사고(Chain of Thought). AI가 단계별로 추론 과정을 서술하는 방식',
-  '멀티모달': '텍스트·이미지·음성 등 여러 형태의 데이터를 동시에 처리하는 AI 능력',
-};
-
-function HighlightedText({ text, onTap }: { text: string; onTap: (word: string, el: HTMLElement) => void }) {
-  if (!text) return null;
-  const pattern = new RegExp(`(${Object.keys(JARGON).map(k => k.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|')})`, 'g');
-  const parts = text.split(pattern);
-  return (
-    <>
-      {parts.map((part, i) =>
-        JARGON[part] ? (
-          <span key={i} onClick={e => { e.stopPropagation(); onTap(part, e.currentTarget as HTMLElement); }} style={{
-            color: 'var(--color-primary)', borderBottom: '1px dashed var(--color-primary)',
-            cursor: 'pointer', fontWeight: 500,
-          }}>{part}</span>
-        ) : <span key={i}>{part}</span>
-      )}
-    </>
-  );
+  tone: SummaryTone;
+  onToneChange: (tone: SummaryTone) => void;
 }
 
 function CopyBtn({ copied, onClick }: { copied: boolean; onClick: () => void }) {
@@ -61,33 +49,135 @@ function CopyBtn({ copied, onClick }: { copied: boolean; onClick: () => void }) 
   );
 }
 
-export default function DetailPage({ article, bookmarked, onBookmark, onBack }: Props) {
+function isExternalHttpUrl(url: string): boolean {
+  try {
+    const parsed = new URL(url);
+    return parsed.protocol === 'http:' || parsed.protocol === 'https:';
+  } catch {
+    return false;
+  }
+}
+
+function mergeEntries(...groups: NeologismEntry[][]): NeologismEntry[] {
+  const byTerm = new Map<string, NeologismEntry>();
+  groups.flat().forEach(entry => {
+    const key = entry.term.trim().toLocaleLowerCase();
+    if (!key || !entry.explanation?.trim()) return;
+    if (!byTerm.has(key)) byTerm.set(key, entry);
+  });
+  return [...byTerm.values()];
+}
+
+function StatusPill({ ready, label }: { ready: boolean; label: string }) {
+  return (
+    <span style={{
+      fontSize: 10,
+      fontWeight: 600,
+      color: ready ? '#0F766E' : 'var(--color-text-tertiary)',
+      background: ready ? '#CCFBF1' : 'var(--color-surface-secondary)',
+      border: '0.5px solid var(--color-border)',
+      padding: '3px 7px',
+      borderRadius: 999,
+      whiteSpace: 'nowrap',
+    }}>
+      {ready ? `${label} 완료` : '처리 중'}
+    </span>
+  );
+}
+
+export default function DetailPage({ article, bookmarked, onBookmark, onBack, tone, onToneChange }: Props) {
   const [copiedFormal, setCopiedFormal] = useState(false);
-  const [copiedCasual, setCopiedCasual] = useState(false);
   const [copiedShare,  setCopiedShare]  = useState(false);
-  const [tooltip, setTooltip] = useState<{ word: string; top: number } | null>(null);
-  const mainRef = useRef<HTMLDivElement>(null);
+  const [translationOpen, setTranslationOpen] = useState(false);
+  const [neologisms, setNeologisms] = useState<NeologismEntry[]>([]);
+  const [sourceOverride, setSourceOverride] = useState('');
+  const [originalOverride, setOriginalOverride] = useState('');
+  const [factExplanation, setFactExplanation] = useState('');
+
+  const translation = articleTranslationForDisplay(article);
+  const selectedSummary = articleSummaryForTone(article, tone);
+  const selectedToneLabel = toneLabel(tone);
+  const hasLocalizedTitle = hasKoreanTitle(article);
+  const summaryReady = isValidSummary(tone === 'formal' ? article.summaryFormal : article.summaryCasual);
+  const translationReady = isValidTranslation(article.translation);
+  const factStatus = normalizeFactStatus(article.factLabel);
+  const needsCaution = factStatus === 'RUMOR' || factStatus === 'UNVERIFIED' || factStatus === 'HITL_REQUIRED';
+  const demoArticle = isDemoArticle(article);
+  const visibleNeologisms = useMemo(() => {
+    const haystack = `${selectedSummary}\n${translation}`.toLocaleLowerCase();
+    return neologisms.filter(entry => haystack.includes(entry.term.toLocaleLowerCase()));
+  }, [neologisms, selectedSummary, translation]);
+
+  useEffect(() => {
+    let cancelled = false;
+    Promise.all([
+      fetchNeologismDictionary(),
+      fetchArticleNeologisms(article.urlHash),
+      fetchArticleExtras(article.urlHash),
+    ])
+      .then(async ([dictionary, articleEntries, extras]) => {
+        if (cancelled) return;
+        const articleTerms = [
+          ...(extras.neologism_terms ?? []),
+          ...(extras.slang_terms ?? []),
+          ...article.slangTerms,
+        ];
+        const termEntries = await fetchNeologismsByTerms(articleTerms);
+        if (cancelled) return;
+        setNeologisms(mergeEntries(termEntries, articleEntries, dictionary));
+        setSourceOverride((extras.source_url ?? '').trim());
+        setOriginalOverride((extras.original_url ?? '').trim());
+        setFactExplanation((extras.fact_insight ?? extras.fact_reason ?? article.factInsight ?? article.factReason ?? '').trim());
+      })
+      .catch((err: unknown) => {
+        if (import.meta.env.DEV) {
+          console.warn('[DetailPage] optional neologism/source lookup failed', err);
+        }
+        if (!cancelled) {
+          setNeologisms([]);
+          setSourceOverride('');
+          setOriginalOverride('');
+          setFactExplanation('');
+        }
+      });
+    return () => { cancelled = true; };
+  }, [article.factInsight, article.factReason, article.slangTerms, article.urlHash]);
 
   const handleShare = () => {
-    navigator.clipboard.writeText(
-      `[${article.source}] ${article.title}\n\n${article.translation}\n\n요약: ${article.summaryFormal}`
-    ).catch(() => {});
+    const lines = [`[${article.source}] ${articleDisplayTitle(article)}`];
+    if (selectedSummary) lines.push(`\n${selectedToneLabel} 요약: ${selectedSummary}`);
+    navigator.clipboard.writeText(lines.join('\n')).catch(() => {});
     setCopiedShare(true); setTimeout(() => setCopiedShare(false), 2000);
   };
-  const handleCopyFormal = () => {
-    navigator.clipboard.writeText(article.translation).catch(() => {});
+  const handleCopySummary = () => {
+    navigator.clipboard.writeText(selectedSummary).catch(() => {});
     setCopiedFormal(true); setTimeout(() => setCopiedFormal(false), 2000);
   };
-  const handleCopyCasual = () => {
-    navigator.clipboard.writeText(article.summaryCasual).catch(() => {});
-    setCopiedCasual(true); setTimeout(() => setCopiedCasual(false), 2000);
-  };
 
-  const handleJargon = (word: string, el: HTMLElement) => {
-    const mainEl = mainRef.current;
-    if (!mainEl) return;
-    const top = el.getBoundingClientRect().bottom - mainEl.getBoundingClientRect().top + mainEl.scrollTop + 6;
-    setTooltip(prev => prev?.word === word ? null : { word, top });
+  const sourceUrl = (article.url || sourceOverride || article.sourceUrl || originalOverride || article.originalUrl || '').trim();
+  const canOpenSource = isExternalHttpUrl(sourceUrl);
+
+  useEffect(() => {
+    if (import.meta.env.DEV && !canOpenSource) {
+      console.warn('[DetailPage] missing or invalid sourceUrl', {
+        urlHash: article.urlHash,
+        sourceUrl: article.sourceUrl,
+        url: article.url,
+      });
+    }
+  }, [article.sourceUrl, article.url, article.urlHash, canOpenSource]);
+
+  const handleSourceClick = (event: MouseEvent<HTMLAnchorElement>) => {
+    if (!canOpenSource) return;
+    if (import.meta.env.DEV) {
+      event.preventDefault();
+      window.location.assign(sourceUrl);
+      return;
+    }
+    event.preventDefault();
+    tossOpenURL(sourceUrl).catch(() => {
+      window.location.assign(sourceUrl);
+    });
   };
 
   return (
@@ -106,12 +196,12 @@ export default function DetailPage({ article, bookmarked, onBookmark, onBack }: 
         </button>
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
-            <div style={{ width: 5, height: 5, borderRadius: '50%', background: article.sourceColor ?? '#6B7280', flexShrink: 0 }} />
+            <div style={{ width: 5, height: 5, borderRadius: '50%', background: article.sourceColor, flexShrink: 0 }} />
             <span style={{ fontSize: 12, color: 'var(--color-text-secondary)', fontWeight: 500 }}>{article.source}</span>
-            <span style={{ fontSize: 11, color: 'var(--color-text-tertiary)' }}>{article.timeAgo ?? ''}</span>
+            <span style={{ fontSize: 11, color: 'var(--color-text-tertiary)' }}>{article.timeAgo}</span>
           </div>
         </div>
-        <button onClick={() => onBookmark(article.urlHash)} style={{ width: 36, height: 36, borderRadius: '50%', background: bookmarked ? '#FEF3C7' : 'var(--color-surface-secondary)', display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'all 0.15s' }}>
+        <button onClick={() => onBookmark(article.urlHash, article)} style={{ width: 36, height: 36, borderRadius: '50%', background: bookmarked ? '#FEF3C7' : 'var(--color-surface-secondary)', display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'all 0.15s' }}>
           <svg width="16" height="16" viewBox="0 0 24 24" fill={bookmarked ? '#D97706' : 'none'}>
             <path d="M19 21L12 16L5 21V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v16z" stroke={bookmarked ? '#D97706' : 'var(--color-text-secondary)'} strokeWidth="1.7" strokeLinejoin="round"/>
           </svg>
@@ -122,83 +212,152 @@ export default function DetailPage({ article, bookmarked, onBookmark, onBack }: 
       </header>
 
       {/* 본문 */}
-      <main ref={mainRef} onClick={() => setTooltip(null)} style={{ flex: 1, overflowY: 'auto', WebkitOverflowScrolling: 'touch', position: 'relative' }}>
+      <main style={{ flex: 1, overflowY: 'auto', WebkitOverflowScrolling: 'touch', position: 'relative' }}>
 
         {/* 제목 */}
         <div style={{ background: 'var(--color-surface)', padding: '20px 20px 16px', marginBottom: 8 }}>
           <span style={{ display: 'inline-block', fontSize: 11, fontWeight: 500, color: 'var(--color-primary)', background: 'var(--color-primary-light)', padding: '3px 8px', borderRadius: 6, marginBottom: 10 }}>
             {article.category}
           </span>
-          <h1 style={{ fontSize: 19, fontWeight: 700, lineHeight: 1.42, letterSpacing: '-0.03em', color: 'var(--color-text-primary)' }}>
-            {article.title}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 10, flexWrap: 'wrap' }}>
+            <FactStatusBadge label={article.factLabel} size="small" />
+            {demoArticle && <span style={{ fontSize: 11, fontWeight: 700, color: '#4E5968', background: '#F2F4F6', padding: '3px 8px', borderRadius: 6 }}>시연용 데이터</span>}
+          </div>
+          <h1 style={{ fontSize: 19, fontWeight: hasLocalizedTitle ? 700 : 600, lineHeight: 1.42, letterSpacing: '-0.03em', color: hasLocalizedTitle ? 'var(--color-text-primary)' : 'var(--color-text-secondary)' }}>
+            {articleDisplayTitle(article)}
           </h1>
+          {!hasLocalizedTitle && (
+            <p style={{ marginTop: 8, fontSize: 11, color: 'var(--color-text-tertiary)', lineHeight: 1.5 }}>
+              한국어 제목 생성 중입니다.
+            </p>
+          )}
+        </div>
+
+        {needsCaution && (
+          <div style={{ background: factStatus === 'RUMOR' ? '#FFF7ED' : 'var(--color-surface)', border: '0.5px solid var(--color-border)', padding: '12px 20px', marginBottom: 8 }}>
+            <p style={{ fontSize: 13, fontWeight: 700, color: factStatus === 'RUMOR' ? '#9A3412' : 'var(--color-text-primary)', marginBottom: 4 }}>
+              {factStatusText(article.factLabel)}
+            </p>
+            <p style={{ fontSize: 12, color: 'var(--color-text-secondary)', lineHeight: 1.6 }}>
+              {demoArticle && factStatus === 'RUMOR'
+                ? '이 항목은 검증되지 않은 시연용 루머 데이터입니다.'
+                : factExplanation || (factStatus === 'HITL_REQUIRED'
+                  ? '자동 판정만으로는 판단이 어려워 사람이 추가로 확인해야 하는 기사입니다.'
+                  : '이 항목은 아직 검증이 완료되지 않았습니다. 출처와 추가 확인 결과를 함께 확인해주세요.')}
+            </p>
+          </div>
+        )}
+
+        {!needsCaution && factExplanation && (
+          <div style={{ background: 'var(--color-surface)', border: '0.5px solid var(--color-border)', padding: '12px 20px', marginBottom: 8 }}>
+            <p style={{ fontSize: 13, fontWeight: 700, color: 'var(--color-text-primary)', marginBottom: 4 }}>
+              팩트체크 인사이트
+            </p>
+            <p style={{ fontSize: 12, color: 'var(--color-text-secondary)', lineHeight: 1.6 }}>
+              {factExplanation}
+            </p>
+            {typeof article.credibilityScore === 'number' && (
+              <p style={{ marginTop: 6, fontSize: 11, color: 'var(--color-text-tertiary)' }}>
+                신뢰도 점수 {Math.round((article.credibilityScore ?? 0) * 100)}%
+              </p>
+            )}
+          </div>
+        )}
+
+        <div style={{ background: 'var(--color-surface)', padding: '14px 20px', marginBottom: 8 }}>
+          <p style={{ fontSize: 11, fontWeight: 600, color: 'var(--color-text-tertiary)', letterSpacing: '0.04em', textTransform: 'uppercase', marginBottom: 10 }}>요약 말투</p>
+          <TonePreferenceControl tone={tone} onChange={onToneChange} />
         </div>
 
         {/* 3줄 요약 */}
         <div style={{ background: 'var(--color-surface)', padding: '16px 20px', marginBottom: 8 }}>
-          <p style={{ fontSize: 11, fontWeight: 600, color: 'var(--color-text-tertiary)', letterSpacing: '0.04em', textTransform: 'uppercase', marginBottom: 10 }}>3줄 요약</p>
-          <p style={{ fontSize: 14, color: 'var(--color-text-secondary)', lineHeight: 1.75 }}>{article.summaryFormal}</p>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
+            <p style={{ fontSize: 11, fontWeight: 600, color: 'var(--color-text-tertiary)', letterSpacing: '0.04em', textTransform: 'uppercase' }}>3줄 요약</p>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+              <StatusPill ready={summaryReady} label="요약" />
+              {selectedSummary && <CopyBtn copied={copiedFormal} onClick={handleCopySummary} />}
+            </div>
+          </div>
+
+          <div style={{ background: 'var(--color-surface-secondary)', borderRadius: 10, padding: '14px 14px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 8 }}>
+              <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--color-primary)', background: 'var(--color-primary-light)', padding: '3px 8px', borderRadius: 6 }}>{selectedToneLabel}</span>
+            </div>
+            <p style={{ fontSize: 15, lineHeight: 1.78, color: selectedSummary ? 'var(--color-text-primary)' : 'var(--color-text-tertiary)', letterSpacing: '-0.01em', fontWeight: selectedSummary ? 500 : 400 }}>
+              {selectedSummary ? <NeologismText text={selectedSummary} entries={visibleNeologisms} /> : '요약 생성 중입니다.'}
+            </p>
+          </div>
         </div>
 
-        {/* 번역 */}
+        {/* 번역 전문 — 신조어 하이라이트 포함 */}
         <div style={{ background: 'var(--color-surface)', padding: '16px 20px', marginBottom: 8, position: 'relative' }}>
-          <p style={{ fontSize: 11, fontWeight: 600, color: 'var(--color-text-tertiary)', letterSpacing: '0.04em', textTransform: 'uppercase', marginBottom: 12 }}>번역</p>
+          <button
+            onClick={() => setTranslationOpen(v => !v)}
+            style={{
+              width: '100%',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              marginBottom: translationOpen ? 12 : 0,
+              textAlign: 'left',
+            }}
+          >
+            <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <p style={{ fontSize: 11, fontWeight: 600, color: 'var(--color-text-tertiary)', letterSpacing: '0.04em', textTransform: 'uppercase' }}>번역 전문</p>
+              <StatusPill ready={translationReady} label="번역" />
+            </span>
+            <span style={{ fontSize: 12, color: 'var(--color-text-tertiary)' }}>{translationOpen ? '접기' : '펼치기'}</span>
+          </button>
 
-          {/* 신조어 툴팁 */}
-          {tooltip && (
-            <div onClick={e => e.stopPropagation()} style={{
-              position: 'absolute', left: 16, right: 16, top: tooltip.top,
-              background: 'var(--color-surface)', border: '1px solid var(--color-border)',
-              borderRadius: 10, padding: '10px 14px', zIndex: 20,
-              boxShadow: '0 4px 16px rgba(0,0,0,0.12)', animation: 'tipIn 0.18s ease',
-            }}>
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
-                <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--color-primary)' }}>{tooltip.word}</span>
-                <button onClick={() => setTooltip(null)} style={{ fontSize: 18, color: 'var(--color-text-tertiary)', lineHeight: 1 }}>×</button>
+          {translationOpen && (
+            translation ? (
+              <>
+                <div style={{ background: 'var(--color-surface-secondary)', borderRadius: 10, padding: '12px 14px', marginBottom: 10 }}>
+                  <p style={{ fontSize: 14, lineHeight: 1.78, color: 'var(--color-text-primary)', letterSpacing: '-0.01em', whiteSpace: 'pre-line' }}>
+                    <NeologismText text={translation} entries={visibleNeologisms} />
+                  </p>
+                </div>
+
+                {visibleNeologisms.length > 0 && (
+                  <p style={{ fontSize: 11, color: 'var(--color-text-tertiary)' }}>
+                    파란색 단어를 탭하거나 마우스를 올리면 설명을 볼 수 있어요
+                  </p>
+                )}
+              </>
+            ) : (
+              <div style={{ background: 'var(--color-surface-secondary)', borderRadius: 10, padding: '14px', marginBottom: 10 }}>
+                <p style={{ fontSize: 13, lineHeight: 1.7, color: 'var(--color-text-tertiary)' }}>
+                  번역 전문 생성 중입니다.
+                </p>
               </div>
-              <p style={{ fontSize: 12, color: 'var(--color-text-secondary)', lineHeight: 1.6 }}>{JARGON[tooltip.word]}</p>
-            </div>
+            )
           )}
-
-          {/* 격식체 */}
-          <div style={{ background: 'var(--color-surface-secondary)', borderRadius: 10, padding: '12px 14px', marginBottom: 10 }}>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
-              <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--color-text-tertiary)', letterSpacing: '0.04em' }}>격식체</span>
-              <CopyBtn copied={copiedFormal} onClick={handleCopyFormal} />
-            </div>
-            <p style={{ fontSize: 14, lineHeight: 1.78, color: 'var(--color-text-primary)', letterSpacing: '-0.01em' }}>
-              <HighlightedText text={article.translation} onTap={handleJargon} />
-            </p>
-          </div>
-
-          {/* 일상체 */}
-          <div style={{ background: 'var(--color-surface-secondary)', borderRadius: 10, padding: '12px 14px', marginBottom: 10 }}>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
-              <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--color-text-tertiary)', letterSpacing: '0.04em' }}>일상체</span>
-              <CopyBtn copied={copiedCasual} onClick={handleCopyCasual} />
-            </div>
-            <p style={{ fontSize: 14, lineHeight: 1.78, color: 'var(--color-text-primary)', letterSpacing: '-0.01em' }}>
-              <HighlightedText text={article.summaryCasual} onTap={handleJargon} />
-            </p>
-          </div>
-
-          <p style={{ fontSize: 11, color: 'var(--color-text-tertiary)' }}>
-            💡 파란색 단어를 탭하면 설명을 볼 수 있어요
-          </p>
         </div>
 
         {/* 원문 링크 */}
         <div style={{ padding: '0 20px 40px' }}>
-          <button
-            onClick={() => window.open(article.url, '_blank', 'noopener,noreferrer')}
-            style={{ width: '100%', padding: '14px', background: 'var(--color-surface)', border: '0.5px solid var(--color-border-medium)', borderRadius: 'var(--radius-md)', fontSize: 14, fontWeight: 500, color: 'var(--color-text-secondary)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}
-          >
-            <svg width="15" height="15" viewBox="0 0 24 24" fill="none">
-              <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round"/>
-              <path d="M15 3h6v6M10 14L21 3" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"/>
-            </svg>
-            원문 보기 — {article.source}
-          </button>
+          {canOpenSource ? (
+            <a
+              href={sourceUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              onClick={handleSourceClick}
+              style={{ width: '100%', padding: '12px', background: 'transparent', border: '0.5px solid var(--color-border)', borderRadius: 'var(--radius-md)', fontSize: 13, fontWeight: 500, color: 'var(--color-text-tertiary)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, textDecoration: 'none' }}
+            >
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none">
+                <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round"/>
+                <path d="M15 3h6v6M10 14L21 3" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"/>
+              </svg>
+              원문 보기 — {article.source}
+            </a>
+          ) : (
+            <div
+              aria-disabled="true"
+              style={{ width: '100%', padding: '14px', background: 'var(--color-surface-secondary)', border: '0.5px dashed var(--color-border)', borderRadius: 'var(--radius-md)', fontSize: 14, fontWeight: 500, color: 'var(--color-text-tertiary)', textAlign: 'center', cursor: 'not-allowed' }}
+            >
+              원문 링크가 아직 준비되지 않았습니다.
+            </div>
+          )}
         </div>
       </main>
     </div>

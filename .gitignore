@@ -1,4 +1,8 @@
 .env
+.env.*
+!.env.example
+!frontend/.env.example
+!frontend/.env.mobile.example
 apps-in-toss-examples-main/
 ../unzip/
 venv/
@@ -13,10 +17,21 @@ CLAUDE.md
 data/
 !frontend/src/data/
 logs/
+backups/
+backend_server.*.log
+dev-server.log
+dev-server.err
+frontend/dev-server.log
+frontend/dev-server.err
 poc_dummy.py
 articles_raw.jsonl
 articles_translated.jsonl
 *.jsonl
+samsun_345
+samsun_345.db
+*.db
+*.sqlite
+*.sqlite3
 eval/data/
 token.json
 client_secret*.json
@@ -27,8 +42,7 @@ diff_*.txt
 # JS / build — any depth
 **/node_modules/
 dist/
-# frontend/dist/는 Railway 서빙을 위해 추적
-!frontend/dist/
+*.ait
 
 # 커서 설정
 .cursor/
@@ -36,5 +50,16 @@ dist/
 # Claude Code
 .claude/
 
+# MCP 개인 설정 (각자 로컬 머신 경로 포함)
+.mcp.json
+
 # 로컬 파인튜닝 모델 가중치 (용량 대형)
 samsunmodel*/
+models/
+ollama-model/
+scripts/register_ollama.ps1
+ollama-model/*.gguf
+ollama-model/*.gguf.*
+*.gguf
+*.gguf.*
+samsun_models/

@@ -17,8 +17,8 @@ CREATE TABLE IF NOT EXISTS articles (
     url               TEXT NOT NULL,         -- 원문 URL
 
     -- 기사 메타데이터 (RSS 수집 · 이상준)
-    title             TEXT,                  -- 기사 제목 (한국어, LLM 번역)
-    title_en          TEXT,                  -- 기사 제목 (영문 원제)
+    title             TEXT,                  -- 원문 영어 헤드라인 (RSS)
+    title_ko          TEXT,                  -- 번역 한국어 제목 (nullable)
     source            VARCHAR,               -- 언론사명 (TechCrunch, MIT TR 등)
     source_type       VARCHAR,               -- 'media' | 'community'
     category          VARCHAR,               -- 'AI' | 'Tech' 등. Hybrid Search 필터
@@ -42,10 +42,9 @@ CREATE TABLE IF NOT EXISTS articles (
     translation       TEXT,                  -- 한국어 번역 전문
     summary_formal    TEXT,                  -- 격식체 3줄 요약 (~습니다)
     summary_casual    TEXT,                  -- 일상체 3줄 요약 (~해요)
-    summary_en        TEXT,                  -- 영어 요약 (확장 화면용)
 
     -- RAG (강주찬)
-    embedding         VECTOR(1024)           -- title(한국어) + translation 합산 임베딩
+    embedding         VECTOR(1024)           -- title_ko + translation 합산 임베딩
 );
 
 -- 인덱스
@@ -54,6 +53,20 @@ CREATE INDEX IF NOT EXISTS idx_articles_published   ON articles (published_at DE
 CREATE INDEX IF NOT EXISTS idx_articles_fact_label  ON articles (fact_label);
 CREATE INDEX IF NOT EXISTS idx_articles_embedding   ON articles USING ivfflat (embedding vector_cosine_ops)
     WITH (lists = 100);
+
+
+-- ============================================================
+-- 1-1. users  (RAG 개인화 프로필)
+-- ============================================================
+CREATE TABLE IF NOT EXISTS users (
+    user_id       TEXT PRIMARY KEY,
+    interest_tags TEXT[] DEFAULT '{}',
+    user_vector   VECTOR(1024),
+    last_seen_at  TIMESTAMPTZ DEFAULT NOW(),
+    updated_at    TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_users_last_seen_at ON users(last_seen_at DESC);
 
 
 -- ============================================================
@@ -93,9 +106,45 @@ CREATE TABLE IF NOT EXISTS neologisms (
     first_seen_url_hash  VARCHAR REFERENCES articles(url_hash) ON DELETE SET NULL,
     occurrence_count     INT DEFAULT 1,          -- 등장할 때마다 +1
     confirmed            BOOLEAN DEFAULT FALSE,  -- TRUE → AI_TERMS 목록 승격
+    embedding            VECTOR(1024),           -- 신조어 RAG 검색용 임베딩
+    source               TEXT,                   -- 설명 출처 또는 demo/manual/gemini-search-grounding
 
     created_at           TIMESTAMPTZ DEFAULT NOW()
 );
+
+CREATE INDEX IF NOT EXISTS idx_neologisms_embedding
+    ON neologisms USING ivfflat (embedding vector_cosine_ops)
+    WITH (lists = 50);
+
+CREATE OR REPLACE FUNCTION match_neologisms(
+  query_vector VECTOR(1024),
+  match_threshold FLOAT DEFAULT 0.85,
+  top_k INT DEFAULT 5
+)
+RETURNS TABLE (
+  term VARCHAR,
+  explanation TEXT,
+  ko_suggestion TEXT,
+  occurrence_count INT,
+  confirmed BOOLEAN,
+  source TEXT,
+  similarity FLOAT
+)
+LANGUAGE sql STABLE AS $$
+  SELECT
+    n.term,
+    n.explanation,
+    n.ko_suggestion,
+    n.occurrence_count,
+    n.confirmed,
+    n.source,
+    (1::FLOAT - (n.embedding <=> query_vector)::FLOAT) AS similarity
+  FROM neologisms n
+  WHERE n.embedding IS NOT NULL
+    AND (1::FLOAT - (n.embedding <=> query_vector)::FLOAT) >= match_threshold
+  ORDER BY n.embedding <=> query_vector
+  LIMIT top_k;
+$$;
 
 
 -- ============================================================
@@ -105,7 +154,7 @@ CREATE TABLE IF NOT EXISTS eval_results (
 
     id                  UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     article_url_hash    VARCHAR REFERENCES articles(url_hash) ON DELETE CASCADE,
-    model_version       VARCHAR,  -- 'qwen3-4b-base' | 'qwen3-4b-ft-v1' | 'gpt-4o'
+    model_version       VARCHAR,  -- 'samsun-gemma4' | 'openrouter/gemini'
     eval_type           VARCHAR,  -- 'translation' | 'summary_formal'
 
     -- 번역 평가 (eval_type = 'translation')
@@ -154,6 +203,7 @@ RETURNS TABLE (
     url_hash          VARCHAR,
     url               TEXT,
     title             TEXT,
+    title_ko          TEXT,
     source            VARCHAR,
     category          VARCHAR,
     keywords          TEXT[],
@@ -170,6 +220,7 @@ LANGUAGE sql STABLE AS $$
         a.url_hash,
         a.url,
         a.title,
+        a.title_ko,
         a.source,
         a.category,
         a.keywords,
@@ -209,7 +260,7 @@ RETURNS TABLE (
     url_hash          VARCHAR,
     url               TEXT,
     title             TEXT,
-    title_en          TEXT,
+    title_ko          TEXT,
     source            VARCHAR,
     source_type       VARCHAR,
     category          VARCHAR,
@@ -218,7 +269,6 @@ RETURNS TABLE (
     translation       TEXT,
     summary_formal    TEXT,
     summary_casual    TEXT,
-    summary_en        TEXT,
     credibility_score FLOAT,
     fact_label        VARCHAR,
     similarity        FLOAT
@@ -246,22 +296,25 @@ LANGUAGE sql STABLE AS $$
             a.url_hash,
             ROW_NUMBER() OVER (
                 ORDER BY GREATEST(
-                    word_similarity(query_text, a.title),
+                    word_similarity(query_text, COALESCE(a.title, '')),
+                    word_similarity(query_text, COALESCE(a.title_ko, '')),
                     word_similarity(query_text, COALESCE(a.translation, '')),
-                    similarity(query_text, a.title)
+                    similarity(query_text, COALESCE(a.title, '')),
+                    similarity(query_text, COALESCE(a.title_ko, ''))
                 ) DESC
             ) AS rnk
         FROM articles a
         WHERE
             (filter_category IS NULL OR a.category = filter_category)
             AND (
-                a.title          ILIKE '%' || query_text || '%'
-                OR a.title_en     ILIKE '%' || query_text || '%'
-                OR a.translation  ILIKE '%' || query_text || '%'
-                OR word_similarity(query_text, a.title)                          > 0.15
-                OR word_similarity(query_text, COALESCE(a.title_en, ''))         > 0.15
-                OR word_similarity(query_text, COALESCE(a.translation, ''))      > 0.15
-                OR similarity(query_text, a.title)                               > 0.10
+                COALESCE(a.title, '')       ILIKE '%' || query_text || '%'
+                OR COALESCE(a.title_ko, '') ILIKE '%' || query_text || '%'
+                OR COALESCE(a.translation, '') ILIKE '%' || query_text || '%'
+                OR word_similarity(query_text, COALESCE(a.title, ''))                  > 0.15
+                OR word_similarity(query_text, COALESCE(a.title_ko, ''))               > 0.15
+                OR word_similarity(query_text, COALESCE(a.translation, ''))             > 0.15
+                OR similarity(query_text, COALESCE(a.title, ''))                       > 0.10
+                OR similarity(query_text, COALESCE(a.title_ko, ''))                  > 0.10
             )
         LIMIT 60
     ),
@@ -281,7 +334,7 @@ LANGUAGE sql STABLE AS $$
         a.url_hash,
         a.url,
         a.title,
-        a.title_en,
+        a.title_ko,
         a.source,
         a.source_type,
         a.category,
@@ -290,7 +343,6 @@ LANGUAGE sql STABLE AS $$
         a.translation,
         a.summary_formal,
         a.summary_casual,
-        a.summary_en,
         a.credibility_score,
         a.fact_label,
         f.vec_sim AS similarity
@@ -299,3 +351,22 @@ LANGUAGE sql STABLE AS $$
     ORDER BY f.rrf_score DESC
     LIMIT top_k;
 $$;
+
+
+-- ============================================================
+-- user_logs  (조회 기록 테이블 — HotPage 조회수 집계용)
+-- ============================================================
+CREATE TABLE IF NOT EXISTS user_logs (
+    id          BIGSERIAL PRIMARY KEY,
+    user_id     TEXT        NOT NULL,
+    url_hash    TEXT        NOT NULL REFERENCES articles(url_hash) ON DELETE CASCADE,
+    action      TEXT        NOT NULL DEFAULT 'view',
+    created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_user_logs_url_hash   ON user_logs(url_hash);
+CREATE INDEX IF NOT EXISTS idx_user_logs_user_id    ON user_logs(user_id);
+CREATE INDEX IF NOT EXISTS idx_user_logs_created_at ON user_logs(created_at);
+
+-- RLS 비활성화 (백엔드 서버에서만 INSERT/SELECT)
+ALTER TABLE user_logs DISABLE ROW LEVEL SECURITY;

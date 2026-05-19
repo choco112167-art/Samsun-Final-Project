@@ -1,26 +1,34 @@
 """
 backend/main.py — 삼선뉴스 FastAPI 서버
 
-프론트(토스 미니앱)에서 오는 모든 HTTP 요청을 받아서
-Supabase DB 조회, pgvector RAG 추천, 검색 결과를 돌려주는 백엔드 서버.
-Railway에 배포되어 24시간 돌아간다.
+관리/로컬 디버깅용 HTTP 요청을 받아서 Supabase DB 조회,
+pgvector RAG 추천, 검색 결과를 돌려주는 보조 서버.
+Apps in Toss `.ait` 런타임은 이 서버를 필요로 하지 않는다.
+
+API 응답 형식 (안정성):
+  프론트엔드·클라이언트가 필드별로 파싱하므로 엔드포인트마다 바디 형태가 다릅니다.
+  (예: GET /articles → 배열 직접, GET /feed → {"feed": [...]}, POST 성공 → {"message": ...})
+  호환성 유지를 위해 일괄 {"status","data"} 래핑은 하지 않습니다.
 """
 
 import logging
 import os
+import re
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 from supabase import create_client
 
 from backend.embedder import make_embedding, expand_query
+from backend.rag import build_personalized_feed, record_article_click_and_update_vector, upsert_user_profile
 from config import get_settings
 
 _settings = get_settings()
 logging.basicConfig(level=getattr(logging, _settings.log_level.upper(), logging.INFO))
+logger = logging.getLogger(__name__)
 
 app = FastAPI()
 
@@ -32,8 +40,27 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-_sb_key = os.getenv("SUPABASE_KEY") or _settings.supabase_anon_key
-sb = create_client(_settings.supabase_url, _sb_key)
+_sb_key = (
+    os.getenv("SUPABASE_SERVICE_ROLE_KEY")
+    or os.getenv("SUPABASE_KEY")
+    or os.getenv("SUPABASE_ANON_KEY")
+    or _settings.effective_supabase_key
+)
+_sb_url = (_settings.supabase_url or os.getenv("SUPABASE_URL", "")).rstrip("/")
+if _sb_url and _sb_key:
+    sb = create_client(_sb_url, _sb_key)
+else:
+    logger.warning("Supabase env is incomplete. Set SUPABASE_URL and SUPABASE_KEY in root .env.")
+    sb = None
+
+
+def require_supabase():
+    if sb is None:
+        raise HTTPException(
+            status_code=503,
+            detail="Supabase is not configured. Set SUPABASE_URL and SUPABASE_KEY.",
+        )
+    return sb
 
 
 class OnboardingRequest(BaseModel):
@@ -51,6 +78,17 @@ class LlmTextRequest(BaseModel):
     summary_sentences: int | None = None
 
 
+class ArticleResponse(BaseModel):
+    """articles 테이블 단건 조회 응답 — 원문 영어는 `title`, 번역 한국어는 `title_ko`."""
+
+    model_config = ConfigDict(extra="allow")
+
+    url_hash: str
+    url: str | None = None
+    title: str | None = None
+    title_ko: str | None = None
+
+
 @app.post("/onboarding")
 def onboarding(req: OnboardingRequest):
     """
@@ -58,72 +96,38 @@ def onboarding(req: OnboardingRequest):
     관심 주제를 벡터로 변환해서 users 테이블에 저장한다.
     이 벡터가 나중에 /feed에서 기사 추천의 기준이 된다.
     """
-    combined = " ".join(req.interest_tags)
-    user_vector = make_embedding(combined)
-
-    sb.table("users").upsert({
-        "user_id": req.user_id,
-        "interest_tags": req.interest_tags,
-        "user_vector": user_vector,
-    }).execute()
-
+    db = require_supabase()
+    upsert_user_profile(db, req.user_id, req.interest_tags)
     return {"message": "온보딩 완료!"}
 
 
 @app.get("/feed/{user_id}")
 def get_feed(user_id: str, top_k: int = 10):
     """
-    유저 맞춤 기사 피드를 돌려준다. 추천 이유도 함께 생성.
+    유저 맞춤 기사 피드를 돌려준다. RAG 추천의 핵심 엔드포인트.
+
+    feat/leesangjun: user_logs 기반 최근 읽기 패턴으로 각 기사에 `reason`(추천 이유) 추가.
     """
-    # 유저 벡터 조회
-    result = sb.table("users").select("user_vector, interest_tags").eq("user_id", user_id).execute()
-
-    if not result.data:
-        raise HTTPException(status_code=404, detail="유저 없음")
-
-    user_vector = result.data[0]["user_vector"]
-    interest_tags = result.data[0].get("interest_tags", [])
-
-    # 유저 최근 클릭 기사 카테고리/키워드 조회 (최근 10개)
-    logs = sb.table("user_logs").select("url_hash").eq("user_id", user_id).order("created_at", desc=True).limit(10).execute()
-    recent_keywords = []
-    if logs.data:
-        recent_hashes = [l["url_hash"] for l in logs.data]
-        recent_articles = sb.table("articles").select("category, keywords").in_("url_hash", recent_hashes).execute()
-        for a in recent_articles.data:
-            recent_keywords.append(a.get("category", ""))
-            recent_keywords.extend(a.get("keywords", []) or [])
-    recent_keywords = list(set(filter(None, recent_keywords)))[:10]
-
-    # 벡터 유사도 기반 추천
-    result = sb.rpc("match_articles", {
-        "query_vector": user_vector,
-        "top_k": top_k,
-    }).execute()
-
-    articles = result.data
-
-    # 추천 이유 생성 (LLM)
-    def make_reason(article: dict) -> str:
-        try:
-            category = article.get("category", "")
-            keywords = article.get("keywords", []) or []
-
-            matched = [k for k in keywords if k in recent_keywords]
-            if matched:
-                return f"최근 관심 키워드 '{matched[0]}'와 관련된 기사예요"
-            if category in recent_keywords:
-                return f"최근 '{category}' 기사를 많이 읽으셨어요"
-            if interest_tags:
-                return f"관심 주제 '{interest_tags[0]}'와 연관된 기사예요"
-            return "회원님의 읽기 패턴을 분석해 추천했어요"
-        except Exception:
-            return "회원님의 읽기 패턴을 분석해 추천했어요"
-
-    for article in articles:
-        article["reason"] = make_reason(article)
+    try:
+        db = require_supabase()
+        articles, _interest_tags = build_personalized_feed(db, user_id, top_k=top_k)
+    except LookupError:
+        raise HTTPException(status_code=404, detail="유저 없음") from None
 
     return {"feed": articles}
+
+
+@app.post("/users/{user_id}/click/{url_hash}")
+def record_click(user_id: str, url_hash: str):
+    """
+    Local/admin POC endpoint for RAG feedback learning.
+
+    Apps in Toss does not require this server, but the endpoint demonstrates the report's
+    click article → user_vector update → pgvector candidate refresh structure.
+    """
+    db = require_supabase()
+    record_article_click_and_update_vector(db, user_id, url_hash)
+    return {"message": "click recorded and user_vector updated"}
 
 
 @app.get("/articles")
@@ -138,8 +142,9 @@ def get_articles(
     """
     HomePage, CategoryPage 등에서 기사 목록을 가져올 때 호출된다.
     """
-    query = sb.table("articles").select(
-        "url_hash, url, title, source, source_type, category, country, "
+    db = require_supabase()
+    query = db.table("articles").select(
+        "url_hash, url, title, title_ko, source, source_type, category, country, "
         "keywords, published_at, collected_at, content, "
         "credibility_score, fact_label, "
         "translation, summary_formal, summary_casual"
@@ -157,17 +162,86 @@ def get_articles(
     return result.data
 
 
-@app.get("/article/{url_hash}")
+@app.get("/article/{url_hash}", response_model=ArticleResponse)
 def get_article(url_hash: str):
     """
     DetailPage에서 기사 하나의 전체 내용을 가져올 때 호출된다.
     """
-    result = sb.table("articles").select("*").eq("url_hash", url_hash).execute()
+    db = require_supabase()
+    result = db.table("articles").select("*").eq("url_hash", url_hash).execute()
 
     if not result.data:
         raise HTTPException(status_code=404, detail="기사 없음")
 
     return result.data[0]
+
+
+SEARCH_ALIASES = {
+    "엔비디아": ["nvidia", "gpu", "blackwell", "ai chip", "ai accelerator"],
+    "nvidia": ["엔비디아", "gpu", "blackwell", "ai chip", "ai accelerator"],
+    "앤트로픽": ["anthropic", "claude"],
+    "안트로픽": ["anthropic", "claude"],
+    "anthropic": ["앤트로픽", "claude", "클로드"],
+    "오픈ai": ["openai", "chatgpt", "gpt"],
+    "오픈에이아이": ["openai", "chatgpt", "gpt"],
+    "openai": ["오픈AI", "챗GPT", "chatgpt", "gpt"],
+    "제미나이": ["gemini", "google", "deepmind"],
+    "gemini": ["제미나이", "구글", "deepmind"],
+    "반도체": ["semiconductor", "chip", "gpu", "hbm", "nvidia"],
+    "칩": ["chip", "semiconductor", "gpu", "ai accelerator"],
+    "llm": ["대규모 언어 모델", "large language model", "오픈소스 LLM"],
+    "rag": ["retrieval augmented generation", "검색 증강 생성", "vector search", "pgvector"],
+    "스타트업": ["startup", "funding", "투자"],
+    "투자": ["funding", "investment", "valuation", "startup"],
+    "규제": ["regulation", "ai act", "policy", "법안"],
+    "오타": ["typo", "misspelling"],
+}
+
+
+def _search_terms(q: str, expanded: str) -> list[str]:
+    """Build Korean/English/alias terms for robust keyword fallback."""
+    raw_terms: list[str] = [q, expanded]
+    for token in re.findall(r"[\w가-힣.+#-]{2,}", f"{q} {expanded}".lower()):
+        raw_terms.append(token)
+        raw_terms.extend(SEARCH_ALIASES.get(token, []))
+
+    terms: list[str] = []
+    seen: set[str] = set()
+    for term in raw_terms:
+        normalized = re.sub(r"\s+", " ", str(term or "").strip())
+        # PostgREST .or_ uses comma separators; skip unsafe fragments.
+        if not normalized or "," in normalized or ")" in normalized or "(" in normalized:
+            continue
+        key = normalized.lower()
+        if key not in seen:
+            seen.add(key)
+            terms.append(normalized)
+    return terms[:12]
+
+
+def _keyword_search_articles(db, cols: str, q: str, expanded: str, top_k: int) -> list[dict]:
+    """Keyword fallback over Korean/English title, translation, summaries, and content."""
+    rows: list[dict] = []
+    for term in _search_terms(q, expanded):
+        filters = ",".join(
+            f"{field}.ilike.%{term}%"
+            for field in (
+                "title",
+                "title_ko",
+                "translation",
+                "summary_formal",
+                "summary_casual",
+                "content",
+                "source",
+                "category",
+            )
+        )
+        try:
+            result = db.table("articles").select(cols).or_(filters).limit(top_k).execute()
+            rows.extend(result.data or [])
+        except Exception as err:
+            logger.debug("keyword search fallback failed for term=%r: %s", term, err)
+    return rows
 
 
 @app.post("/articles")
@@ -189,7 +263,7 @@ def search(q: str, top_k: int = 10, threshold: float = 0.4):
     흐름:
       1. LLM으로 쿼리를 한/영 키워드로 확장 (예: "엔비디아" → "엔비디아 NVIDIA GPU ...")
       2. 확장 쿼리 임베딩 → pgvector 유사도 검색 (threshold 0.4 이상만)
-      3. 키워드 폴백: 제목(영문) 또는 번역(한국어)에 원본 검색어가 포함된 기사 추가
+      3. 키워드 폴백: 제목(영문·한국어) 또는 번역에 원본 검색어가 포함된 기사 추가
          → 벡터 점수가 낮아도 직접 언급되면 결과에 포함
       4. 중복 제거 후 유사도 내림차순 반환
     """
@@ -197,37 +271,35 @@ def search(q: str, top_k: int = 10, threshold: float = 0.4):
         return {"results": []}
 
     COLS = (
-        "url_hash, url, title, source, source_type, category, country, "
+        "url_hash, url, title, title_ko, source, source_type, category, country, "
         "keywords, published_at, credibility_score, fact_label, "
         "translation, summary_formal, summary_casual"
     )
 
-    # 1. LLM 쿼리 확장
+    # 1. LLM 쿼리 확장. 실패해도 원본 쿼리로 검색한다.
     expanded = expand_query(q)
 
-    # 2. 벡터 검색
-    query_vector = make_embedding(expanded)
-    vec_result = sb.rpc("match_articles", {
-        "query_vector": query_vector,
-        "top_k":        top_k * 2,
-    }).execute()
-
+    # 2. 벡터 검색. local embedding/Ollama가 꺼져 있어도 키워드 fallback은 반드시 동작한다.
+    db = require_supabase()
     seen: dict = {}
-    for r in (vec_result.data or []):
-        if r.get("similarity", 0) >= threshold:
-            seen[r["url_hash"]] = r
-
-    # 3. 키워드 폴백: 제목(영문) 또는 한국어 번역에 검색어 포함 여부
     try:
-        kw_result = sb.table("articles").select(COLS).or_(
-            f"title.ilike.%{q}%,translation.ilike.%{q}%"
-        ).limit(top_k).execute()
-        for r in (kw_result.data or []):
-            h = r["url_hash"]
-            if h not in seen:
-                seen[h] = {**r, "similarity": 0.65}  # 키워드 직접 매칭 = 신뢰도 0.65
-    except Exception:
-        pass  # 키워드 검색 실패해도 벡터 결과는 반환
+        query_vector = make_embedding(expanded)
+        vec_result = db.rpc("match_articles", {
+            "query_vector": query_vector,
+            "top_k":        top_k * 2,
+        }).execute()
+
+        for r in (vec_result.data or []):
+            if r.get("similarity", 0) >= threshold:
+                seen[r["url_hash"]] = r
+    except Exception as err:
+        logger.warning("vector search failed; using keyword fallback only: %s", err)
+
+    # 3. 키워드/별칭 폴백: 한국어·영어·흔한 표기 차이를 같이 검색한다.
+    for r in _keyword_search_articles(db, COLS, q, expanded, top_k):
+        h = r["url_hash"]
+        if h not in seen:
+            seen[h] = {**r, "similarity": 0.65}  # 키워드 직접 매칭 = 신뢰도 0.65
 
     results = sorted(seen.values(), key=lambda x: x.get("similarity", 0), reverse=True)
     return {
@@ -239,7 +311,7 @@ def search(q: str, top_k: int = 10, threshold: float = 0.4):
 @app.get("/health")
 def health():
     """
-    서버 생존 확인. Railway 모니터링 등에 사용.
+    서버 생존 확인. 로컬/관리용 모니터링에 사용.
     """
     return {"status": "ok"}
 
@@ -249,14 +321,21 @@ def debug():
     """Supabase 연결 및 환경변수 확인용 (임시)"""
     import requests as _req
     supabase_url = (_settings.supabase_url or os.getenv("SUPABASE_URL", "")).rstrip("/")
-    sb_key = os.getenv("SUPABASE_KEY", "") or _settings.supabase_anon_key
+    sb_key = (
+        os.getenv("SUPABASE_SERVICE_ROLE_KEY", "")
+        or os.getenv("SUPABASE_KEY", "")
+        or os.getenv("SUPABASE_ANON_KEY", "")
+        or _settings.effective_supabase_key
+    )
 
+    # URL 형식 진단
     url_issues = []
     if "/rest/v1" in supabase_url:
         url_issues.append("URL에 /rest/v1 포함됨 — 제거 필요")
     if supabase_url.count("supabase.co") == 0 and supabase_url:
         url_issues.append("supabase.co 도메인 아님")
 
+    # supabase-py 없이 직접 REST 호출 테스트
     direct_ok = False
     direct_error = ""
     try:
@@ -270,10 +349,13 @@ def debug():
     except Exception as e:
         direct_error = str(e)
 
+    # supabase-py 테스트
     sdk_ok = False
     sdk_error = ""
     try:
-        result = sb.table("articles").select("url_hash").limit(1).execute()
+        if sb is None:
+            raise RuntimeError("Supabase client is not configured")
+        sb.table("articles").select("url_hash").limit(1).execute()
         sdk_ok = True
     except Exception as e:
         sdk_error = str(e)[:300]
@@ -301,7 +383,7 @@ def debug():
 @app.post("/translate")
 def translate(req: LlmTextRequest):
     """
-    영문 원문을 한국어로 번역합니다 (Ollama `qwen3.5:4b`, `pipeline.translate_summarize`).
+    영문 원문을 한국어로 번역합니다 (`MODEL_NAME` 기본: Gemma 4 E4B fine-tuned, `pipeline.translate_summarize`).
     응답은 translation 필드만 채웁니다.
     """
     from backend.llm_dispatch import translate_and_summarize_dispatch
@@ -326,37 +408,34 @@ def summarize(req: LlmTextRequest):
 
 @app.post("/article-view/{user_id}/{url_hash}")
 def record_article_view(user_id: str, url_hash: str):
-    """프론트에서 기사 카드 조회 시 호출 — user_logs에 적재 + 유저 벡터 점진적 업데이트."""
-    # 1. user_logs에 클릭 기록 저장
-    sb.table("user_logs").insert({
+    """프론트에서 기사 카드 조회 시 호출 — user_logs에 적재."""
+    db = require_supabase()
+    db.table("user_logs").insert({
         "user_id": user_id,
         "url_hash": url_hash,
         "action": "view",
     }).execute()
-
-    # 2. 클릭한 기사 임베딩 가져오기
-    article_res = sb.table("articles").select("embedding").eq("url_hash", url_hash).execute()
-    if not article_res.data or not article_res.data[0].get("embedding"):
-        return {"message": "embedding 없음 — 스킵"}
-    article_vector = article_res.data[0]["embedding"]
-
-    # 3. 유저 벡터 가져오기
-    user_res = sb.table("users").select("user_vector").eq("user_id", user_id).execute()
-    if not user_res.data or not user_res.data[0].get("user_vector"):
-        return {"message": "유저 없음 — 스킵"}
-    user_vector = user_res.data[0]["user_vector"]
-
-    # 4. 유저 벡터 업데이트 (클릭 기사 임베딩 40% 반영)
-    import json
-    if isinstance(article_vector, str):
-        article_vector = json.loads(article_vector)
-    if isinstance(user_vector, str):
-        user_vector = json.loads(user_vector)
-    new_vector = [u * 0.6 + a * 0.4 for u, a in zip(user_vector, article_vector)]
-
-    sb.table("users").update({"user_vector": new_vector}).eq("user_id", user_id).execute()
-
     return {"message": "조회 기록 완료"}
+
+
+# ── 부재 기간 놓친 기사 요약 알림 (feat/soomin) ─────────────────
+@app.get("/absence-summary/{user_id}")
+@app.get("/api/users/{user_id}/absence-summary")
+def absence_summary(user_id: str, top_k: int = 5):
+    """마지막 접속 이후 맞춤 유사 기사 목록 (경로 두 종류 동일 처리)."""
+    from backend.absence_summary import compute_absence_summary
+
+    return compute_absence_summary(require_supabase(), user_id, top_k=top_k)
+
+
+@app.post("/user-seen/{user_id}")
+@app.post("/api/users/{user_id}/seen")
+def user_seen(user_id: str):
+    """부재 알림 확인 시 last_seen_at 갱신."""
+    from backend.absence_summary import mark_user_seen
+
+    mark_user_seen(require_supabase(), user_id)
+    return {"message": "last_seen_at 업데이트 완료"}
 
 
 # ── 날짜별 핫이슈 ─────────────────────────────────────────────
@@ -372,13 +451,15 @@ def get_hot(date: str, top_k: int = 5):
     end   = f"{date}T23:59:59+00:00"
 
     cols = (
-        "url_hash, url, title, source, source_type, category, country, "
+        "url_hash, url, title, title_ko, source, source_type, category, country, "
         "keywords, published_at, credibility_score, fact_label, "
         "translation, summary_formal, summary_casual"
     )
 
+    # 해당 날짜 조회 기록 집계
+    db = require_supabase()
     logs = (
-        sb.table("user_logs")
+        db.table("user_logs")
         .select("url_hash")
         .eq("action", "view")
         .gte("created_at", start)
@@ -391,13 +472,14 @@ def get_hot(date: str, top_k: int = 5):
         top_hashes = [h for h, _ in counts.most_common(top_k)]
         result = []
         for url_hash in top_hashes:
-            a = sb.table("articles").select(cols).eq("url_hash", url_hash).execute()
+            a = db.table("articles").select(cols).eq("url_hash", url_hash).execute()
             if a.data:
                 result.append({**a.data[0], "view_count": counts[url_hash]})
         return result
     else:
+        # 조회 기록 없으면 해당 날짜 발행 기사 반환
         result = (
-            sb.table("articles")
+            db.table("articles")
             .select(cols)
             .gte("published_at", start)
             .lte("published_at", end)
@@ -410,8 +492,12 @@ def get_hot(date: str, top_k: int = 5):
 
 # ── 로그 직접 기록 (대안 엔드포인트) ────────────────────────
 @app.post("/logs/view")
-def log_view(user_id: str, url_hash: str):
-    sb.table("user_logs").insert({
+def log_view(
+    user_id: str = Query(..., description="유저 ID"),
+    url_hash: str = Query(..., description="기사 url_hash"),
+):
+    db = require_supabase()
+    db.table("user_logs").insert({
         "user_id": user_id,
         "url_hash": url_hash,
         "action": "view",
@@ -422,10 +508,14 @@ def log_view(user_id: str, url_hash: str):
 # ── 프론트엔드 정적 파일 서빙 (SPA) ────────────────────────
 # API 라우트 정의 후 맨 마지막에 마운트해야 API가 우선됨
 _DIST = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "frontend", "dist")
-if os.path.isdir(_DIST):
-    app.mount("/assets", StaticFiles(directory=os.path.join(_DIST, "assets")), name="assets")
+_DIST_WEB = os.path.join(_DIST, "web")
+_STATIC_ROOT = _DIST_WEB if os.path.isfile(os.path.join(_DIST_WEB, "index.html")) else _DIST
+_ASSETS_DIR = os.path.join(_STATIC_ROOT, "assets")
+if os.path.isfile(os.path.join(_STATIC_ROOT, "index.html")):
+    if os.path.isdir(_ASSETS_DIR):
+        app.mount("/assets", StaticFiles(directory=_ASSETS_DIR), name="assets")
 
     @app.get("/{full_path:path}", include_in_schema=False)
     def serve_spa(full_path: str = ""):
         """React SPA — 모든 미매칭 경로를 index.html로 돌려줌"""
-        return FileResponse(os.path.join(_DIST, "index.html"))
+        return FileResponse(os.path.join(_STATIC_ROOT, "index.html"))

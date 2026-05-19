@@ -1,74 +1,66 @@
 /**
- * frontend/src/data/categories.ts — 카테고리 단일 진실 소스(SoT)
- *
- * 이 파일은 다음 4가지를 한 곳에서 책임진다.
- *   1. UI 가 노출하는 카테고리 목록(`CATEGORIES`)
- *   2. DB 가 저장하는 raw 카테고리 → UI 카테고리 정규화(`normalizeCategory`)
- *   3. 페이지 간 공통 필터링 로직(`filterByCategory`)
- *   4. UI 카테고리 → DB raw 카테고리 역매핑(`getRawCategoriesFor`)
- *
- * 어디에서든 카테고리를 다룰 때는 반드시 이 모듈을 통해야 한다.
- * 페이지 컴포넌트에 카테고리 문자열을 하드코딩하는 것을 금지한다.
- *
- * 배경 (이슈 #15)
- *   - 기존에는 `articles.ts`, `HomePage.tsx`, `CategoryPage.tsx`, `OnboardingPage.tsx`
- *     네 곳에 카테고리 배열이 분산 하드코딩되어 라벨 추가/변경 시 동기화 누락이 잦았다.
- *   - DB 레이블 `AI 심층/기술` (The Decoder) 이 매핑되지 않아 모든 The Decoder 기사가
- *     '기타' 로 떨어지는 사일런트 데이터 누락이 발생.
- *   - 공백 / `·` / `/` 등 구분자 차이가 정확 매칭을 깨트림.
+ * frontend/src/data/categories.ts — final 7-category normalization and colors.
  */
-
-// ─────────────────────────────────────────────
-// 1. UI 카테고리 목록 (단일 진실 소스)
-// ─────────────────────────────────────────────
 
 export const CATEGORIES = [
   'AI 연구',
   'AI 심층',
   'AI 스타트업',
-  'AI 비즈니스',
   'AI 윤리',
+  'AI 비즈니스',
   'AI 커뮤니티',
   '테크 전반',
 ] as const;
 
 export type Interest = (typeof CATEGORIES)[number];
-export type Category = Interest | '기타';
+export type DemoCategory = '주요 뉴스' | '기술/AI' | '보안/리스크' | '커뮤니티 이슈';
+export type Category = Interest | DemoCategory;
 
-export const CATEGORY_FALLBACK: Category = '기타';
+export const CATEGORY_FALLBACK: Interest = '테크 전반';
 
-
-// ─────────────────────────────────────────────
-// 2. DB raw → UI 정규화
-//
-// 정확 매칭 → 키 정규화(공백·구분자 제거) 매칭 → 부분 키워드 매칭 → '기타'
-// ─────────────────────────────────────────────
-
-// raw 라벨 그대로의 1:1 매핑
-const EXACT_MAP: Record<string, Category> = {
-  // 현재 RSS 크롤러에서 적재되는 라벨 (collect/crawler/rss_crawler.py 기준)
-  'AI 연구':       'AI 연구',
-  'AI 심층':       'AI 심층',
-  'AI 심층/기술':  'AI 심층',     // The Decoder — 누락이었다 (이슈 #15)
-  'AI/스타트업':   'AI 스타트업',
-  'AI 비즈니스':   'AI 비즈니스',
-  'AI 윤리':       'AI 윤리',
-  'AI 커뮤니티':   'AI 커뮤니티',
-  'AI/반도체':     'AI 연구',
-  'LLM 커뮤니티':  'AI 커뮤니티',
-  'AI 제품':       'AI 비즈니스',
-  '테크 전반':     '테크 전반',
-
-  // 구버전·잠재적 변형 호환
-  'AI 스타트업':   'AI 스타트업',
-  'AI 연구·심층':  'AI 심층',
-  'AI 윤리·정책':  'AI 윤리',
-  'LLM':           'AI 연구',
-  'AI 일반':       'AI 연구',
+const SOURCE_FALLBACK: Record<string, Interest> = {
+  'TechCrunch': 'AI 스타트업',
+  'MIT Technology Review': 'AI 심층',
+  'The Guardian Tech': 'AI 윤리',
+  'IEEE Spectrum': '테크 전반',
+  'The Decoder': 'AI 심층',
+  'VentureBeat AI': 'AI 비즈니스',
+  'The Verge': '테크 전반',
+  'Medium': '테크 전반',
+  'Quanta Magazine': 'AI 연구',
 };
 
-// 공백·구분자 차이를 흡수하기 위한 정규화 키
-//   "AI 연구" / "AI연구" / "AI/연구" / "AI·연구" 가 동일 키가 되도록.
+const EXACT_MAP: Record<string, Category> = {
+  'AI 연구': 'AI 연구',
+  'AI 연구/기술': 'AI 연구',
+  'AI 심층': 'AI 심층',
+  'AI 심층/기술': 'AI 심층',
+  'AI/스타트업': 'AI 스타트업',
+  'AI 스타트업': 'AI 스타트업',
+  'AI 윤리': 'AI 윤리',
+  'AI 윤리/정책': 'AI 윤리',
+  '윤리-정책': 'AI 윤리',
+  'AI 비즈니스': 'AI 비즈니스',
+  'AI 커뮤니티': 'AI 커뮤니티',
+  'LLM 커뮤니티': 'AI 커뮤니티',
+  'LLM/생성AI': 'AI 심층',
+  'AI 제품': 'AI 비즈니스',
+  'AI 제품/서비스': 'AI 비즈니스',
+  'AI 인프라': '테크 전반',
+  'AI/반도체': '테크 전반',
+  '반도체': '테크 전반',
+  '로보틱스/자율주행': '테크 전반',
+  '테크 전반': '테크 전반',
+  '테크전반': '테크 전반',
+  '기타 테크': '테크 전반',
+  '카테고리 없음': '테크 전반',
+  'AI': 'AI 심층',
+  '1': '주요 뉴스',
+  '2': '기술/AI',
+  '3': '보안/리스크',
+  '4': '커뮤니티 이슈',
+};
+
 function canonical(s: string): string {
   return s
     .normalize('NFKC')
@@ -76,55 +68,57 @@ function canonical(s: string): string {
     .replace(/[\s·/_\-\u00b7\u2027]/g, '');
 }
 
-// 정규화 키 매핑 (EXACT_MAP 으로부터 자동 생성)
 const NORMALIZED_MAP: Record<string, Category> = Object.fromEntries(
   Object.entries(EXACT_MAP).map(([raw, ui]) => [canonical(raw), ui]),
 );
 
-// 키워드 부분 매칭(최후 폴백)
-//   완전히 새로운 라벨이 들어와도 핵심 키워드로 분류하기 위함.
-//   순서 중요: 더 구체적인 매칭이 위에.
-const KEYWORD_RULES: { keys: string[]; ui: Category }[] = [
-  { keys: ['스타트업', 'startup'],            ui: 'AI 스타트업' },
-  { keys: ['비즈니스', '제품', 'product'],    ui: 'AI 비즈니스' },
-  { keys: ['윤리', '정책', '규제'],           ui: 'AI 윤리' },
-  { keys: ['커뮤니티', 'reddit', 'forum'],    ui: 'AI 커뮤니티' },
-  { keys: ['심층', '리포트', 'analysis'],     ui: 'AI 심층' },
-  { keys: ['연구', '논문', 'llm', 'paper'],   ui: 'AI 연구' },
-  { keys: ['테크', '일반', 'tech'],           ui: '테크 전반' },
-];
-
-export function normalizeCategory(raw: string | null | undefined): Category {
-  if (!raw) return CATEGORY_FALLBACK;
-
-  const trimmed = raw.trim();
-  if (trimmed.length === 0) return CATEGORY_FALLBACK;
-
-  // 1) 정확 매칭
-  if (trimmed in EXACT_MAP) return EXACT_MAP[trimmed];
-
-  // 2) 정규화 키 매칭 (공백·구분자 차이 흡수)
-  const c = canonical(trimmed);
-  if (c in NORMALIZED_MAP) return NORMALIZED_MAP[c];
-
-  // 3) 키워드 부분 매칭
-  for (const rule of KEYWORD_RULES) {
-    if (rule.keys.some(k => c.includes(canonical(k)))) return rule.ui;
-  }
-
-  return CATEGORY_FALLBACK;
+function looksLikeStartup(source: string, text: string): boolean {
+  return /startup|startups|funding|funded|raises|raised|raise|venture|acquire|acquired|acquisition|seed round|series [abc]|투자|창업|스타트업/i.test(text)
+    || (source === 'TechCrunch' && /startup|funding|raises|seed|series|venture|acquire/i.test(text));
 }
 
+export function fallbackCategoryForSource(source: string | null | undefined, text = ''): Interest {
+  const raw = (source ?? '').trim();
+  if (!raw) return CATEGORY_FALLBACK;
+  if (/hacker news|\bhn\b|lemmy/i.test(raw)) return 'AI 커뮤니티';
+  if (looksLikeStartup(raw, text)) return 'AI 스타트업';
+  return SOURCE_FALLBACK[raw] ?? CATEGORY_FALLBACK;
+}
 
-// ─────────────────────────────────────────────
-// 3. 페이지 공통 필터 (HomePage, CategoryPage 동일 동작 보장)
-// ─────────────────────────────────────────────
+export function normalizeCategory(raw: string | null | undefined, source?: string | null, text = ''): Category {
+  if (looksLikeStartup((source ?? '').trim(), text)) return 'AI 스타트업';
+  if (!raw || raw.trim().length === 0) return fallbackCategoryForSource(source, text);
+  const trimmed = raw.trim();
+  if (trimmed in EXACT_MAP) return EXACT_MAP[trimmed];
+  const c = canonical(trimmed);
+  if (c in NORMALIZED_MAP) return NORMALIZED_MAP[c];
+  return fallbackCategoryForSource(source, text);
+}
 
-/**
- * '전체' 또는 특정 UI 카테고리로 기사 배열을 필터링한다.
- * Article.category 는 toArticle() 단계에서 이미 normalizeCategory() 가 적용되어
- * UI 카테고리(`Category`) 값만 들어있다고 가정한다.
- */
+export interface CategoryStyle {
+  color: string;
+  background: string;
+  border: string;
+}
+
+export const CATEGORY_STYLES: Record<Category, CategoryStyle> = {
+  'AI 연구': { color: '#0F766E', background: '#CCFBF1', border: '#99F6E4' },
+  'AI 심층': { color: '#7E22CE', background: '#F3E8FF', border: '#E9D5FF' },
+  'AI 스타트업': { color: '#BE123C', background: '#FFE4E6', border: '#FECDD3' },
+  'AI 윤리': { color: '#7C2D12', background: '#FFEDD5', border: '#FED7AA' },
+  'AI 비즈니스': { color: '#1D4ED8', background: '#DBEAFE', border: '#BFDBFE' },
+  'AI 커뮤니티': { color: '#B45309', background: '#FEF3C7', border: '#FDE68A' },
+  '테크 전반': { color: '#334155', background: '#E2E8F0', border: '#CBD5E1' },
+  '주요 뉴스': { color: '#1D4ED8', background: '#DBEAFE', border: '#BFDBFE' },
+  '기술/AI': { color: '#0F766E', background: '#CCFBF1', border: '#99F6E4' },
+  '보안/리스크': { color: '#991B1B', background: '#FEE2E2', border: '#FECACA' },
+  '커뮤니티 이슈': { color: '#B45309', background: '#FEF3C7', border: '#FDE68A' },
+};
+
+export function categoryStyle(category: Category): CategoryStyle {
+  return CATEGORY_STYLES[category] ?? CATEGORY_STYLES[CATEGORY_FALLBACK];
+}
+
 export function filterByCategory<T extends { category: Category }>(
   articles: T[],
   target: '전체' | Category,
@@ -132,15 +126,6 @@ export function filterByCategory<T extends { category: Category }>(
   if (target === '전체') return articles;
   return articles.filter(a => a.category === target);
 }
-
-
-// ─────────────────────────────────────────────
-// 4. UI 카테고리 → DB raw 라벨 역매핑
-//
-// 백엔드 `/articles?category=...` 가 raw 라벨로 동작하므로,
-// 서버 사이드 필터를 사용하고 싶을 때 이 함수로 raw 후보를 얻는다.
-// (현재는 클라이언트 사이드 필터로 충분하지만 추후 확장 대비)
-// ─────────────────────────────────────────────
 
 const REVERSE_INDEX: Record<Category, string[]> = (() => {
   const idx: Partial<Record<Category, string[]>> = {};

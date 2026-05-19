@@ -1,57 +1,107 @@
-import { useState, useEffect } from 'react';
-import { fetchArticles } from '../data/api';
-import type { Article } from '../data/articles';
+import { useState, useEffect, useRef } from 'react';
+import { fetchHot } from '../data/api';
+import { articleDisplayTitle, factStatusWeight, hasKoreanTitle, normalizeFactStatus, type Article } from '../data/articles';
+import { FactStatusBadge } from '../components/FactStatusBadge';
 import DetailPage from './DetailPage';
 import type { BookmarkHook } from '../hooks/useBookmarks';
+import type { SummaryTone } from '../hooks/useTonePreference';
 
-const HEAT_COLORS = ['transparent', '#BFDBFE', '#60A5FA', '#1D4ED8'];
-const heat = (day: number) => { const s = (day * 37 + 11) % 100; return s > 80 ? 3 : s > 50 ? 2 : s > 20 ? 1 : 0; };
+type HotArticle = Article & { view_count?: number };
 
-function topForDay(articles: Article[], day: number): (Article & { dayViews: number })[] {
-  return articles
-    .map(a => ({
-      ...a,
-      dayViews: Math.abs(Math.sin(day * 7 + a.credibilityScore * 100) * 15000) | 0,
-    }))
-    .sort((a, b) => b.dayViews - a.dayViews)
-    .slice(0, 5);
+interface Props {
+  bm: BookmarkHook;
+  userId?: string;
+  onArticleClick?: (urlHash: string) => void;
+  tone: SummaryTone;
+  onToneChange: (tone: SummaryTone) => void;
 }
 
-interface Props { bm: BookmarkHook; onArticleClick?: (urlHash: string) => void; }
+export default function HotPage({ bm, userId: _userId, onArticleClick, tone, onToneChange }: Props) {
+  const today = new Date();
+  const [year, setYear]   = useState(today.getFullYear());
+  const [month, setMonth] = useState(today.getMonth());
+  const [day, setDay]     = useState(today.getDate());
+  const [detail, setDetail] = useState<Article | null>(null);
+  const [tops, setTops]     = useState<HotArticle[]>([]);
+  const [loading, setLoading] = useState(false);
+  const mainRef = useRef<HTMLElement | null>(null);
+  const scrollPos = useRef(0);
 
-export default function HotPage({ bm, onArticleClick }: Props) {
-  const [day, setDay]     = useState(25);
-  const [detail, setDetail] = useState<(Article & { dayViews: number }) | null>(null);
-  const [articles, setArticles] = useState<Article[]>([]);
+  const daysInMonth = new Date(year, month + 1, 0).getDate();
+  const firstDay    = new Date(year, month, 1).getDay();
+
+  const dateStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
 
   useEffect(() => {
-    fetchArticles({ limit: 50 }).then(setArticles).catch(() => {});
-  }, []);
+    setLoading(true);
+    fetchHot(dateStr)
+      .then(data => {
+        setTops([...data].sort((a, b) => {
+          const dateDelta = new Date(b.publishedAt).getTime() - new Date(a.publishedAt).getTime();
+          if (dateDelta !== 0) return dateDelta;
+          const statusDelta = factStatusWeight(b.factLabel) - factStatusWeight(a.factLabel);
+          if (statusDelta !== 0) return statusDelta;
+          return (b.credibilityScore ?? 0) - (a.credibilityScore ?? 0);
+        }));
+        setLoading(false);
+      })
+      .catch(() => setLoading(false));
+  }, [dateStr]);
 
-  const tops = topForDay(articles, day);
+  const prevMonth = () => {
+    if (month === 0) { setYear(y => y - 1); setMonth(11); } else setMonth(m => m - 1);
+    setDay(1);
+  };
+  const nextMonth = () => {
+    const now = new Date();
+    if (year === now.getFullYear() && month === now.getMonth()) return;
+    if (month === 11) { setYear(y => y + 1); setMonth(0); } else setMonth(m => m + 1);
+    setDay(1);
+  };
+
+  const isToday = (d: number) => {
+    const n = new Date();
+    return d === n.getDate() && month === n.getMonth() && year === n.getFullYear();
+  };
+  const isFuture = (d: number) => {
+    const n = new Date(); n.setHours(0,0,0,0);
+    return new Date(year, month, d) > n;
+  };
+
+  const openDetail = (article: HotArticle) => {
+    scrollPos.current = mainRef.current?.scrollTop ?? 0;
+    onArticleClick?.(article.urlHash);
+    setDetail(article);
+  };
+
+  const closeDetail = () => {
+    setDetail(null);
+    requestAnimationFrame(() => {
+      if (mainRef.current) mainRef.current.scrollTop = scrollPos.current;
+    });
+  };
+
+  if (detail) return (
+    <DetailPage article={detail} bookmarked={bm.isBookmarked(detail.urlHash)} onBookmark={bm.toggle} onBack={closeDetail} tone={tone} onToneChange={onToneChange} />
+  );
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden', position: 'relative' }}>
-      {detail && (
-        <div style={{ position: 'absolute', inset: 0, zIndex: 100, background: 'var(--color-bg)', overflow: 'hidden' }}>
-          <DetailPage article={detail} bookmarked={bm.isBookmarked(detail.urlHash)} onBookmark={bm.toggle} onBack={() => setDetail(null)} />
-        </div>
-      )}
+    <div style={{ display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden', background: 'var(--color-header-bg)' }}>
       <style>{`@keyframes listIn { from{opacity:0;transform:translateY(8px)} to{opacity:1;transform:translateY(0)} }`}</style>
 
-      <header style={{ background: 'var(--color-surface)', borderBottom: '0.5px solid var(--color-border)', padding: '18px 20px 14px', flexShrink: 0 }}>
-        <h1 style={{ fontSize: 20, fontWeight: 700, letterSpacing: '-0.03em', marginBottom: 2 }}>핫이슈</h1>
-        <p style={{ fontSize: 12, color: 'var(--color-text-tertiary)' }}>날짜별 가장 많이 읽힌 기사</p>
+      <header style={{ flexShrink: 0, padding: '22px 20px 20px' }}>
+        <h1 style={{ fontSize: 26, fontWeight: 800, letterSpacing: '-0.04em', color: 'var(--color-header-text)', marginBottom: 3 }}>핫이슈</h1>
+        <p style={{ fontSize: 12, color: 'var(--color-header-text-secondary)' }}>날짜별 가장 많이 읽힌 기사</p>
       </header>
 
-      <main style={{ flex: 1, overflowY: 'auto', WebkitOverflowScrolling: 'touch' }}>
+      <main ref={mainRef} style={{ flex: 1, overflowY: 'auto', WebkitOverflowScrolling: 'touch', background: 'var(--color-bg)', borderRadius: '32px 32px 0 0' }}>
 
         {/* 캘린더 */}
         <div style={{ background: 'var(--color-surface)', margin: '12px 16px 0', borderRadius: 'var(--radius-lg)', padding: '16px', boxShadow: 'var(--shadow-card)' }}>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
-            <button style={{ padding: '4px 8px', fontSize: 16, color: 'var(--color-text-tertiary)' }}>‹</button>
-            <span style={{ fontSize: 14, fontWeight: 600 }}>2026년 3월</span>
-            <button style={{ padding: '4px 8px', fontSize: 16, color: 'var(--color-text-tertiary)' }}>›</button>
+            <button onClick={prevMonth} style={{ padding: '4px 8px', fontSize: 16, color: 'var(--color-text-tertiary)' }}>‹</button>
+            <span style={{ fontSize: 14, fontWeight: 600 }}>{year}년 {month + 1}월</span>
+            <button onClick={nextMonth} style={{ padding: '4px 8px', fontSize: 16, color: 'var(--color-text-tertiary)' }}>›</button>
           </div>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7,1fr)', marginBottom: 6 }}>
             {['일','월','화','수','목','금','토'].map(d => (
@@ -59,74 +109,107 @@ export default function HotPage({ bm, onArticleClick }: Props) {
             ))}
           </div>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7,1fr)', gap: 3 }}>
-            {Array.from({ length: 31 }).map((_, i) => {
+            {Array.from({ length: firstDay }).map((_, i) => <div key={`e${i}`} />)}
+            {Array.from({ length: daysInMonth }).map((_, i) => {
               const d = i + 1;
-              const future = d > 25;
+              const future = isFuture(d);
               const sel = d === day;
-              const h = future ? 0 : heat(d);
+              const todayDay = isToday(d);
               return (
                 <button key={d} onClick={() => !future && setDay(d)} disabled={future} style={{
                   aspectRatio: '1', display: 'flex', flexDirection: 'column',
                   alignItems: 'center', justifyContent: 'center', borderRadius: 8, gap: 2,
-                  background: sel ? 'var(--color-primary)' : 'transparent',
+                  background: sel ? 'var(--color-primary)' : todayDay ? 'var(--color-primary-light)' : 'transparent',
                   opacity: future ? 0.25 : 1, cursor: future ? 'default' : 'pointer',
                 }}>
-                  <span style={{ fontSize: 11, fontWeight: sel ? 600 : 400, color: sel ? '#fff' : 'var(--color-text-primary)' }}>{d}</span>
-                  {!future && !sel && h > 0 && <div style={{ width: 4, height: 4, borderRadius: '50%', background: HEAT_COLORS[h] }} />}
+                  <span style={{ fontSize: 11, fontWeight: sel || todayDay ? 600 : 400, color: sel ? '#fff' : 'var(--color-text-primary)' }}>{d}</span>
                 </button>
               );
             })}
-          </div>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 5, marginTop: 10 }}>
-            <span style={{ fontSize: 10, color: 'var(--color-text-tertiary)' }}>조회수</span>
-            {HEAT_COLORS.slice(1).map(c => <div key={c} style={{ width: 8, height: 8, borderRadius: 2, background: c }} />)}
-            <span style={{ fontSize: 10, color: 'var(--color-text-tertiary)' }}>높음</span>
           </div>
         </div>
 
         {/* Top 기사 */}
         <div style={{ padding: '16px 16px 24px' }}>
           <div style={{ display: 'flex', alignItems: 'baseline', gap: 6, marginBottom: 12 }}>
-            <span style={{ fontSize: 15, fontWeight: 700 }}>3월 {day}일</span>
+            <span style={{ fontSize: 15, fontWeight: 700 }}>{month + 1}월 {day}일</span>
             <span style={{ fontSize: 12, color: 'var(--color-text-tertiary)' }}>인기 기사 Top {tops.length}</span>
           </div>
+          <p style={{ fontSize: 11, color: 'var(--color-text-tertiary)', lineHeight: 1.55, marginBottom: 12 }}>
+            신뢰도는 출처, 교차검증 여부, AI 판별 결과를 종합한 참고 지표입니다.
+          </p>
+
+          {loading && (
+            <div style={{ textAlign: 'center', padding: '40px 0', color: 'var(--color-text-tertiary)', fontSize: 13 }}>
+              불러오는 중...
+            </div>
+          )}
+
+          {!loading && tops.length === 0 && (
+            <div style={{ textAlign: 'center', padding: '40px 0' }}>
+              <div style={{ fontSize: 32, marginBottom: 8 }}>📭</div>
+              <p style={{ fontSize: 14, color: 'var(--color-text-tertiary)' }}>해당 날짜 기사가 없어요</p>
+            </div>
+          )}
+
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
             {tops.map((article, i) => {
-              const rankColor = i === 0 ? '#B45309' : i === 1 ? '#6B7280' : i === 2 ? '#92400E' : 'var(--color-text-tertiary)';
-              const maxV = tops[0]?.dayViews ?? 1;
+              const status = normalizeFactStatus(article.factLabel);
+              const rankColor = i < 3 ? 'var(--color-primary)' : 'var(--color-text-tertiary)';
+              const barColor = status === 'RUMOR'
+                ? '#F59E0B'
+                : status === 'HITL_REQUIRED'
+                  ? '#8B5CF6'
+                  : status === 'UNVERIFIED'
+                  ? '#8B95A1'
+                  : i < 3 ? 'var(--color-primary)' : 'var(--color-text-tertiary)';
+              const viewCount = article.view_count ?? 0;
+              const maxV = (tops[0]?.view_count ?? 1) || 1;
               return (
-                <button key={`${day}-${article.urlHash}`} onClick={() => { onArticleClick?.(article.urlHash); setDetail(article); }} style={{
-                  display: 'flex', alignItems: 'flex-start', gap: 12,
-                  background: 'var(--color-surface)', borderRadius: 'var(--radius-md)',
-                  padding: '13px 14px', boxShadow: 'var(--shadow-card)', textAlign: 'left',
-                  transition: 'transform 0.12s', animation: `listIn 0.25s ${i * 0.05}s ease both`,
-                }}
+                <button
+                  key={article.urlHash}
+                  onClick={() => openDetail(article)}
+                  style={{
+                    display: 'flex', alignItems: 'flex-start', gap: 12,
+                    background: 'var(--color-surface)', borderRadius: 'var(--radius-md)',
+                    padding: '13px 14px', boxShadow: 'var(--shadow-card)', textAlign: 'left',
+                    transition: 'transform 0.12s', animation: `listIn 0.25s ${i * 0.05}s ease both`,
+                  }}
                   onTouchStart={e => { (e.currentTarget as HTMLElement).style.transform = 'scale(0.985)'; }}
                   onTouchEnd={e => { (e.currentTarget as HTMLElement).style.transform = ''; }}
                 >
-                  <span style={{ fontSize: 16, fontWeight: 700, color: rankColor, minWidth: 24, paddingTop: 1 }}>{i + 1}</span>
+                  <span aria-label={`신뢰도 순위 ${i + 1}위`} style={{ fontSize: 11, fontWeight: 800, color: rankColor, minWidth: 30, paddingTop: 1 }}>{i + 1}위</span>
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 5, marginBottom: 4 }}>
-                      <div style={{ width: 5, height: 5, borderRadius: '50%', background: article.sourceColor }} />
+                      <div style={{ width: 5, height: 5, borderRadius: '50%', background: article.sourceColor ?? '#6B7280' }} />
                       <span style={{ fontSize: 11, color: 'var(--color-text-secondary)' }}>{article.source}</span>
+                      <FactStatusBadge label={article.factLabel} />
                     </div>
-                    <p style={{ fontSize: 13, fontWeight: 600, color: 'var(--color-text-primary)', lineHeight: 1.4, marginBottom: 8 }}>{article.title}</p>
+                    <p style={{ fontSize: 13, fontWeight: hasKoreanTitle(article) ? 600 : 500, color: hasKoreanTitle(article) ? 'var(--color-text-primary)' : 'var(--color-text-secondary)', lineHeight: 1.4, marginBottom: 8 }}>{articleDisplayTitle(article)}</p>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                       <div style={{ flex: 1, height: 3, borderRadius: 2, background: 'var(--color-border)', overflow: 'hidden' }}>
-                        <div style={{ height: '100%', borderRadius: 2, background: 'var(--color-primary)', width: `${(article.dayViews / maxV) * 100}%` }} />
+                        <div style={{ height: '100%', borderRadius: 2, background: barColor, width: viewCount > 0 ? `${(viewCount / maxV) * 100}%` : '20%', opacity: i < 3 ? 1 : 0.45 }} />
                       </div>
-                      <span style={{ fontSize: 11, color: 'var(--color-text-tertiary)', whiteSpace: 'nowrap' }}>{article.dayViews.toLocaleString()}</span>
+                      <span style={{ fontSize: 11, color: 'var(--color-text-tertiary)', whiteSpace: 'nowrap' }}>
+                        {viewCount > 0 ? `${viewCount.toLocaleString()} 조회` : '발행일 기준'}
+                      </span>
                     </div>
                   </div>
-                  <button onClick={e => { e.stopPropagation(); bm.toggle(article.urlHash); }} style={{
-                    width: 28, height: 28, borderRadius: 6, flexShrink: 0,
-                    background: bm.isBookmarked(article.urlHash) ? '#FEF3C7' : 'var(--color-surface-secondary)',
-                    display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'all 0.15s',
-                  }}>
+                  {/* 북마크 — div로 감싸서 button 중첩 방지 */}
+                  <div
+                    role="button"
+                    onClick={e => { e.stopPropagation(); bm.toggle(article.urlHash, article); }}
+                    style={{
+                      width: 28, height: 28, borderRadius: 6, flexShrink: 0,
+                      background: bm.isBookmarked(article.urlHash) ? '#FEF3C7' : 'var(--color-surface-secondary)',
+                      display: 'flex', alignItems: 'center', justifyContent: 'center',
+                      transition: 'all 0.15s', cursor: 'pointer',
+                    }}
+                  >
                     <svg width="12" height="12" viewBox="0 0 24 24" fill={bm.isBookmarked(article.urlHash) ? '#D97706' : 'none'}>
                       <path d="M19 21L12 16L5 21V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v16z" stroke={bm.isBookmarked(article.urlHash) ? '#D97706' : 'var(--color-text-tertiary)'} strokeWidth="1.7" strokeLinejoin="round"/>
                     </svg>
-                  </button>
+                  </div>
                 </button>
               );
             })}

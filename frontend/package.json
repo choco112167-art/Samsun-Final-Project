@@ -4,15 +4,21 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
-    "dev": "vite",
-    "build": "ait build",
+    "dev": "vite --host 0.0.0.0 --port 5173",
+    "dev:host": "vite --host 0.0.0.0 --port 5173",
+    "check:build-env": "node scripts/check-build-env.mjs",
+    "typecheck": "tsc -b",
+    "build": "npm run check:build-env && vite build",
+    "ait:dev": "granite dev",
+    "ait:build": "npm run check:build-env && ait build",
+    "ait:deploy": "ait deploy",
     "lint": "eslint .",
-    "preview": "vite preview",
-    "deploy": "ait deploy"
+    "preview": "vite preview"
   },
   "dependencies": {
-    "@apps-in-toss/web-framework": "^2.0.9",
+    "@apps-in-toss/web-framework": "^2.4.7",
     "@emotion/react": "^11.14.0",
+    "@supabase/supabase-js": "^2.105.4",
     "@toss/tds-mobile": "^2.3.0",
     "@toss/tds-mobile-ait": "^2.3.0",
     "react": "^18.3.1",

@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import TabBar, { type TabId } from './components/TabBar';
 import OnboardingPage, { type Interest } from './pages/OnboardingPage';
 import HomePage from './pages/HomePage';
@@ -7,11 +7,14 @@ import HotPage from './pages/HotPage';
 import SearchPage from './pages/SearchPage';
 import MyFeedPage from './pages/MyFeedPage';
 import { useBookmarks } from './hooks/useBookmarks';
-import { recordArticleView } from './data/api';
+import { useTonePreference } from './hooks/useTonePreference';
+import { recordArticleView, fetchAbsenceSummary, markUserSeen, type AbsenceSummaryResponse } from './data/api';
+import { getSamsunUserId, tossHaptic } from './lib/toss';
 
 const LS_ONBOARDED = 'samsun_onboarded';
 const LS_INTERESTS = 'samsun_interests';
 
+/** 개발 중 강제 온보딩 화면 — 배포 전 반드시 false */
 const DEV_FORCE_ONBOARDING = false;
 
 function loadInterests(): Interest[] {
@@ -24,20 +27,31 @@ export default function App() {
     () => (DEV_FORCE_ONBOARDING ? false : localStorage.getItem(LS_ONBOARDED) === 'true'),
   );
   const [interests, setInterests] = useState<Interest[]>(loadInterests);
-  const [userId, setUserId] = useState(
-    () => localStorage.getItem('samsun_user_id') ?? '',
-  );
+  const [userId, setUserId] = useState(() => {
+    return getSamsunUserId();
+  });
   const [activeTab, setActiveTab] = useState<TabId>('home');
   const bm = useBookmarks();
+  const { tone, setTone } = useTonePreference();
+  const [absenceData, setAbsenceData] = useState<AbsenceSummaryResponse | null>(null);
+
+  // 앱 진입 시 부재 요약 확인
+  useEffect(() => {
+    if (!userId) return;
+    fetchAbsenceSummary(userId)
+      .then(res => { if (res.show) setAbsenceData(res); })
+      .catch(() => {});
+  }, [userId]);
 
   const handleInterestsChange = (next: Interest[]) => {
     setInterests(next);
     localStorage.setItem(LS_INTERESTS, JSON.stringify(next));
   };
 
-  // 모든 탭에서 기사 클릭 시 호출 — user_vector 업데이트
+  // 모든 탭에서 기사 클릭 시 호출 — user_vector 업데이트 + 조회수 기록
   const handleArticleClick = (urlHash: string) => {
     if (userId) {
+      tossHaptic().catch(() => {});
       recordArticleView(userId, urlHash).catch(() => {});
     }
   };
@@ -51,6 +65,7 @@ export default function App() {
           setOnboarded(true);
           localStorage.setItem(LS_ONBOARDED, 'true');
           localStorage.setItem(LS_INTERESTS, JSON.stringify(selected));
+          localStorage.setItem('samsun_user_id', uid); // 첫 번째 코드에서 유지
         }} />
       </div>
     );
@@ -62,13 +77,22 @@ export default function App() {
         return (
           <HomePage
             bm={bm}
+            userId={userId}
+            interests={interests}
             onNavigateToFeed={() => setActiveTab('my')}
             onArticleClick={handleArticleClick}
+            absenceData={absenceData}
+            onAbsenceDismiss={() => {
+              setAbsenceData(null);
+              if (userId) markUserSeen(userId).catch(() => {});
+            }}
+            tone={tone}
+            onToneChange={setTone}
           />
         );
-      case 'category': return <CategoryPage bm={bm} onArticleClick={handleArticleClick} />;
-      case 'hot':      return <HotPage bm={bm} onArticleClick={handleArticleClick} />;
-      case 'search':   return <SearchPage bm={bm} onArticleClick={handleArticleClick} />;
+      case 'category': return <CategoryPage bm={bm} onArticleClick={handleArticleClick} tone={tone} onToneChange={setTone} />;
+      case 'hot':      return <HotPage bm={bm} onArticleClick={handleArticleClick} tone={tone} onToneChange={setTone} />;
+      case 'search':   return <SearchPage bm={bm} onArticleClick={handleArticleClick} tone={tone} onToneChange={setTone} />;
       case 'my':
         return (
           <MyFeedPage
@@ -77,6 +101,8 @@ export default function App() {
             interests={interests}
             onInterestsChange={handleInterestsChange}
             userId={userId}
+            tone={tone}
+            onToneChange={setTone}
           />
         );
     }

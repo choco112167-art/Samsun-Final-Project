@@ -3,20 +3,29 @@
 LLM 출력 또는 학습 데이터의 노이즈를 제거하고 JSON 파싱을 보장합니다.
 
 사용법:
-    from pipeline.utils import preprocess_text, extract_json
+    from pipeline.utils import preprocess_text, extract_json, extract_loose_json_object
 """
+
+from __future__ import annotations
 
 import json
 import re
+from typing import Any
 
-_FIELDS = ["title_ko", "translation", "summary_formal", "summary_casual"]
+_FIELDS = ["title", "translation", "summary_formal", "summary_casual"]
+
+_LABEL_ALIASES = {
+    "translation": ["번역 전문", "원문 번역본", "translation"],
+    "summary_formal": ["격식체 요약", "summary_formal", "formal summary"],
+    "summary_casual": ["일상체 요약", "summary_casual", "casual summary"],
+}
 
 
 def preprocess_text(text: str) -> str:
     """LLM 출력·학습 데이터의 표면 노이즈 제거.
 
     제거 항목:
-    - <think>...</think> 태그 (Qwen3 사고 잔재)
+    - <think>...</think> 태그 (일부 LLM의 사고 과정 잔재)
     - 마크다운 코드블록 (```json ... ```)
     - 스마트 따옴표 → 표준 따옴표
     - CRLF → LF 정규화
@@ -68,12 +77,8 @@ def _extract_raw(text: str) -> dict[str, str]:
             for end_pat in (
                 f'", "{next_f}"',
                 f'",\n"{next_f}"',
-                f'",\n  "{next_f}"',    # 2칸 들여쓰기
-                f'",\n    "{next_f}"',  # 4칸 들여쓰기
-                f'",\n\t"{next_f}"',    # 탭 들여쓰기
+                f'",\n  "{next_f}"',
                 f'",\r\n"{next_f}"',
-                f'",\r\n  "{next_f}"',
-                f'",\r\n    "{next_f}"',
             ):
                 ep = text.find(end_pat, content_start)
                 if ep != -1:
@@ -82,7 +87,7 @@ def _extract_raw(text: str) -> dict[str, str]:
 
         if content_end is None:
             # 마지막 필드 또는 경계 못 찾은 경우
-            for end_pat in ('"}', '" }', '"\n}', '"\r\n}'):
+            for end_pat in ('"}', '" }', '"\n}'):
                 ep = text.rfind(end_pat, content_start)
                 if ep > content_start:
                     content_end = ep
@@ -134,32 +139,67 @@ def extract_json(text: str) -> dict:
         obj = json.loads(repaired)
         return {f: obj.get(f, "") for f in _FIELDS}
 
-    # ── 3단계: 필드별 regex 추출 (Gemma 등 비표준 출력 대응) ─────
-    # JSON 키-값 패턴으로 각 필드를 독립 추출 (구조 손상 무관)
-    regex_result: dict[str, str] = {}
-    for field in _FIELDS:
-        m = re.search(
-            rf'"{field}"\s*:\s*"((?:[^"\\]|\\.)*)"', text, re.DOTALL
-        )
-        if m:
-            regex_result[field] = (m.group(1)
-                                   .replace('\\"', '"')
-                                   .replace('\\n', '\n')
-                                   .replace('\\\\', '\\'))
-    if regex_result.get("translation"):
-        return {f: regex_result.get(f, "") for f in _FIELDS}
+    labeled = _extract_labeled_sections(text)
+    if labeled.get("translation"):
+        return {f: labeled.get(f, "") for f in _FIELDS}
 
-    # ── 4단계: 절대 최후 수단 (JSON 형식 자체가 없는 경우) ───────
-    # 한국어 텍스트 블록이 있으면 translation으로 사용
-    ko_blocks = re.findall(r'[가-힣][^{}"\n]{10,}', text)
-    if ko_blocks:
-        return {
-            "translation":    "\n".join(ko_blocks),
-            "summary_formal": "",
-            "summary_casual": "",
-        }
+    # ── 3단계: 절대 최후 수단 ────────────────────────────────
     return {
-        "translation":    "",
-        "summary_formal": "",
-        "summary_casual": "",
+        "translation":    text,
+        "summary_formal": "(파싱 실패)",
+        "summary_casual": "(파싱 실패)",
     }
+
+
+def _label_pattern(label: str) -> str:
+    return rf"^\s*(?:#+\s*)?(?:\[?{re.escape(label)}\]?)\s*[:：]?\s*$"
+
+
+def _extract_labeled_sections(text: str) -> dict[str, str]:
+    """Parse label-style outputs while preserving full translation newlines.
+
+    Supports:
+      번역 전문:
+      ...
+      격식체 요약:
+      1. ...
+      일상체 요약:
+      1. ...
+    """
+    matches: list[tuple[str, int, int]] = []
+    for field, labels in _LABEL_ALIASES.items():
+        for label in labels:
+            for match in re.finditer(_label_pattern(label), text, flags=re.IGNORECASE | re.MULTILINE):
+                matches.append((field, match.start(), match.end()))
+
+    if not matches:
+        return {}
+
+    matches.sort(key=lambda item: item[1])
+    parsed: dict[str, str] = {}
+    for index, (field, _start, end) in enumerate(matches):
+        next_start = matches[index + 1][1] if index + 1 < len(matches) else len(text)
+        value = text[end:next_start].strip()
+        if value:
+            parsed[field] = value
+    return parsed
+
+
+def extract_loose_json_object(text: str) -> dict[str, Any]:
+    """
+    Gemini 등에서 반환된 자연어 혼합 텍스트에서 첫 JSON 객체를 추출합니다.
+    코드블록·주변 설명이 붙어도 동작합니다.
+    """
+    cleaned = re.sub(r"```(?:json)?\s*|\s*```", "", text or "").strip()
+    try:
+        return json.loads(cleaned)
+    except json.JSONDecodeError:
+        pass
+    for pattern in (r"\{[\s\S]*\}", r"\{[^{}]*\}"):
+        m = re.search(pattern, cleaned)
+        if m:
+            try:
+                return json.loads(m.group())
+            except json.JSONDecodeError:
+                continue
+    return {}

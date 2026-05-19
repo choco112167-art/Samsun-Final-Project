@@ -1,57 +1,55 @@
-import { toArticle } from './articles';
+import { supabase, isSupabaseConfigured, getSupabaseConfigIssue } from '../lib/supabase';
+import {
+  articleCompletenessScore,
+  articleSummaryForTone,
+  articleTranslationForDisplay,
+  demoFeedRankScore,
+  factStatusWeight,
+  hasKoreanTitle,
+  isDemoArticle,
+  isValidSummary,
+  isValidTranslation,
+  toArticle,
+  normalizeCategory,
+} from './articles';
 import type { Article } from './articles';
-/**
- * frontend/src/data/api.ts — 삼선뉴스 API 클라이언트
- *
- * 프론트엔드에서 백엔드(FastAPI)로 HTTP 요청을 보내는 함수들을 모아놓은 파일.
- * 모든 API 호출은 이 파일을 통해서 한다.
- *
- * 엔드포인트 맵 (backend/main.py 기준)
- *   GET  /articles          → fetchArticles()    기사 목록 조회
- *   GET  /article/:url_hash → fetchArticleByHash() 기사 상세 조회
- *   POST /onboarding        → postOnboarding()   유저 관심사 등록
- *   GET  /feed/:userId      → fetchFeed()        맞춤 기사 추천
- *   GET  /search?q=         → searchArticles()   벡터 검색
- *   GET  /health            → healthCheck()      서버 상태 확인
- */
-
-// 백엔드 서버 주소를 환경변수에서 읽는다
-// .env 파일의 VITE_API_BASE_URL 값을 사용하고, 없으면 로컬호스트를 기본값으로
-
-const BASE_URL = (import.meta.env.VITE_API_BASE_URL as string | undefined)
-  ?? 'http://localhost:8000';
-
-// 코랩 ngrok URL — AI 추천 전용
-// 코랩 실행 후 출력된 ngrok URL로 교체하세요
-const COLAB_URL = (import.meta.env.VITE_COLAB_URL as string | undefined)
-  ?? 'https://purebred-cadmium-rosy.ngrok-free.dev';
 
 /**
- * 모든 API 요청의 공통 처리를 담당하는 내부 함수.
- * 직접 호출하지 않고 아래 함수들이 내부적으로 사용한다.
+ * Samsun News frontend data adapter.
  *
- * @param path  엔드포인트 경로 (예: "/articles", "/feed/user_123")
- * @param init  fetch 옵션 (method, body 등)
+ * Runtime policy:
+ * - No custom server dependency in the Apps in Toss bundle.
+ * - No live LLM calls from the frontend.
+ * - Read public article rows from Supabase with the anon key only.
+ * - If Supabase has no rows, return an empty list so the UI can show an empty state.
  */
-async function request<T>(path: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(`${BASE_URL}${path}`, {
-    headers: { 'Content-Type': 'application/json' },   // 모든 요청에 JSON 헤더 추가
-    ...init,   // 추가 옵션이 있으면 덮어쓴다 (예: POST의 body)
-  });
 
-  // HTTP 에러(4xx, 5xx)가 있으면 ApiError를 던진다
-  if (!res.ok) {
-    const body = await res.text().catch(() => '');
-    throw new ApiError(res.status, body || res.statusText);
-  }
+const ARTICLE_FIELDS = [
+  'url_hash',
+  'url',
+  'title',
+  'title_ko',
+  'source',
+  'source_type',
+  'category',
+  'country',
+  'keywords',
+  'published_at',
+  'created_at',
+  'collected_at',
+  'content',
+  'credibility_score',
+  'fact_label',
+  'translation',
+  'summary_formal',
+  'summary_casual',
+].join(',');
 
-  return res.json() as Promise<T>;   // 응답 JSON을 타입 T로 파싱해서 반환
-}
+const DEMO_POLISHED_FEED = import.meta.env.VITE_DEMO_POLISHED_FEED === '1';
+const HIDE_DEMO_ARTICLES = import.meta.env.VITE_HIDE_DEMO_ARTICLES === '1' || DEMO_POLISHED_FEED;
+const DEMO_RANGE_START = new Date('2026-05-01T00:00:00+09:00').getTime();
+const DEMO_RANGE_END = new Date('2026-05-18T23:59:59+09:00').getTime();
 
-/**
- * API 에러 클래스 — 일반 Error에 HTTP 상태 코드를 추가한 버전
- * 화면에서 "404 기사 없음" 같은 에러를 구분해서 처리할 때 사용
- */
 export class ApiError extends Error {
   status: number;
   constructor(status: number, message: string) {
@@ -61,174 +59,779 @@ export class ApiError extends Error {
   }
 }
 
-
-// ─────────────────────────────────────────────
-// 타입 정의 — DB 컬럼명과 1:1 대응
-// 백엔드에서 내려오는 JSON의 구조를 타입으로 선언해둔다
-// ─────────────────────────────────────────────
-
-/** articles 테이블 컬럼과 동일한 구조 */
 export interface ApiArticle {
-  // 식별
-  url_hash:          string;   // MD5(url) — DB의 PK, 기사 고유 ID
-  url:               string;   // 원문 URL (DetailPage "원문 보기" 버튼에 사용)
-
-  // 메타 정보
-  title:             string;   // 기사 제목 (영문)
-  source:            string;   // 언론사명 (TechCrunch, MIT TR 등)
-  source_type:       'media' | 'community';  // 미디어 vs 커뮤니티
-  category:          string;   // 카테고리 (AI 모델, 반도체 등)
-  country:           string;   // 발행 국가
-  keywords:          string[]; // 키워드 배열 — 태그 UI, 검색 필터에 사용
-  published_at:      string;   // 기사 발행 시각 (ISO 8601 형식)
-  collected_at:      string;   // 파이프라인 수집 시각 (ISO 8601)
-
-  // 콘텐츠
-  content:           string;   // 영문 원문 본문
-
-  // 신뢰도
-  credibility_score: number;   // 출처 신뢰도 (0.0~1.0)
-  fact_label:        'FACT' | 'UNVERIFIED' | 'RUMOR';  // 자동 분류된 팩트 라벨
-
-  // 번역 / 요약 (이동우님 파이프라인 결과)
-  translation:       string;   // 한국어 번역 전문
-  summary_formal:    string;   // 격식체 3줄 요약 (~습니다)
-  summary_casual:    string;   // 일상체 3줄 요약 (~해요)
-
-  // 프론트 전용 필드 (백엔드에서 계산해서 내려줌)
-  is_new:            boolean;  // 6시간 이내 기사 여부 → "NEW" 뱃지 표시
-  is_breaking:       boolean;  // 속보 여부 → "속보" 뱃지 표시
-  time_ago:          string;   // "3시간 전" 포맷으로 변환된 시간
-  source_color:      string;   // 소스별 브랜드 컬러 (HEX) — 카드 액센트 바에 사용
+  id?: string | number;
+  url_hash: string;
+  url: string;
+  source_url?: string;
+  original_url?: string;
+  title: string;
+  title_ko?: string;
+  source: string;
+  source_type: 'media' | 'community';
+  category: string;
+  country: string;
+  keywords: string[];
+  published_at: string;
+  created_at?: string;
+  collected_at: string;
+  content: string;
+  credibility_score: number;
+  fact_confidence?: number;
+  fact_status?: string;
+  fact_reason?: string;
+  fact_insight?: string;
+  fact_label: 'FACT' | 'VERIFIED' | 'UNVERIFIED' | 'RUMOR' | 'HITL_REQUIRED' | 'INSIGHT' | 'FACT_INSIGHT';
+  translation: string;
+  summary_formal: string;
+  summary_casual: string;
+  slang_terms?: string[];
+  neologism_terms?: string[];
+  ai_status?: 'pending' | 'processing' | 'completed' | 'failed' | 'skipped';
+  ai_provider?: 'mock' | 'openrouter' | 'gemini' | 'local' | string;
+  ai_model?: string;
+  ai_generated_at?: string;
+  ai_error?: string;
+  is_demo?: boolean;
+  is_hidden?: boolean;
+  demo_visible?: boolean;
+  demo_priority?: number;
+  embedding?: unknown;
+  is_new: boolean;
+  is_breaking: boolean;
+  time_ago: string;
+  source_color: string;
 }
 
-/** fetchArticles()에 넘길 수 있는 필터 파라미터 */
 export interface FetchArticlesParams {
-  category?:    string;
-  source?:      string;
+  category?: string;
+  source?: string;
   source_type?: 'media' | 'community';
-  limit?:       number;
-  offset?:      number;
+  limit?: number;
+  offset?: number;
   is_breaking?: boolean;
 }
 
-export interface OnboardingRequest  { user_id: string; interest_tags: string[]; }
+export interface NeologismEntry {
+  term: string;
+  explanation?: string | null;
+  ko_suggestion?: string | null;
+  occurrence_count?: number | null;
+  confirmed?: boolean | null;
+  first_seen_url_hash?: string | null;
+}
+
+export interface OnboardingRequest { user_id: string; interest_tags: string[]; }
 export interface OnboardingResponse { message: string; }
-
-/** 피드 추천 결과 — 유사도 점수가 추가된 기사 */
-export interface FeedArticle  extends ApiArticle { similarity?: number; }
-
-/** 검색 결과 — 유사도 점수가 추가된 기사 */
 export interface SearchResult extends ApiArticle { similarity?: number; }
+interface UserProfileRow {
+  user_id: string;
+  interest_tags?: string[] | null;
+  user_vector?: unknown;
+}
 
+function requireSupabase(): void {
+  if (!isSupabaseConfigured()) {
+    throw new ApiError(0, getSupabaseConfigIssue() ?? 'Supabase env is not configured');
+  }
+}
 
-// ─────────────────────────────────────────────
-// API 함수들
-// ─────────────────────────────────────────────
+function supabaseErrorMessage(action: string, error: { message?: string; code?: string; details?: string; hint?: string }): string {
+  const parts = [
+    action,
+    error.code ? `code=${error.code}` : '',
+    error.message ?? '',
+    error.details ? `details=${error.details}` : '',
+    error.hint ? `hint=${error.hint}` : '',
+  ].filter(Boolean);
+  return parts.join(' · ');
+}
 
-/**
- * 기사 목록을 가져온다.
- * HomePage, CategoryPage, HotPage에서 사용.
- */
+function buildArticleQuery(params: FetchArticlesParams = {}) {
+  let query = supabase
+    .from('articles')
+    .select(ARTICLE_FIELDS)
+    .order('published_at', { ascending: false });
+
+  if (params.source) query = query.eq('source', params.source);
+  if (params.source_type) query = query.eq('source_type', params.source_type);
+
+  const limit = params.limit ?? 20;
+  const offset = params.offset ?? 0;
+  query = query.range(offset, offset + Math.max(limit, 1) - 1);
+  return query;
+}
+
+function toArticleList(rows: ApiArticle[] | null): Article[] {
+  return (rows ?? []).map(toArticle);
+}
+
+async function attachOptionalPresentationFields(rows: ApiArticle[]): Promise<ApiArticle[]> {
+  if (rows.length === 0) return rows;
+  const hashes = rows.map(row => row.url_hash).filter(Boolean).slice(0, 500);
+  if (hashes.length === 0) return rows;
+
+  const result = await supabase
+    .from('articles')
+    .select('url_hash,is_demo,is_hidden,demo_visible,demo_priority')
+    .in('url_hash', hashes);
+
+  if (result.error) {
+    if (import.meta.env.DEV) {
+      console.warn('[api] optional presentation fields unavailable', result.error.message);
+    }
+    return rows;
+  }
+
+  const extras = new Map<string, Partial<ApiArticle>>();
+  for (const row of (result.data ?? []) as Partial<ApiArticle>[]) {
+    if (row.url_hash) extras.set(row.url_hash, row);
+  }
+  return rows.map(row => ({ ...row, ...(extras.get(row.url_hash) ?? {}) }));
+}
+
+function polishedFeedSort(a: Article, b: Article): number {
+  const dateDelta = getArticleTime(b) - getArticleTime(a);
+  if (dateDelta !== 0) return dateDelta;
+  if (DEMO_POLISHED_FEED) {
+    const demoDelta = Number(isDemoArticle(b)) - Number(isDemoArticle(a));
+    if (demoDelta !== 0) return demoDelta;
+    const demoRankDelta = demoFeedRankScore(b) - demoFeedRankScore(a);
+    if (demoRankDelta !== 0) return demoRankDelta;
+    const statusDelta = factStatusWeight(b.factLabel) - factStatusWeight(a.factLabel);
+    if (statusDelta !== 0) return statusDelta;
+  }
+  const qualityDelta = articleCompletenessScore(b) - articleCompletenessScore(a);
+  if (qualityDelta !== 0) return qualityDelta;
+  return (b.demoPriority ?? 0) - (a.demoPriority ?? 0);
+}
+
+function getArticleTime(article: Article): number {
+  const published = new Date(article.publishedAt).getTime();
+  return Number.isFinite(published) ? published : 0;
+}
+
+function isCompletePresentationArticle(article: Article): boolean {
+  return hasKoreanTitle(article)
+    && isValidTranslation(article.translation)
+    && (isValidSummary(article.summaryFormal) || isValidSummary(article.summaryCasual))
+    && Boolean(article.factLabel)
+    && Boolean(article.source.trim())
+    && Boolean(article.url.trim());
+}
+
+function isPresentationHidden(article: Article): boolean {
+  if (article.isHidden === true || article.demoVisible === false) return true;
+  if (HIDE_DEMO_ARTICLES && isDemoArticle(article)) return true;
+  return false;
+}
+
+function isDemoRangeArticle(article: Article): boolean {
+  if (isDemoArticle(article)) return true;
+  const published = new Date(article.publishedAt).getTime();
+  if (!Number.isFinite(published)) return false;
+  return published >= DEMO_RANGE_START && published <= DEMO_RANGE_END;
+}
+
 export async function fetchArticles(params: FetchArticlesParams = {}): Promise<Article[]> {
-  // 쿼리 파라미터 조립 — 있는 것만 추가한다
-  const qs = new URLSearchParams();
-  if (params.category)    qs.set('category',    params.category);
-  if (params.source)      qs.set('source',      params.source);
-  if (params.source_type) qs.set('source_type', params.source_type);
-  if (params.limit)       qs.set('limit',       String(params.limit));
-  if (params.offset !== undefined) qs.set('offset', String(params.offset));
-  if (params.is_breaking !== undefined) qs.set('is_breaking', String(params.is_breaking));
-
-  // 파라미터가 있으면 "?category=AI+모델&limit=20" 형태로 붙인다
-  const query = qs.toString() ? `?${qs}` : '';
-  return request<ApiArticle[]>(`/articles${query}`).then(list => list.map(toArticle));
+  requireSupabase();
+  const { data, error } = await buildArticleQuery(params);
+  if (error) throw new ApiError(500, supabaseErrorMessage('Supabase articles query failed', error));
+  const rowsWithExtras = await attachOptionalPresentationFields(data as unknown as ApiArticle[]);
+  const articles = toArticleList(rowsWithExtras);
+  if (import.meta.env.DEV) {
+    console.info('[api] fetched articles', {
+      count: articles.length,
+      limit: params.limit ?? 20,
+      offset: params.offset ?? 0,
+      category: params.category ?? 'all',
+    });
+  }
+  const visible = articles.filter(article => !isPresentationHidden(article));
+  const filtered = params.category
+    ? visible.filter(article => article.category === normalizeCategory(params.category))
+    : visible;
+  const sorted = [...filtered].sort(polishedFeedSort);
+  if (!DEMO_POLISHED_FEED) return sorted;
+  const demoScoped = sorted.filter(isDemoRangeArticle);
+  const ready = demoScoped.filter(isCompletePresentationArticle);
+  if (ready.length === 0) return [];
+  return ready;
 }
 
-/**
- * 기사 하나의 상세 내용을 가져온다.
- * DetailPage에서 사용.
- *
- * @param urlHash MD5로 해시된 기사 고유 ID
- */
 export async function fetchArticleByHash(urlHash: string): Promise<ApiArticle> {
-  return request<ApiArticle>(`/article/${urlHash}`);
+  requireSupabase();
+  const { data, error } = await supabase
+    .from('articles')
+    .select(ARTICLE_FIELDS)
+    .eq('url_hash', urlHash)
+    .maybeSingle();
+  if (error) throw new ApiError(500, supabaseErrorMessage('Supabase article detail query failed', error));
+  if (!data) throw new ApiError(404, 'Article not found');
+  return data as unknown as ApiArticle;
 }
 
-/**
- * 온보딩 — 유저의 관심 주제를 백엔드에 저장한다.
- * OnboardingPage에서 "시작하기" 버튼을 눌렀을 때 호출.
- *
- * @param userId       localStorage에서 생성된 유저 ID
- * @param interestTags 유저가 선택한 관심 주제 배열
- */
+export async function fetchArticleExtras(urlHash: string): Promise<Partial<ApiArticle>> {
+  requireSupabase();
+  const extras: Partial<ApiArticle> = {};
+
+  const sourceResult = await supabase
+    .from('articles')
+    .select('source_url,original_url')
+    .eq('url_hash', urlHash)
+    .maybeSingle();
+  if (!sourceResult.error && sourceResult.data) {
+    const data = sourceResult.data as Partial<ApiArticle>;
+    extras.source_url = data.source_url;
+    extras.original_url = data.original_url;
+  } else if (sourceResult.error && import.meta.env.DEV) {
+    console.warn('[api] optional source_url unavailable', sourceResult.error.message);
+  }
+
+  const factResult = await supabase
+    .from('articles')
+    .select('fact_status,fact_confidence,fact_reason,fact_insight')
+    .eq('url_hash', urlHash)
+    .maybeSingle();
+  if (!factResult.error && factResult.data) {
+    const data = factResult.data as Partial<ApiArticle>;
+    extras.fact_status = data.fact_status;
+    extras.fact_confidence = data.fact_confidence;
+    extras.fact_reason = data.fact_reason;
+    extras.fact_insight = data.fact_insight;
+  } else if (factResult.error && import.meta.env.DEV) {
+    console.warn('[api] optional fact insight fields unavailable', factResult.error.message);
+  }
+
+  const slangResult = await supabase
+    .from('articles')
+    .select('slang_terms,neologism_terms')
+    .eq('url_hash', urlHash)
+    .maybeSingle();
+  if (!slangResult.error && slangResult.data) {
+    const data = slangResult.data as Partial<ApiArticle>;
+    extras.slang_terms = data.slang_terms;
+    extras.neologism_terms = data.neologism_terms;
+  } else if (slangResult.error && import.meta.env.DEV) {
+    console.warn('[api] optional slang fields unavailable', slangResult.error.message);
+  }
+
+  return extras;
+}
+
+export async function fetchNeologismDictionary(limit = 300): Promise<NeologismEntry[]> {
+  requireSupabase();
+  const { data, error } = await supabase
+    .from('neologisms')
+    .select('term,explanation,ko_suggestion,occurrence_count,confirmed,first_seen_url_hash')
+    .not('explanation', 'is', null)
+    .order('occurrence_count', { ascending: false })
+    .limit(limit);
+  if (error) {
+    if (import.meta.env.DEV) {
+      console.warn('[api] neologism dictionary unavailable', error.message);
+    }
+    return [];
+  }
+  return ((data ?? []) as NeologismEntry[]).filter(entry => entry.term?.trim() && entry.explanation?.trim());
+}
+
+export async function fetchArticleNeologisms(urlHash: string): Promise<NeologismEntry[]> {
+  requireSupabase();
+  const { data, error } = await supabase
+    .from('neologisms')
+    .select('term,explanation,ko_suggestion,occurrence_count,confirmed,first_seen_url_hash')
+    .eq('first_seen_url_hash', urlHash)
+    .not('explanation', 'is', null)
+    .limit(50);
+  if (error) {
+    if (import.meta.env.DEV) {
+      console.warn('[api] article neologisms unavailable', error.message);
+    }
+    return [];
+  }
+  return ((data ?? []) as NeologismEntry[]).filter(entry => entry.term?.trim() && entry.explanation?.trim());
+}
+
+export async function fetchNeologismsByTerms(terms: string[]): Promise<NeologismEntry[]> {
+  requireSupabase();
+  const uniqueTerms = [...new Set(terms.map(term => term.trim()).filter(Boolean))].slice(0, 50);
+  if (uniqueTerms.length === 0) return [];
+  const { data, error } = await supabase
+    .from('neologisms')
+    .select('term,explanation,ko_suggestion,occurrence_count,confirmed,first_seen_url_hash')
+    .in('term', uniqueTerms)
+    .not('explanation', 'is', null)
+    .limit(50);
+  if (error) {
+    if (import.meta.env.DEV) {
+      console.warn('[api] per-article neologism lookup unavailable', error.message);
+    }
+    return [];
+  }
+  return ((data ?? []) as NeologismEntry[]).filter(entry => entry.term?.trim() && entry.explanation?.trim());
+}
+
 export async function postOnboarding(userId: string, interestTags: string[]): Promise<OnboardingResponse> {
-  return request<OnboardingResponse>('/onboarding', {
-    method: 'POST',
-    body: JSON.stringify({ user_id: userId, interest_tags: interestTags }),
+  try {
+    localStorage.setItem(`samsun_interests_${userId}`, JSON.stringify(interestTags));
+  } catch {
+    // local persistence is a convenience only
+  }
+  if (!isSupabaseConfigured()) return { message: 'saved locally' };
+
+  try {
+    await upsertUserProfile(userId, interestTags);
+  } catch (error) {
+    if (import.meta.env.DEV) {
+      console.warn('[api] onboarding Supabase sync failed', error);
+    }
+    return { message: 'saved locally; supabase sync skipped' };
+  }
+
+  return { message: 'saved' };
+}
+
+function parsePgVector(raw: unknown): number[] | null {
+  if (!raw) return null;
+  if (Array.isArray(raw)) return raw.map(Number).filter(Number.isFinite);
+  if (typeof raw !== 'string') return null;
+  const text = raw.trim();
+  if (!text) return null;
+  try {
+    const parsed = JSON.parse(text);
+    if (Array.isArray(parsed)) return parsed.map(Number).filter(Number.isFinite);
+  } catch {
+    // pgvector often returns "[0.1,0.2,...]"; JSON parsing covers that shape.
+  }
+  const values = text
+    .replace(/^\[/, '')
+    .replace(/\]$/, '')
+    .split(',')
+    .map(value => Number(value.trim()))
+    .filter(Number.isFinite);
+  return values.length > 0 ? values : null;
+}
+
+function serializePgVector(vector: number[]): string {
+  return `[${vector.map(value => Number.isFinite(value) ? Number(value.toFixed(8)) : 0).join(',')}]`;
+}
+
+function blendUserVector(current: number[] | null, clicked: number[], clickWeight = 0.4): number[] {
+  const dim = Math.min(clicked.length, current?.length ?? clicked.length);
+  if (!current || current.length === 0) return clicked.slice(0, dim);
+  return Array.from({ length: dim }, (_, index) => current[index] * (1 - clickWeight) + clicked[index] * clickWeight);
+}
+
+function localInterestsFor(userId: string): string[] {
+  try {
+    return JSON.parse(localStorage.getItem(`samsun_interests_${userId}`) ?? localStorage.getItem('samsun_interests') ?? '[]');
+  } catch {
+    return [];
+  }
+}
+
+async function upsertUserProfile(userId: string, interestTags: string[]): Promise<void> {
+  const now = new Date().toISOString();
+  const base = {
+    user_id: userId,
+    interest_tags: interestTags,
+    last_seen_at: now,
+  };
+  const rpc = await supabase.rpc('save_user_interests', {
+    p_user_id: userId,
+    p_interest_tags: interestTags,
   });
+  if (!rpc.error) return;
+  if (import.meta.env.DEV) {
+    console.warn('[api] save_user_interests RPC unavailable; trying direct upsert', rpc.error.message);
+  }
+  const result = await supabase
+    .from('users')
+    .upsert({ ...base, updated_at: now }, { onConflict: 'user_id' });
+  if (!result.error) return;
+  if (result.error.code === 'PGRST204' || result.error.message?.includes('updated_at')) {
+    const fallback = await supabase.from('users').upsert(base, { onConflict: 'user_id' });
+    if (!fallback.error) return;
+    throw fallback.error;
+  }
+  throw result.error;
 }
 
-/**
- * 유저 맞춤 기사 피드를 가져온다.
- * MyFeedPage의 "추천 피드" 탭에서 사용.
- * 내부적으로 pgvector RAG 추천이 이루어진다.
- *
- * @param userId 유저 ID
- * @param topK   가져올 기사 수 (기본 10개)
- */
-export async function fetchFeed(userId: string, topK = 10): Promise<(Article & { similarity?: number })[]> {
-  const res = await request<{ feed: FeedArticle[] }>(
-    `/feed/${encodeURIComponent(userId)}?top_k=${topK}`,
-  );
-  const list = res.feed ?? [];
-  return list.map(f => ({ ...toArticle(f), similarity: f.similarity }));
+async function updateUserVector(userId: string, vector: number[]): Promise<void> {
+  const now = new Date().toISOString();
+  const base = {
+    user_vector: serializePgVector(vector),
+    last_seen_at: now,
+  };
+  const result = await supabase
+    .from('users')
+    .update({ ...base, updated_at: now })
+    .eq('user_id', userId);
+  if (!result.error) return;
+  if (result.error.code === 'PGRST204' || result.error.message?.includes('updated_at')) {
+    const fallback = await supabase.from('users').update(base).eq('user_id', userId);
+    if (!fallback.error) return;
+    throw fallback.error;
+  }
+  throw result.error;
 }
 
-/**
- * 자연어 검색을 수행한다.
- * SearchPage에서 사용.
- * 키워드 매칭이 아닌 벡터 유사도 검색 — 의미가 비슷한 기사를 찾는다.
- *
- * @param query 검색어
- * @param topK  가져올 결과 수 (기본 10개)
- */
-export async function fetchFeedLlm(userId: string): Promise<(Article & { reason?: string })[]> {
-  // 로컬 사용 시
-  // const res = await request<{ feed: FeedArticle[] }>(
-  //   `/feed-llm/${encodeURIComponent(userId)}`,
-  // );
-  const res = await fetch(`${COLAB_URL}/feed-llm/${encodeURIComponent(userId)}`, {
-  headers: { 'ngrok-skip-browser-warning': 'true' }
-  }).then(r => r.json()) as { feed: FeedArticle[] };
+async function fetchUserProfile(userId: string): Promise<UserProfileRow | null> {
+  if (!isSupabaseConfigured()) return null;
+  const { data, error } = await supabase
+    .from('users')
+    .select('user_id,interest_tags,user_vector')
+    .eq('user_id', userId)
+    .maybeSingle();
+  if (error) {
+    if (import.meta.env.DEV) console.warn('[api] user profile unavailable', error.message);
+    return null;
+  }
+  return data as UserProfileRow | null;
+}
 
-  const list = res.feed ?? [];
-  return list.map(f => ({ ...toArticle(f), reason: (f as any).reason }));
+async function fetchRecentClickCategories(userId: string): Promise<string[]> {
+  if (!isSupabaseConfigured()) return [];
+  const { data, error } = await supabase
+    .from('user_logs')
+    .select('url_hash')
+    .eq('user_id', userId)
+    .order('created_at', { ascending: false })
+    .limit(20);
+  if (error || !data?.length) return [];
+  const hashes = data.map(row => row.url_hash).filter(Boolean);
+  if (hashes.length === 0) return [];
+  const articles = await supabase
+    .from('articles')
+    .select('category,source,title,title_ko')
+    .in('url_hash', hashes);
+  if (articles.error) return [];
+  return [...new Set((articles.data ?? []).map(row =>
+    normalizeCategory(row.category, row.source, `${row.title ?? ''} ${row.title_ko ?? ''}`),
+  ))];
+}
+
+function scoreByInterests(article: Article, interests: string[]): number {
+  if (interests.length === 0) return article.credibilityScore || 0.1;
+  const haystack = `${article.category} ${article.title} ${article.titleKo ?? ''} ${articleSummaryForTone(article, 'formal')}`.toLowerCase();
+  const matches = interests.filter(interest => haystack.includes(interest.toLowerCase())).length;
+  return matches + (article.credibilityScore || 0);
+}
+
+export async function fetchFeed(
+  userId: string,
+  topK = 10,
+): Promise<(Article & { similarity?: number; reason?: string })[]> {
+  const profile = await fetchUserProfile(userId);
+  const interests = (profile?.interest_tags?.length ? profile.interest_tags : localInterestsFor(userId)).map(String);
+  const recentCategories = await fetchRecentClickCategories(userId);
+  const userVector = parsePgVector(profile?.user_vector);
+
+  if (userVector?.length) {
+    const rpc = await supabase.rpc('match_articles', {
+      query_vector: serializePgVector(userVector),
+      top_k: Math.max(topK * 4, 40),
+    });
+    if (!rpc.error && rpc.data?.length) {
+      const rows = await attachOptionalPresentationFields(rpc.data as unknown as ApiArticle[]);
+      const vectorArticles = toArticleList(rows)
+        .filter(article => !isPresentationHidden(article))
+        .filter(article => !DEMO_POLISHED_FEED || (isDemoRangeArticle(article) && isCompletePresentationArticle(article)))
+        .slice(0, Math.max(topK * 2, topK));
+      if (vectorArticles.length > 0) {
+        return vectorArticles
+          .slice(0, topK)
+          .map(article => ({
+            ...article,
+            similarity: typeof (rows.find(row => row.url_hash === article.urlHash) as SearchResult | undefined)?.similarity === 'number'
+              ? (rows.find(row => row.url_hash === article.urlHash) as SearchResult).similarity
+              : undefined,
+            reason: '사용자 관심 벡터와 유사도가 높은 기사입니다.',
+          }));
+      }
+    } else if (rpc.error && import.meta.env.DEV) {
+      console.warn('[api] match_articles RPC failed; using fallback feed', rpc.error.message);
+    }
+  }
+
+  const articles = await fetchArticles({ limit: Math.max(topK * 4, 40) });
+  const feed = articles
+    .map(article => ({
+      ...article,
+      similarity: Math.min(1, (scoreByInterests(article, interests) + (recentCategories.includes(article.category) ? 1 : 0)) / 3),
+      reason: recentCategories.includes(article.category)
+        ? `최근 읽은 기사와 같은 '${article.category}' 분야 기사입니다.`
+        : interests.includes(article.category)
+          ? `선택한 관심사 '${article.category}'와 맞는 기사입니다.`
+          : interests.length
+            ? '선택한 관심사와 제목/요약이 가까운 기사입니다.'
+            : '최근 업데이트된 완성 기사입니다.',
+    }))
+    .sort((a, b) => (b.similarity ?? 0) - (a.similarity ?? 0))
+    .slice(0, topK)
+    .map(article => articleToApiLike(article, article.similarity, article.reason));
+
+  return feed.map(f => ({
+    ...toArticle(f),
+    similarity: f.similarity,
+    ...(f.reason ? { reason: f.reason } : {}),
+  }));
+}
+
+function normalizeSearchText(value: string): string {
+  return value
+    .normalize('NFKC')
+    .toLowerCase()
+    .replace(/[^\p{L}\p{N}]+/gu, ' ')
+    .trim();
+}
+
+function articleSearchScore(article: Article, query: string): number {
+  const q = normalizeSearchText(query);
+  const tokens = q.split(/\s+/).filter(Boolean);
+  const haystack = normalizeSearchText([
+    article.title,
+    article.titleKo,
+    article.source,
+    article.category,
+    articleSummaryForTone(article, 'formal'),
+    articleSummaryForTone(article, 'casual'),
+    articleTranslationForDisplay(article),
+    article.content,
+    article.factLabel,
+  ].join(' '));
+  if (!q) return 0;
+  if (haystack.includes(q)) return 1;
+  const tokenHits = tokens.filter(token => haystack.includes(token)).length;
+  return tokenHits / Math.max(tokens.length, 1);
 }
 
 export async function searchArticles(query: string, topK = 10): Promise<(Article & { similarity?: number })[]> {
-  const res = await request<{ results: SearchResult[] }>(
-    `/search?q=${encodeURIComponent(query)}&top_k=${topK}`,
-  );
-  const list = res.results ?? [];
-  return list.map(r => ({ ...toArticle(r), similarity: r.similarity }));
+  const articles = await fetchArticles({ limit: 250 });
+  return articles
+    .map(article => ({ article, similarity: articleSearchScore(article, query) }))
+    .filter(item => item.similarity > 0)
+    .sort((a, b) => b.similarity - a.similarity)
+    .slice(0, topK)
+    .map(item => ({ ...item.article, similarity: item.similarity }));
 }
 
-/**
- * 기사 카드·목록에서 조회 시 호출 — Hot/추천 통계용 user_logs 적재
- */
 export async function recordArticleView(userId: string, urlHash: string): Promise<void> {
   if (!userId?.trim() || !urlHash) return;
-  await request<{ message?: string }>(
-    `/article-view/${encodeURIComponent(userId)}/${encodeURIComponent(urlHash)}`,
-    { method: 'POST' },
-  );
+  try {
+    const key = `samsun_view_log_${userId}`;
+    const prev = JSON.parse(localStorage.getItem(key) ?? '[]') as string[];
+    localStorage.setItem(key, JSON.stringify([urlHash, ...prev].slice(0, 200)));
+  } catch {
+    // local fallback only
+  }
+
+  if (!isSupabaseConfigured()) return;
+
+  try {
+    const rpc = await supabase.rpc('record_article_view', {
+      p_user_id: userId,
+      p_url_hash: urlHash,
+    });
+    if (!rpc.error) return;
+    if (import.meta.env.DEV) {
+      console.warn('[api] record_article_view RPC unavailable; trying direct write path', rpc.error.message);
+    }
+
+    const now = new Date().toISOString();
+    await upsertUserProfile(userId, localInterestsFor(userId));
+
+    const logResult = await supabase
+      .from('user_logs')
+      .insert({ user_id: userId, url_hash: urlHash, action: 'view', created_at: now });
+    if (logResult.error && import.meta.env.DEV) {
+      console.warn('[api] user_logs insert failed', logResult.error.message);
+    }
+
+    const articleResult = await supabase
+      .from('articles')
+      .select('embedding')
+      .eq('url_hash', urlHash)
+      .maybeSingle();
+    const clickedVector = parsePgVector((articleResult.data as Partial<ApiArticle> | null)?.embedding);
+    if (!clickedVector?.length) return;
+
+    const user = await fetchUserProfile(userId);
+    const currentVector = parsePgVector(user?.user_vector);
+    const nextVector = blendUserVector(currentVector, clickedVector);
+    await updateUserVector(userId, nextVector);
+  } catch (error) {
+    if (import.meta.env.DEV) {
+      console.warn('[api] recordArticleView failed; UI continues', error);
+    }
+  }
 }
 
-/**
- * 서버 상태를 확인한다.
- * 앱 초기 로드 시 백엔드가 살아있는지 확인하는 용도.
- */
 export async function healthCheck(): Promise<{ status: string }> {
-  return request<{ status: string }>('/health');
+  requireSupabase();
+  const { error } = await supabase.from('articles').select('url_hash').limit(1);
+  if (error) throw new ApiError(500, supabaseErrorMessage('Supabase health query failed', error));
+  return { status: 'ok' };
+}
+
+export interface AbsenceArticle {
+  url_hash: string;
+  title: string;
+  title_ko?: string;
+  source: string;
+  category: string;
+  published_at: string;
+  summary_formal: string;
+  similarity: number;
+  view_count?: number;
+}
+
+export interface AbsenceSummaryResponse {
+  show: boolean;
+  message?: string;
+  sub_message?: string;
+  days_away?: number;
+  articles?: AbsenceArticle[];
+}
+
+export async function fetchAbsenceSummary(userId: string): Promise<AbsenceSummaryResponse> {
+  const lastSeen = Number(localStorage.getItem(`samsun_last_seen_${userId}`) ?? '0');
+  if (!lastSeen) return { show: false };
+  const daysAway = Math.floor((Date.now() - lastSeen) / 86_400_000);
+  if (daysAway < 1) return { show: false };
+  const articles = await fetchArticles({ limit: 5 });
+  return {
+    show: articles.length > 0,
+    message: `${daysAway}일 동안 놓친 AI 뉴스가 있어요`,
+    sub_message: 'Supabase에 저장된 최신 요약을 모아봤어요',
+    days_away: daysAway,
+    articles: articles.map(article => ({
+      url_hash: article.urlHash,
+      title: article.title,
+      title_ko: article.titleKo,
+      source: article.source,
+      category: article.category,
+      published_at: article.publishedAt,
+      summary_formal: articleSummaryForTone(article, 'formal'),
+      similarity: 0.7,
+    })),
+  };
+}
+
+export async function markUserSeen(userId: string): Promise<void> {
+  try {
+    localStorage.setItem(`samsun_last_seen_${userId}`, String(Date.now()));
+  } catch {
+    // no-op
+  }
+}
+
+export async function logArticleView(userId: string, urlHash: string): Promise<void> {
+  if (!userId?.trim() || !urlHash) return;
+  try {
+    const key = `samsun_view_log_${userId}`;
+    const prev = JSON.parse(localStorage.getItem(key) ?? '[]') as string[];
+    localStorage.setItem(key, JSON.stringify([urlHash, ...prev].slice(0, 200)));
+  } catch {
+    // no-op
+  }
+}
+
+export async function fetchHot(date: string): Promise<(Article & { view_count: number })[]> {
+  requireSupabase();
+  const start = `${date}T00:00:00`;
+  const end = `${date}T23:59:59`;
+  const { data, error } = await supabase
+    .from('articles')
+    .select(ARTICLE_FIELDS)
+    .gte('published_at', start)
+    .lte('published_at', end)
+    .order('credibility_score', { ascending: false })
+    .limit(20);
+  if (error) throw new ApiError(500, supabaseErrorMessage('Supabase hot articles query failed', error));
+
+  const datedRows = await attachOptionalPresentationFields(data as unknown as ApiArticle[]);
+  const dated = toArticleList(datedRows)
+    .filter(article => !isPresentationHidden(article))
+    .filter(article => !DEMO_POLISHED_FEED || (isDemoRangeArticle(article) && isCompletePresentationArticle(article)))
+    .map((article, index) => ({ ...article, view_count: Math.max(0, 100 - index * 7) }));
+  if (dated.length >= 5) return dated;
+
+  const yesterday = new Date(Date.now() - 86_400_000).toISOString();
+  const logResult = await supabase
+    .from('user_logs')
+    .select('url_hash,created_at')
+    .gte('created_at', yesterday)
+    .limit(500);
+  if (!logResult.error && logResult.data?.length) {
+    const counts = new Map<string, number>();
+    for (const row of logResult.data as { url_hash?: string }[]) {
+      if (row.url_hash) counts.set(row.url_hash, (counts.get(row.url_hash) ?? 0) + 1);
+    }
+    const hashes = [...counts.keys()].slice(0, 50);
+    if (hashes.length) {
+      const articlesResult = await supabase
+        .from('articles')
+        .select(ARTICLE_FIELDS)
+        .in('url_hash', hashes);
+      if (!articlesResult.error) {
+        const rows = await attachOptionalPresentationFields(articlesResult.data as unknown as ApiArticle[]);
+        const hotByLogs = toArticleList(rows)
+          .filter(article => !isPresentationHidden(article))
+          .filter(article => !DEMO_POLISHED_FEED || (isDemoRangeArticle(article) && isCompletePresentationArticle(article)))
+          .map(article => ({ ...article, view_count: counts.get(article.urlHash) ?? 0 }))
+          .sort((a, b) => b.view_count - a.view_count)
+          .slice(0, 20);
+        if (hotByLogs.length >= 5) return hotByLogs;
+      }
+    }
+  }
+
+  const fallback = await fetchArticles({ limit: 40 });
+  return fallback
+    .sort((a, b) => {
+      const statusDelta = factStatusWeight(b.factLabel) - factStatusWeight(a.factLabel);
+      if (statusDelta !== 0) return statusDelta;
+      const scoreDelta = (b.credibilityScore ?? 0) - (a.credibilityScore ?? 0);
+      if (scoreDelta !== 0) return scoreDelta;
+      return new Date(b.publishedAt).getTime() - new Date(a.publishedAt).getTime();
+    })
+    .slice(0, 20)
+    .map((article, index) => ({ ...article, view_count: Math.max(0, 80 - index * 4) }));
+}
+
+function articleToApiLike(article: Article, similarity?: number, reason?: string): SearchResult & { reason?: string } {
+  return {
+    url_hash: article.urlHash,
+    url: article.url,
+    source_url: article.sourceUrl,
+    title: article.title,
+    title_ko: article.titleKo,
+    source: article.source,
+    source_type: article.sourceType,
+    category: article.category,
+    country: article.country,
+    keywords: article.keywords,
+    published_at: article.publishedAt,
+    collected_at: article.publishedAt,
+    content: article.content,
+    credibility_score: article.credibilityScore,
+    fact_label: article.factLabel,
+    translation: article.translation,
+    summary_formal: article.summaryFormal,
+    summary_casual: article.summaryCasual,
+    slang_terms: article.slangTerms,
+    neologism_terms: article.slangTerms,
+    ai_status: article.aiStatus,
+    ai_provider: article.aiProvider,
+    ai_model: article.aiModel,
+    ai_error: article.aiError,
+    is_new: article.isNew,
+    is_breaking: article.isBreaking,
+    time_ago: article.timeAgo,
+    source_color: article.sourceColor,
+    similarity,
+    reason,
+  };
 }
