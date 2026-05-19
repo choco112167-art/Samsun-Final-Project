@@ -408,13 +408,16 @@ def run_eval(model: str, limit: int = None, skip_geval: bool = False,
             # 5. G-Eval
             geval_con = geval_fl = geval_coh = geval_r = geval_avg = geval_weighted = 0.0
             if not skip_geval and summary_formal:
-                g = geval_single(en_text, summary_formal, gt_summary=gt_summary)
-                geval_con      = g["consistency"]
-                geval_fl       = g["fluency"]
-                geval_coh      = g["coherence"]
-                geval_r        = g["relevance"]
-                geval_avg      = g["g_eval_score"]
-                geval_weighted = g["g_eval_weighted"]
+                try:
+                    g = geval_single(en_text, summary_formal, gt_summary=gt_summary)
+                    geval_con      = g["consistency"]
+                    geval_fl       = g["fluency"]
+                    geval_coh      = g["coherence"]
+                    geval_r        = g["relevance"]
+                    geval_avg      = g["g_eval_score"]
+                    geval_weighted = g["g_eval_weighted"]
+                except Exception as e:
+                    print(f"  ⚠ G-Eval 실패 (geval_avg=0 저장): {e}")
                 time.sleep(0.5)
 
             writer.writerow({
