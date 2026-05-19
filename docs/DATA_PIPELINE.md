@@ -69,7 +69,7 @@ Demo rumor articles are synthetic and visibly marked with `[시연용]` and `sou
 
 Terms such as `HITL`, `프롬프트 주입`, and `가드레일` are stored in Supabase `neologisms`. The frontend highlights known terms and opens an explanation bottom sheet.
 
-Unknown terms are not faked.
+Unknown terms are not faked. The UI only shows explanations for terms returned from Supabase `neologisms` with a non-empty `explanation`; candidate terms without registered explanations are ignored visually.
 
 ## 7. Supabase Upsert
 
@@ -84,6 +84,16 @@ Processed rows are upserted into `articles`, with optional fields added only if 
 - `is_hidden`
 - `demo_visible`
 - `demo_priority`
+
+Embeddings are generated in the backend save path:
+- `backend/embedder.py`: local `Qwen3-Embedding-0.6B` through Ollama (`LOCAL_EMBEDDING_MODEL=qwen3-embedding:0.6b`) or cloud embedding through OpenRouter.
+- `backend/save_articles.py`: embeds `title_ko + translation`.
+- `supabase_schema.sql`: stores the result in `articles.embedding VECTOR(1024)`.
+
+The RAG recommendation POC uses:
+- `users.user_vector VECTOR(1024)` for interest vectors.
+- `match_articles(query_vector, top_k)` for cosine-similarity candidate retrieval.
+- `backend/rag.py` for top 20 candidates, click-based vector updates, and optional LLM reranking.
 
 ## 8. Demo Readiness Filtering
 

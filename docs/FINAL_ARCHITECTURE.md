@@ -33,9 +33,18 @@ flowchart TD
 
   subgraph Supabase["Supabase"]
     Articles["articles"]
+    Embedding["embedding vector(1024)"]
+    Users["users.user_vector"]
     FactChecks["fact_checks"]
     Neologisms["neologisms"]
     DemoFields["demo readiness fields<br/>is_hidden/demo_visible/demo_priority"]
+  end
+
+  subgraph RagPoc["Local/Admin RAG POC"]
+    QwenEmbedding["Qwen3-Embedding-0.6B<br/>via Ollama"]
+    MatchArticles["match_articles RPC<br/>top 20 candidates"]
+    ClickUpdate["click log<br/>user_vector update"]
+    OptionalRerank["optional OpenRouter/Gemini<br/>LLM rerank"]
   end
 
   subgraph App["Apps in Toss .ait Frontend"]
@@ -59,6 +68,11 @@ flowchart TD
   Fact --> Articles
   Fact --> FactChecks
   Neo --> Neologisms
+  QwenEmbedding --> Embedding
+  Articles --> MatchArticles
+  Users --> MatchArticles
+  MatchArticles --> OptionalRerank
+  Articles --> ClickUpdate --> Users
   ProcessSQLite --> Articles
   DemoSeed --> Articles
   DemoSeed --> FactChecks
@@ -77,6 +91,15 @@ flowchart TD
 - Supabase: production data platform and public read source.
 - Local Ollama: demo/backfill only, running on the developer machine.
 - Supabase Edge/Cron: cloud automation path using OpenRouter/Gemini, not local Ollama.
+- Qwen3-Embedding-0.6B: local/admin pgvector RAG POC through `backend/embedder.py`; article writes store 1024-dimensional vectors in `articles.embedding`.
+
+## Embedding And RAG Implementation
+
+- Schema: `supabase_schema.sql` creates `articles.embedding VECTOR(1024)`, `users.user_vector VECTOR(1024)`, and `match_articles(...)`.
+- Embedding adapter: `backend/embedder.py` uses `LOCAL_EMBEDDING_MODEL=qwen3-embedding:0.6b` in local mode and fits all vectors to 1024 dimensions.
+- Article upsert: `backend/save_articles.py` embeds `title_ko + translation` and writes `articles.embedding`.
+- Recommendation POC: `backend/rag.py` saves interest vectors, extracts top 20 pgvector candidates, records clicks, blends clicked article vectors into `users.user_vector`, and optionally reranks with OpenRouter/Gemini.
+- Admin endpoints: `backend/main.py` exposes `/onboarding`, `/feed/{user_id}`, and `/users/{user_id}/click/{url_hash}`. The `.ait` app itself still reads Supabase directly.
 
 ## HITL Path
 

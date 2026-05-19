@@ -33,6 +33,7 @@ One-line description:
 - Fact status badges: `검증됨`, `미검증`, `루머 의심`, `HITL 검토 필요`.
 - Conservative safety: uncertain claims become `UNVERIFIED` or `HITL_REQUIRED`.
 - Neologism annotation: terms are highlighted and explained from Supabase `neologisms`.
+- pgvector RAG POC: Qwen3-Embedding-0.6B local embeddings, `articles.embedding vector(1024)`, user interest vectors, click-based vector updates, and optional LLM reranking for the local/admin backend path.
 - Demo readiness filtering: old/incomplete rows are pushed down or hidden in polished demo mode.
 - Safe synthetic demo examples: rumor/HITL rows are marked `[시연용]`, `source=DEMO`, and never presented as verified real news.
 
@@ -47,6 +48,8 @@ flowchart TD
   EDGE --> CLOUD["OpenRouter / Gemini"]
   CLOUD --> PIPE
   PIPE --> SB["Supabase<br/>articles / fact_checks / neologisms"]
+  PIPE --> VEC["pgvector<br/>embedding vector(1024)"]
+  VEC --> RAG["RAG POC<br/>match_articles / user_vector"]
   DEMO["Safe demo seed<br/>rumor / HITL / neologisms"] --> SB
   SB --> AIT["Apps in Toss .ait frontend"]
 ```
@@ -55,8 +58,23 @@ Runtime boundaries:
 - Apps in Toss frontend uses only `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY`.
 - Supabase is the backend/data source.
 - Local `samsun-gemma4` is for offline import/backfill/demo processing.
+- Local `Qwen3-Embedding-0.6B` is used by the backend/admin pgvector RAG POC through Ollama.
 - Cloud scheduled refresh uses OpenRouter/Gemini from Supabase Edge/Cron.
 - The `.ait` bundle does not require a custom app server.
+
+## Final Feature Audit
+
+| Area | Final status |
+| --- | --- |
+| Article embeddings | Implemented. `supabase_schema.sql` defines `articles.embedding VECTOR(1024)`, and `backend/save_articles.py` writes embeddings from `title_ko + translation`. |
+| Qwen3 embedding | Implemented as local/admin POC. `backend/embedder.py` defaults `LOCAL_EMBEDDING_MODEL=qwen3-embedding:0.6b` and fits vectors to 1024 dimensions. |
+| pgvector RPC | Implemented. `match_articles(...)` and `hybrid_search_articles(...)` exist in SQL; `backend/main.py` uses `match_articles` for vector search. |
+| Recommendation flow | Partial POC. `backend/rag.py` supports `users.user_vector`, top 20 candidates, click-based vector updates, and optional LLM reranking. The Apps in Toss `.ait` frontend still reads Supabase directly and does not require this server. |
+| Neologism DB | Implemented. `supabase_schema.sql` creates `neologisms`; `backend/sql/neologisms_pgvector.sql` adds `embedding VECTOR(1024)` and `match_neologisms`. |
+| Neologism generation/tracking | Implemented with schema-dependent article fields. Pipeline extracts terms, writes `neologisms`, and writes `slang_terms` / `neologism_terms` when migrated. |
+| Frontend neologism UI | Implemented. `frontend/src/components/NeologismText.tsx` highlights known terms and opens a mobile bottom sheet; unknown terms are not explained unless Supabase has an explanation. |
+
+Full audit: [`docs/FINAL_FEATURE_AUDIT.md`](docs/FINAL_FEATURE_AUDIT.md)
 
 ## Evaluation Rubric Mapping
 
@@ -135,7 +153,30 @@ MODEL_NAME=samsun-gemma4
 OLLAMA_BASE_URL=http://localhost:11434
 ```
 
+Local embedding/RAG POC settings:
+
+```env
+EMBEDDING_PROVIDER=local
+LOCAL_EMBEDDING_MODEL=qwen3-embedding:0.6b
+RAG_LLM_RERANK_ENABLED=0
+```
+
+Prepare local embedding model:
+
+```bash
+ollama pull qwen3-embedding:0.6b
+```
+
 Cloud refresh settings use Supabase Edge/Cron plus OpenRouter or Gemini secrets.
+
+Optional local/admin RAG POC:
+
+```bash
+uvicorn backend.main:app --reload
+curl -X POST http://localhost:8000/onboarding -H "Content-Type: application/json" -d "{\"user_id\":\"demo\",\"interest_tags\":[\"AI\",\"반도체\",\"RAG\"]}"
+curl http://localhost:8000/feed/demo?top_k=10
+curl -X POST http://localhost:8000/users/demo/click/<url_hash>
+```
 
 ## Demo Operation Commands
 

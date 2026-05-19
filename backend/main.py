@@ -23,7 +23,7 @@ from pydantic import BaseModel, ConfigDict
 from supabase import create_client
 
 from backend.embedder import make_embedding, expand_query
-from backend.rag import build_personalized_feed, upsert_user_profile
+from backend.rag import build_personalized_feed, record_article_click_and_update_vector, upsert_user_profile
 from config import get_settings
 
 _settings = get_settings()
@@ -115,6 +115,19 @@ def get_feed(user_id: str, top_k: int = 10):
         raise HTTPException(status_code=404, detail="유저 없음") from None
 
     return {"feed": articles}
+
+
+@app.post("/users/{user_id}/click/{url_hash}")
+def record_click(user_id: str, url_hash: str):
+    """
+    Local/admin POC endpoint for RAG feedback learning.
+
+    Apps in Toss does not require this server, but the endpoint demonstrates the report's
+    click article → user_vector update → pgvector candidate refresh structure.
+    """
+    db = require_supabase()
+    record_article_click_and_update_vector(db, user_id, url_hash)
+    return {"message": "click recorded and user_vector updated"}
 
 
 @app.get("/articles")

@@ -1,7 +1,7 @@
 """
 backend/embedder.py — 임베딩 어댑터
 
-MODE=local  → Ollama 로컬 embedding model
+MODE=local  → Ollama 로컬 Qwen3-Embedding-0.6B model
 MODE=cloud  → OpenRouter API embedding model
 
 .env에서 MODE 한 줄만 바꾸면 전체 전환됩니다.
@@ -13,14 +13,23 @@ from dotenv import load_dotenv
 load_dotenv()
 
 EMBEDDING_PROVIDER = os.getenv("EMBEDDING_PROVIDER") or os.getenv("MODE", "local")
-LOCAL_EMBEDDING_MODEL = os.getenv("LOCAL_EMBEDDING_MODEL", "nomic-embed-text")
+LOCAL_EMBEDDING_MODEL = os.getenv("LOCAL_EMBEDDING_MODEL", "qwen3-embedding:0.6b")
 OPENROUTER_EMBEDDING_MODEL = os.getenv("OPENROUTER_EMBEDDING_MODEL", "openai/text-embedding-3-small")
+EMBEDDING_DIM = 1024
+
+
+def _fit_1024(vector: list[float]) -> list[float]:
+    """Supabase pgvector schema is fixed at vector(1024)."""
+    fitted = [float(v) for v in vector[:EMBEDDING_DIM]]
+    if len(fitted) < EMBEDDING_DIM:
+        fitted.extend([0.0] * (EMBEDDING_DIM - len(fitted)))
+    return fitted
 
 
 # ════════════════════════════════════════════
 # LOCAL — Ollama (개발 환경)
 # 사용: MODE=local
-# 준비: ollama pull nomic-embed-text
+# 준비: ollama pull qwen3-embedding:0.6b
 # ════════════════════════════════════════════
 
 def _embed_local(text: str) -> list[float]:
@@ -30,7 +39,7 @@ def _embed_local(text: str) -> list[float]:
         model=LOCAL_EMBEDDING_MODEL,
         prompt=text,
     )
-    return resp["embedding"][:1024]
+    return _fit_1024(resp["embedding"])
 
 
 # ════════════════════════════════════════════
@@ -57,7 +66,7 @@ def _embed_cloud(text: str) -> list[float]:
         )
         body = resp.json()
         if "data" in body:
-            return body["data"][0]["embedding"][:1024]
+            return _fit_1024(body["data"][0]["embedding"])
         # 429 rate limit 또는 일시 오류 → 재시도
         if attempt < 2:
             time.sleep(2 ** attempt)
@@ -123,7 +132,7 @@ def make_embedding(text: str) -> list[float]:
     텍스트 → 임베딩 벡터 (1024차원)
 
     .env의 EMBEDDING_PROVIDER 값으로 전환:
-      local      → Ollama LOCAL_EMBEDDING_MODEL
+      local      → Ollama LOCAL_EMBEDDING_MODEL (기본 qwen3-embedding:0.6b)
       openrouter → OpenRouter OPENROUTER_EMBEDDING_MODEL
     """
     if EMBEDDING_PROVIDER in ("cloud", "openrouter"):

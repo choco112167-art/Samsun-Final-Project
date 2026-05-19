@@ -56,6 +56,20 @@ CREATE INDEX IF NOT EXISTS idx_articles_embedding   ON articles USING ivfflat (e
 
 
 -- ============================================================
+-- 1-1. users  (RAG 개인화 프로필)
+-- ============================================================
+CREATE TABLE IF NOT EXISTS users (
+    user_id       TEXT PRIMARY KEY,
+    interest_tags TEXT[] DEFAULT '{}',
+    user_vector   VECTOR(1024),
+    last_seen_at  TIMESTAMPTZ DEFAULT NOW(),
+    updated_at    TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_users_last_seen_at ON users(last_seen_at DESC);
+
+
+-- ============================================================
 -- 2. fact_checks  (팩트체크 세부 기록, 1:N)
 -- ============================================================
 CREATE TABLE IF NOT EXISTS fact_checks (
@@ -92,9 +106,45 @@ CREATE TABLE IF NOT EXISTS neologisms (
     first_seen_url_hash  VARCHAR REFERENCES articles(url_hash) ON DELETE SET NULL,
     occurrence_count     INT DEFAULT 1,          -- 등장할 때마다 +1
     confirmed            BOOLEAN DEFAULT FALSE,  -- TRUE → AI_TERMS 목록 승격
+    embedding            VECTOR(1024),           -- 신조어 RAG 검색용 임베딩
+    source               TEXT,                   -- 설명 출처 또는 demo/manual/gemini-search-grounding
 
     created_at           TIMESTAMPTZ DEFAULT NOW()
 );
+
+CREATE INDEX IF NOT EXISTS idx_neologisms_embedding
+    ON neologisms USING ivfflat (embedding vector_cosine_ops)
+    WITH (lists = 50);
+
+CREATE OR REPLACE FUNCTION match_neologisms(
+  query_vector VECTOR(1024),
+  match_threshold FLOAT DEFAULT 0.85,
+  top_k INT DEFAULT 5
+)
+RETURNS TABLE (
+  term VARCHAR,
+  explanation TEXT,
+  ko_suggestion TEXT,
+  occurrence_count INT,
+  confirmed BOOLEAN,
+  source TEXT,
+  similarity FLOAT
+)
+LANGUAGE sql STABLE AS $$
+  SELECT
+    n.term,
+    n.explanation,
+    n.ko_suggestion,
+    n.occurrence_count,
+    n.confirmed,
+    n.source,
+    (1::FLOAT - (n.embedding <=> query_vector)::FLOAT) AS similarity
+  FROM neologisms n
+  WHERE n.embedding IS NOT NULL
+    AND (1::FLOAT - (n.embedding <=> query_vector)::FLOAT) >= match_threshold
+  ORDER BY n.embedding <=> query_vector
+  LIMIT top_k;
+$$;
 
 
 -- ============================================================

@@ -47,7 +47,27 @@ OpenRouter/Gemini are used in the cloud refresh path because:
 | --- | --- | --- |
 | Base Gemma/Gemma4 | Foundation model family | Training/evaluation reference |
 | `samsun-gemma4` | Local demo/backfill model | Ollama on developer machine |
+| `Qwen3-Embedding-0.6B` | 1024-dim local embedding for pgvector RAG POC | Ollama on developer machine |
 | OpenRouter/Gemini | Production cloud refresh | Supabase Edge Function |
+
+## Embedding / RAG Strategy
+
+The final repo includes a local embedding POC aligned with the report:
+
+```env
+MODE=local
+EMBEDDING_PROVIDER=local
+LOCAL_EMBEDDING_MODEL=qwen3-embedding:0.6b
+```
+
+`backend/embedder.py` calls Ollama, normalizes the result to 1024 dimensions, and `backend/save_articles.py` writes article embeddings based on `title_ko + translation` into `articles.embedding VECTOR(1024)`.
+
+Personalization is implemented as a local/admin POC:
+- `supabase_schema.sql` defines `users.user_vector VECTOR(1024)` and `match_articles(...)`.
+- `backend/rag.py` saves interest vectors, pulls top 20 vector candidates, records clicked articles, updates `user_vector`, and includes an optional OpenRouter/Gemini reranking hook.
+- `backend/main.py` exposes `/onboarding`, `/feed/{user_id}`, and `/users/{user_id}/click/{url_hash}`.
+
+The `.ait` frontend still reads Supabase directly and does not depend on the local/admin FastAPI server.
 
 ## Formal/Casual Summaries
 
