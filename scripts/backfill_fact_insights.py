@@ -108,7 +108,13 @@ def is_visible_complete(row: dict[str, Any]) -> bool:
 
 
 def needs_insight(row: dict[str, Any]) -> bool:
-    return is_blank(row.get("fact_reason")) and is_blank(row.get("fact_insight"))
+    text = f"{row.get('fact_reason') or ''}\n{row.get('fact_insight') or ''}"
+    stale = (
+        "미검증으로 표시했습니다" in text
+        or "루머 주의가 필요합니다" in text
+        or "수동 검토가 필요한 기사입니다" in text
+    )
+    return (is_blank(row.get("fact_reason")) and is_blank(row.get("fact_insight"))) or stale
 
 
 def insight_payload(optional: list[str], label: str, *, promote_hitl: bool = False) -> dict[str, Any]:

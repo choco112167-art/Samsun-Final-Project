@@ -101,13 +101,14 @@ flowchart LR
 | `HITL_REQUIRED` / `HITL` / `HUMAN_REVIEW` | 전문가 검토 필요 | 자동 판정만으로는 판단이 어려워 사람이 추가 확인해야 하는 기사 |
 | `DROP` | 사용자 피드 미노출 | 노이즈 또는 최종 피드 부적합 항목 |
 
-검토 대상 POC:
+내부 관리자 검토 POC:
 
-- 진입: Apps in Toss 테스트 URL 뒤에 `?review=1`
-- 이름: `검토 대상 보기`
+- 진입: FastAPI/local 서버에서 `ADMIN_REVIEW_ENABLED=1` 설정 후 `/admin/hitl`
+- JSON API: `/admin/hitl-candidates`
+- 선택형 update API: `/admin/hitl-review`
 - 범위: `HITL_REQUIRED`, `UNVERIFIED`, `RUMOR`, `INSIGHT` 후보 목록을 읽기 전용으로 표시
 - 표시: `title_ko`, `source`, fact label, fact insight/reason, 원문 링크
-- 제한: DB 수정/승인/반려 버튼은 없음. 보안과 RLS를 고려해 최종 데모에서는 관리자 판정 기능을 넣지 않는다.
+- 제한: Apps in Toss 사용자 앱에는 포함하지 않는다. update API는 로컬 backend 환경의 `SUPABASE_SERVICE_ROLE_KEY`가 있을 때만 사용할 수 있으며, 최종 데모에서는 “내부 관리자 POC”로만 설명한다.
 
 주의:
 - “완전한 관리자 승인 시스템 구현 완료”라고 말하지 않는다.
@@ -121,7 +122,7 @@ PPT 수정 메모:
 - HITL은 “전문가 검토 필요 신호” 또는 “검토 대상 분리”로 작게 표시한다.
 - 관리자 페이지는 “후속 고도화”로 이동한다.
 - INSIGHT는 “전문가 분석글 보존”으로 설명한다.
-- 앱 캡처는 상세 화면의 fact label + fact insight, 그리고 필요 시 `?review=1` 검토 대상 POC를 사용한다.
+- 앱 캡처는 상세 화면의 fact label + fact insight를 사용한다. 검토 대상 목록은 FastAPI/local `/admin/hitl` POC 캡처로 분리한다.
 
 ## 데이터 수집 슬라이드 구조
 

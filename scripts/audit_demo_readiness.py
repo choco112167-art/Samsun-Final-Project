@@ -234,6 +234,10 @@ def main() -> int:
         if row_fact_status(row) in {"verified", "unverified", "rumor", "hitl_required", "insight"}
     )
     hitl_targets = [row for row in final_visible_rows if row_fact_status(row) == "hitl_required"]
+    review_targets = [
+        row for row in final_visible_rows
+        if row_fact_status(row) in {"hitl_required", "unverified", "rumor", "insight"}
+    ]
     hot_candidates = [
         row for row in final_visible_rows
         if has_fact(row) and has_translation(row) and has_valid_summary(row)
@@ -324,6 +328,14 @@ def main() -> int:
         print(f"  {idx:02d}. {row.get('published_at')} | {fallback_category(row)} | {row.get('source')} | {title}")
     print("hitl_review_targets_top10:")
     for idx, row in enumerate(hitl_targets[:10], start=1):
+        title = row.get("title_ko") or row.get("title") or "(untitled)"
+        insight = row.get("fact_insight") or row.get("fact_reason") or "(none)"
+        print(
+            f"  {idx:02d}. {title} | source={row.get('source')} | "
+            f"fact={row.get('fact_status') or row.get('fact_label')} | insight={insight}"
+        )
+    print("review_candidates_hitl_unverified_rumor_insight_top20:")
+    for idx, row in enumerate(review_targets[:20], start=1):
         title = row.get("title_ko") or row.get("title") or "(untitled)"
         insight = row.get("fact_insight") or row.get("fact_reason") or "(none)"
         print(

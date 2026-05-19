@@ -22,6 +22,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, ConfigDict
 from supabase import create_client
 
+from backend.admin_hitl import create_admin_hitl_router
 from backend.embedder import make_embedding, expand_query
 from backend.rag import build_personalized_feed, record_article_click_and_update_vector, upsert_user_profile
 from config import get_settings
@@ -61,6 +62,9 @@ def require_supabase():
             detail="Supabase is not configured. Set SUPABASE_URL and SUPABASE_KEY.",
         )
     return sb
+
+
+app.include_router(create_admin_hitl_router(require_supabase))
 
 
 class OnboardingRequest(BaseModel):

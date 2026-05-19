@@ -6,7 +6,6 @@ import CategoryPage from './pages/CategoryPage';
 import HotPage from './pages/HotPage';
 import SearchPage from './pages/SearchPage';
 import MyFeedPage from './pages/MyFeedPage';
-import ReviewPage from './pages/ReviewPage';
 import { useBookmarks } from './hooks/useBookmarks';
 import { useTonePreference } from './hooks/useTonePreference';
 import { recordArticleView, fetchAbsenceSummary, markUserSeen, type AbsenceSummaryResponse } from './data/api';
@@ -30,10 +29,6 @@ function hasOnboardingResetQuery(): boolean {
   return params.get('resetOnboarding') === '1' || params.get('onboarding') === '1';
 }
 
-function hasReviewQuery(): boolean {
-  return new URLSearchParams(window.location.search).get('review') === '1';
-}
-
 function initialOnboardedState(): boolean {
   if (hasOnboardingResetQuery() || DEV_FORCE_ONBOARDING) return false;
   const storedInterests = loadInterests();
@@ -48,7 +43,6 @@ export default function App() {
   const bm = useBookmarks();
   const { tone, setTone } = useTonePreference();
   const [absenceData, setAbsenceData] = useState<AbsenceSummaryResponse | null>(null);
-  const [reviewMode] = useState(hasReviewQuery);
 
   useEffect(() => {
     console.log(`[SamsunNews] build ${BUILD_MARKER} onboarding reset enabled`);
@@ -95,8 +89,6 @@ export default function App() {
       recordArticleView(userId, urlHash).catch(() => {});
     }
   };
-
-  if (reviewMode) return <ReviewPage />;
 
   if (!onboarded || !userId || interests.length === 0) {
     return (
