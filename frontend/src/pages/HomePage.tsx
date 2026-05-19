@@ -18,6 +18,7 @@ import DetailPage from './DetailPage';
 import type { BookmarkHook } from '../hooks/useBookmarks';
 import TonePreferenceControl from '../components/TonePreferenceControl';
 import { type SummaryTone } from '../hooks/useTonePreference';
+import { restoreArticleListScroll, useArticleDetailNavigation } from '../hooks/useArticleDetailNavigation';
 
 // CategoryPage 와 동일한 데이터 풀 크기를 보장해야 카테고리 칩 별 매핑 결과가
 // 두 화면에서 동일하게 나온다 (이슈 #15). 너무 작으면 최신 N개 안에 특정 카테고리가
@@ -60,6 +61,19 @@ export default function HomePage({ bm, onNavigateToFeed, onArticleClick, absence
 
   const errorDetail = error?.trim() ?? '';
   const isConfigError = /VITE_SUPABASE|Supabase env|anon/i.test(errorDetail);
+
+  const openDetail = (article: Article) => {
+    scrollPos.current = mainRef.current?.scrollTop ?? scrollPos.current;
+    onArticleClick?.(article.urlHash);
+    setDetail(article);
+  };
+
+  const closeDetail = useCallback(() => {
+    setDetail(null);
+    restoreArticleListScroll(mainRef, scrollPos.current);
+  }, []);
+
+  useArticleDetailNavigation(Boolean(detail), closeDetail);
 
   const handleNotif = () => {
     if (absenceData?.show) {
@@ -138,15 +152,6 @@ export default function HomePage({ bm, onNavigateToFeed, onArticleClick, absence
     return () => observer.disconnect();
   }, [loadMore]);
 
-  // 상세 → 목록 복귀 시 스크롤 복원
-  useEffect(() => {
-    if (!detail && mainRef.current) {
-      setTimeout(() => {
-        if (mainRef.current) mainRef.current.scrollTop = scrollPos.current;
-      }, 50);
-    }
-  }, [detail]);
-
   // 필터 규칙
   //   '전체' 선택  → 사용자가 온보딩에서 고른 관심사로 우선 좁힌 개인화 피드
   //                  (관심사 매칭 결과가 0이면 전체 기사로 폴백 — 구버전 라벨 호환)
@@ -169,7 +174,7 @@ export default function HomePage({ bm, onNavigateToFeed, onArticleClick, absence
       article={detail}
       bookmarked={bm.isBookmarked(detail.urlHash)}
       onBookmark={bm.toggle}
-      onBack={() => setDetail(null)}
+      onBack={closeDetail}
       tone={tone}
       onToneChange={onToneChange}
     />
@@ -351,7 +356,7 @@ export default function HomePage({ bm, onNavigateToFeed, onArticleClick, absence
                 .filter(a => filter === '전체' || a.category === filter)
                 .slice(0, 5)
                 .map((a, i, arr) => (
-                  <button key={a.urlHash} onClick={() => { onArticleClick?.(a.urlHash); setDetail(a); }} style={{
+                  <button key={a.urlHash} onClick={() => openDetail(a)} style={{
                     flexShrink: 0, width: 220, padding: '12px 14px', textAlign: 'left',
                     borderRight: i < arr.length - 1 ? '0.5px solid var(--color-border)' : 'none',
                   }}>
@@ -395,7 +400,7 @@ export default function HomePage({ bm, onNavigateToFeed, onArticleClick, absence
             article={article}
             bookmarked={bm.isBookmarked(article.urlHash)}
             onBookmark={bm.toggle}
-            onClick={() => { onArticleClick?.(article.urlHash); setDetail(article); }}
+            onClick={() => openDetail(article)}
             tone={tone}
             style={{ animation: `cardIn 0.3s ${0.06 + Math.min(i, 10) * 0.05}s ease both` }}
           />

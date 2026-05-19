@@ -6,6 +6,7 @@ import DetailPage from './DetailPage';
 import type { BookmarkHook } from '../hooks/useBookmarks';
 import type { SummaryTone } from '../hooks/useTonePreference';
 import type { Interest } from './OnboardingPage';
+import { restoreArticleListScroll, useArticleDetailNavigation } from '../hooks/useArticleDetailNavigation';
 
 type FeedItem = Article & { similarity?: number; reason?: string };
 
@@ -13,10 +14,10 @@ const ALL_INTERESTS: { id: Interest; emoji: string; desc: string }[] = [
   { id: 'AI 연구',     emoji: '🔬', desc: '논문·모델·벤치마크 중심 연구 동향' },
   { id: 'AI 심층',     emoji: '📖', desc: 'The Decoder — AI 심층 분석·리포트' },
   { id: 'AI 스타트업',  emoji: '🚀', desc: 'TechCrunch · VentureBeat — AI 스타트업·투자 동향' },
-  { id: '테크 전반',    emoji: '💻', desc: 'The Verge — AI를 포함한 테크 업계 전반 소식' },
   { id: 'AI 윤리',     emoji: '⚖️', desc: 'AI 안전성·규제·사회적 영향' },
   { id: 'AI 비즈니스',  emoji: '💼', desc: 'AI 비즈니스·산업 적용 소식' },
   { id: 'AI 커뮤니티',  emoji: '💬', desc: '커뮤니티 토론·트렌드' },
+  { id: '테크 전반',    emoji: '💻', desc: 'The Verge — AI를 포함한 테크 업계 전반 소식' },
 ];
 
 type MyTab = 'feed' | 'bookmarks' | 'interests';
@@ -25,12 +26,13 @@ interface Props {
   bm: BookmarkHook;
   interests: Interest[];
   onInterestsChange: (next: Interest[]) => void;
+  onResetOnboarding: () => void;
   userId: string;
   tone: SummaryTone;
   onToneChange: (tone: SummaryTone) => void;
 }
 
-export default function MyFeedPage({ bm, interests, onInterestsChange, userId, tone, onToneChange }: Props) {
+export default function MyFeedPage({ bm, interests, onInterestsChange, onResetOnboarding, userId, tone, onToneChange }: Props) {
   const [tab, setTab]           = useState<MyTab>('feed');
   const [editMode, setEditMode] = useState(false);
   const [detail, setDetail]     = useState<FeedItem | null>(null);
@@ -77,12 +79,12 @@ export default function MyFeedPage({ bm, interests, onInterestsChange, userId, t
     setDetail(article);
   };
 
-  const closeDetail = () => {
+  const closeDetail = useCallback(() => {
     setDetail(null);
-    requestAnimationFrame(() => {
-      if (mainRef.current) mainRef.current.scrollTop = scrollPos.current;
-    });
-  };
+    restoreArticleListScroll(mainRef, scrollPos.current);
+  }, []);
+
+  useArticleDetailNavigation(Boolean(detail), closeDetail);
 
   if (detail) return (
     <DetailPage
@@ -130,6 +132,23 @@ export default function MyFeedPage({ bm, interests, onInterestsChange, userId, t
             }}>{label}</button>
           ))}
         </div>
+
+        <button
+          onClick={onResetOnboarding}
+          style={{
+            width: '100%',
+            minHeight: 42,
+            marginBottom: 14,
+            borderRadius: 'var(--radius-sm)',
+            background: 'rgba(255,255,255,0.12)',
+            border: '1px solid rgba(255,255,255,0.22)',
+            color: 'var(--color-header-text)',
+            fontSize: 13,
+            fontWeight: 700,
+          }}
+        >
+          데모 초기화 / 관심사 다시 선택
+        </button>
       </header>
 
       <main ref={mainRef} style={{ flex: 1, overflowY: 'auto', WebkitOverflowScrolling: 'touch', background: 'var(--color-bg)', borderRadius: '32px 32px 0 0' }}>
@@ -260,6 +279,10 @@ export default function MyFeedPage({ bm, interests, onInterestsChange, userId, t
                 );
               })}
             </div>
+
+            <p style={{ marginTop: 16, fontSize: 11, lineHeight: 1.45, color: 'var(--color-text-tertiary)' }}>
+              녹화·시연용 초기화는 상단의 “데모 초기화 / 관심사 다시 선택” 버튼을 사용하세요. 이 기기 안의 온보딩·관심사 캐시만 초기화합니다.
+            </p>
           </div>
         )}
       </main>

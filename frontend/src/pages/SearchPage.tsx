@@ -4,6 +4,7 @@ import { articleDisplayTitle, articleSummaryForTone, hasKoreanTitle, type Articl
 import DetailPage from './DetailPage';
 import type { BookmarkHook } from '../hooks/useBookmarks';
 import type { SummaryTone } from '../hooks/useTonePreference';
+import { restoreArticleListScroll, useArticleDetailNavigation } from '../hooks/useArticleDetailNavigation';
 
 /** SearchResult를 Article로 변환하되 similarity는 보존 */
 type SearchItem = Article & { similarity?: number };
@@ -83,12 +84,12 @@ export default function SearchPage({ bm, onArticleClick, tone, onToneChange }: P
     setDetail(article);
   };
 
-  const closeDetail = () => {
+  const closeDetail = useCallback(() => {
     setDetail(null);
-    requestAnimationFrame(() => {
-      if (mainRef.current) mainRef.current.scrollTop = scrollPos.current;
-    });
-  };
+    restoreArticleListScroll(mainRef, scrollPos.current);
+  }, []);
+
+  useArticleDetailNavigation(Boolean(detail), closeDetail);
 
   if (detail) return (
     <DetailPage

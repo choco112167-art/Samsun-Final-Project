@@ -13,7 +13,7 @@
 | AI·IT 뉴스는 대부분 영어로 빠르게 쏟아진다 | 한국어 제목, 전문 번역, 3줄 요약을 자동 생성 |
 | 긴 원문은 모바일에서 읽기 어렵다 | 카드에는 요약, 상세에는 접이식 번역 전문 제공 |
 | 기술 용어와 신조어가 많다 | Supabase `neologisms` 기반 RAG 설명과 bottom sheet 제공 |
-| 출처와 신뢰도 판단이 어렵다 | `FACT`, `UNVERIFIED`, `RUMOR`, `HITL_REQUIRED` 라벨 표시 |
+| 출처와 신뢰도 판단이 어렵다 | `FACT`, `UNVERIFIED`, `RUMOR`, `INSIGHT`, `HITL_REQUIRED` 라벨 표시 |
 | 모든 사용자에게 같은 뉴스만 보인다 | 온보딩 관심사와 클릭 이력 기반 개인화 추천 제공 |
 
 ## 핵심 기능
@@ -102,7 +102,7 @@ Gemma4 E4B는 May 1~18 원천 기사에 대해 한 번의 구조화된 생성으
 | `summary_formal` | 격식체 3줄 요약 |
 | `summary_casual` | 일상체 3줄 요약 |
 | `category` | 최종 7개 카테고리 중 하나 |
-| `fact_label` / `fact_status` | 검증/미검증/루머/HITL 상태 |
+| `fact_label` / `fact_status` | 검증/확인 필요/루머/분석글/전문가 검토 상태 |
 | `neologism_terms` | 설명 후보가 되는 기술 용어 |
 
 최종 카테고리:
@@ -152,23 +152,31 @@ flowchart LR
 
 | 정책 | 설명 |
 | --- | --- |
-| allowlist 기반 | `RAG`, `LLM`, `Prompt Injection`, `Guardrail`, `Hallucination`, `LoRA`, `pgvector` 등 발표용 핵심 용어 중심 |
-| 오탐 방지 | `The`, `Tech`, `AI`, `Meta`, `Google`, `OpenAI`, `Anthropic`, `Nvidia` 등 일반 단어/회사명/출처명 제외 |
+| allowlist 기반 | `RAG`, `LLM`, `Fine-tuning`, `Prompt Injection`, `Guardrail`, `Hallucination`, `LoRA`, `pgvector`, `MCP`, `AI Agent`, `Context Engineering` 등 발표용 핵심 용어 중심 |
+| 오탐 방지 | `The`, `Tech`, `Technology`, `AI`, `Meta`, `Google`, `OpenAI`, `Anthropic`, `Nvidia`, `TechCrunch` 등 일반 단어/회사명/출처명 제외 |
 | 설명 없는 용어 | 하이라이트하지 않음 |
 | 클릭 매칭 | 클릭한 용어 객체의 설명만 표시, generic fallback 없음 |
 | UI | 모바일 tap 시 bottom sheet, 데스크톱 hover tooltip |
 
+신규 용어 설명 생성은 앱 런타임에서 Gemini/Grounding을 호출하지 않습니다. `backend/neologism_rag.py`에는 `NEOLOGISM_PIPELINE_GEMINI=1`일 때만 쓰는 배치/관리용 옵션이 있으며, 최종 사용자 앱은 Supabase `neologisms`에 이미 저장된 설명만 조회합니다.
+
 ## Fact label / HITL / Insight
+
+팩트체크 파이프라인은 사람이 매번 직접 판정하는 구조가 아니라 AI 파이프라인이 자동으로 1차 판정합니다. testset 200건과 DebateCV 검증용 실제 AI 테크 기사 1건, 총 201건으로 평가했으며, 최종 신뢰도 분류 정확도 98.5%, RUMOR recall 1.0, FACT F1 0.989를 달성했습니다. 앱에서는 AI가 자동 판정한 FACT/RUMOR/UNVERIFIED/INSIGHT 라벨을 표시하고, 자동 판정만으로 어려운 기사는 전문가 검토 필요(HITL_REQUIRED) 대상으로 분리합니다.
 
 | 라벨 | 화면 표시 | 의미 |
 | --- | --- | --- |
 | `FACT` / `VERIFIED` | 검증됨 | 신뢰도 높은 출처와 명확한 보도 형식 |
-| `UNVERIFIED` | 미검증 | 출처는 있으나 독립 교차검증 부족 |
-| `RUMOR` | 루머 의심 | 공식 발표보다 추정성 표현이 많음 |
-| `HITL_REQUIRED` | HITL 검토 필요 | 자동 판정만으로 판단이 어려워 사람 검토 필요 |
+| `UNVERIFIED` | 확인 필요 | 출처는 확인되지만 독립 교차검증 정보가 부족함 |
+| `RUMOR` | 루머 주의 | 공식 발표보다 추정성 표현이 많음 |
+| `INSIGHT` | 분석글 | 전문가 해설·관점이 중심인 TIER 0/1 사설·분석글 보존 라벨 |
+| `HITL_REQUIRED` / `HITL` / `HUMAN_REVIEW` | 전문가 검토 필요 | 자동 판정만으로 판단이 어려워 사람 검토 필요 |
+| `DROP` | 노출 안 함 | 커뮤니티 노이즈나 최종 피드 부적합 항목 |
 
-`fact_reason` 또는 `fact_insight`가 있는 경우 상세 화면에 보수적인 설명을 표시합니다. 값이 없으면 빈 박스를 노출하지 않습니다.  
-HITL은 “완전한 관리자 승인 시스템”이 아니라 “검토 대상 분리 및 표시 구현”입니다. 운영 단계에서는 관리자 승인/반려 플로우로 확장할 수 있도록 설계했습니다.
+`fact_reason` 또는 `fact_insight`가 있는 경우 상세 화면에 보수적인 설명을 표시하고, 값이 없으면 라벨별 기본 설명만 표시합니다.  
+HITL은 “완전한 관리자 승인 시스템”이 아니라 “검토 대상 분리 및 표시 구현”입니다. 운영 단계에서는 관리자 승인/반려 플로우로 확장할 수 있도록 설계했습니다. INSIGHT는 단순 루머나 노이즈가 아니라 신뢰 가능한 전문가 해설·관점 중심 글을 DROP하지 않고 보존하기 위한 라벨입니다.
+
+발표용 내부 관리자 POC는 Apps in Toss 사용자 앱이 아니라 FastAPI/local 경로로 분리했습니다. `ADMIN_REVIEW_ENABLED=1`로 로컬 서버를 실행하면 `/admin/hitl` 또는 `/admin/hitl-candidates`에서 `HITL_REQUIRED`, `UNVERIFIED`, `RUMOR`, `INSIGHT` 검토 대상 목록을 확인할 수 있습니다. 쓰기 API(`/admin/hitl-review`)는 로컬 backend 환경에 `SUPABASE_SERVICE_ROLE_KEY`가 있을 때만 사용할 수 있으며, `.ait` 앱에는 service role key가 들어가지 않습니다.
 
 ## Apps in Toss 배포 / 시연
 
@@ -265,6 +273,8 @@ npm run ait:build
 python scripts/audit_demo_readiness.py
 python scripts/audit_recommendation_flow.py --dry-run
 python scripts/audit_neologisms.py
+python scripts/seed_neologisms.py --dry-run
+python scripts/seed_neologisms.py --run
 ```
 
 Sangjun SQLite May range 처리:
@@ -319,7 +329,7 @@ backend/sql/optional_pgvector_indexes.sql
 
 ## 후속 고도화
 
-- HITL 관리자 페이지: `HITL_REQUIRED` 기사 승인/반려/수정 플로우
+- HITL 운영 고도화: 현재 FastAPI/local 내부 POC를 실제 관리자 승인/반려/수정 플로우로 확장
 - Gemma4 기반 선택형 LLM Re-ranking: pgvector 후보를 받은 뒤 품질/다양성 재정렬
 - 대규모 embedding backfill: 모든 기사와 사용자 프로필에 Qwen3-Embedding-0.6B 일괄 적용
 - 정량 평가 확대: 번역/요약 품질 지표, 사용자 클릭률, 추천 만족도

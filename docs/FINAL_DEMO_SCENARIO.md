@@ -56,12 +56,13 @@ Say:
 ## 3:05-3:45 Fact Status And Trust
 
 Show:
-- Badges: `검증됨`, `미검증`, `루머 의심`, `HITL 검토 필요`.
+- Badges: `검증됨`, `확인 필요`, `루머 주의`, `분석글`, `전문가 검토 필요`.
 - Trust ranking/helper text.
 
 Say:
 - The app does not pretend uncertain claims are true.
-- Uncertain items become `미검증`; ambiguous items become `HITL 검토 필요`.
+- Uncertain items become `확인 필요`; ambiguous items become `전문가 검토 필요`.
+- `INSIGHT` preserves expert analysis/opinion pieces instead of dropping them as noise.
 - Rumor examples are synthetic and clearly labeled `[시연용]`.
 
 ## 3:45-4:30 Pipeline And Supabase
@@ -136,8 +137,13 @@ Show:
 ### 6. Fact Label
 
 Show:
-- `검증됨`, `미검증`, `루머 의심`, and `HITL 검토 필요` badges.
+- `검증됨`, `확인 필요`, `루머 주의`, `분석글`, and `전문가 검토 필요` badges.
 - Rumor demo copy: `이 항목은 검증되지 않은 시연용 루머 데이터입니다.`
+- Optional internal POC: open the local FastAPI admin page `/admin/hitl` with `ADMIN_REVIEW_ENABLED=1` to show the `검토 대상 보기` list.
+
+Say:
+- This is not a full admin approval system. It demonstrates automatic fact labeling plus review-target separation.
+- The Apps in Toss user app does not contain admin review controls. The internal POC is separate from the `.ait` app.
 
 ### 7. Neologism Bottom Sheet
 

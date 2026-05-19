@@ -1,10 +1,11 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { ApiError, fetchArticles } from '../data/api';
 import { CATEGORIES, filterByCategory, articleCompletenessScore, articleDisplayTitle, factStatusWeight, hasKoreanTitle, normalizeFactStatus, type Article, type Category } from '../data/articles';
 import { FactStatusBadge } from '../components/FactStatusBadge';
 import DetailPage from './DetailPage';
 import type { BookmarkHook } from '../hooks/useBookmarks';
 import type { SummaryTone } from '../hooks/useTonePreference';
+import { restoreArticleListScroll, useArticleDetailNavigation } from '../hooks/useArticleDetailNavigation';
 
 type SubTab = '전체' | Category;
 const CATEGORY_TABS: SubTab[] = ['전체', ...CATEGORIES];
@@ -57,12 +58,12 @@ export default function CategoryPage({ bm, onArticleClick, tone, onToneChange }:
     setDetail(article);
   };
 
-  const closeDetail = () => {
+  const closeDetail = useCallback(() => {
     setDetail(null);
-    requestAnimationFrame(() => {
-      if (mainRef.current) mainRef.current.scrollTop = scrollPos.current;
-    });
-  };
+    restoreArticleListScroll(mainRef, scrollPos.current);
+  }, []);
+
+  useArticleDetailNavigation(Boolean(detail), closeDetail);
 
   if (detail) return (
     <DetailPage article={detail} bookmarked={bm.isBookmarked(detail.urlHash)} onBookmark={bm.toggle} onBack={closeDetail} tone={tone} onToneChange={onToneChange} />

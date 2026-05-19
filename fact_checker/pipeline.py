@@ -114,7 +114,12 @@ def run_fact_check(
     # 근거: Baly et al. EMNLP 2018 — 소스 신뢰도가 팩트체크 강력한 prior
     profile = get_profile(source)
     tier    = profile.default_tier
+<<<<<<< HEAD
     # 소스명에 Reddit이 포함된 경우 source_type을 community로 강제 보정 (데이터 오기재 방어)
+=======
+    # 데이터 소스 표기 오류 방어: Reddit 계열 문자열이 남아 있으면 community로 취급한다.
+    # 최종 수집 소스는 Lemmy/Hacker News지만, 평가셋/레거시 샘플에는 Reddit 명칭이 남을 수 있다.
+>>>>>>> ace56f7027a0aefffc4d71993ef53f57769bad0b
     if "reddit" in source.lower() and source_type == "media":
         source_type = "community"
 
@@ -296,7 +301,16 @@ def run_fact_check(
         logger.info(f"[Pipeline] Step 3B: CoVe (prior={prior_verdict}, conf={prior_confidence:.2f})")
         cove_result = cove_run(title, content, prior_verdict, prior_confidence)
 
+        # TIER 0-1 공식/학술 미디어는 소스 신뢰도를 보정값으로 반영한다.
+        # CoVe가 최신 수치 검증을 못 해 과도하게 낮은 confidence를 주는 경우를 완화한다.
+        if tier in ("ACADEMIC_INSTITUTIONAL", "MEDIA_OFFICIAL"):
+            credibility_boost = profile.credibility_score * 0.15
+            cove_conf_adjusted = min(cove_result.confidence + credibility_boost, 1.0)
+        else:
+            cove_conf_adjusted = cove_result.confidence
+
         # CoVe에서 confidence 충분하고 importance 낮으면 종료
+<<<<<<< HEAD
         # TIER 0-1 공식 미디어는 소스 신뢰도를 보정값으로 반영 (CoVe LLM이 수치 검증 불가 시 과도하게 낮아지는 문제 방지)
         # 근거: Baly et al. EMNLP 2018 — 소스 신뢰도가 팩트체크의 강력한 prior
         if tier in ("ACADEMIC_INSTITUTIONAL", "MEDIA_OFFICIAL"):
@@ -305,6 +319,8 @@ def run_fact_check(
         else:
             cove_conf_adjusted = cove_result.confidence
 
+=======
+>>>>>>> ace56f7027a0aefffc4d71993ef53f57769bad0b
         if cove_conf_adjusted >= CONFIDENCE_COVE_THRESHOLD or importance < IMPORTANCE_DEBATE_THRESHOLD:
             return FactCheckResult(
                 fact_label=cove_result.verdict,
@@ -314,11 +330,14 @@ def run_fact_check(
                 matched_patterns=matched_pats,
                 verification_method="cove",
                 importance_score=importance,
-                reasoning_trace=cove_result.reasoning,
+                reasoning_trace=(
+                    f"{cove_result.reasoning} "
+                    f"(소스 신뢰도 보정 +{cove_conf_adjusted - cove_result.confidence:.2f})"
+                ),
             )
 
         prior_verdict = cove_result.verdict
-        prior_confidence = cove_result.confidence
+        prior_confidence = cove_conf_adjusted
         prior_reasoning = cove_result.reasoning
 
     except Exception as e:

@@ -187,7 +187,7 @@ export function normalizeFactStatus(label: string | null | undefined): FactStatu
   const value = (label ?? '').trim().toUpperCase();
   if (value === 'FACT' || value === 'VERIFIED' || value === 'FACT_INSIGHT') return 'VERIFIED';
   if (value === 'RUMOR') return 'RUMOR';
-  if (value === 'HITL_REQUIRED' || value === 'HITL' || value === 'HUMAN_REVIEW_REQUIRED') return 'HITL_REQUIRED';
+  if (value === 'HITL_REQUIRED' || value === 'HITL' || value === 'HUMAN_REVIEW' || value === 'HUMAN_REVIEW_REQUIRED') return 'HITL_REQUIRED';
   if (value === 'INSIGHT') return 'INSIGHT';
   return 'UNVERIFIED';
 }

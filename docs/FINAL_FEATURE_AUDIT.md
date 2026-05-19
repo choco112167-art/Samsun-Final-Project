@@ -25,6 +25,24 @@ This audit records what is actually implemented for final submission. It is inte
 | Frontend inline highlight + bottom sheet | Actually implemented | `frontend/src/components/NeologismText.tsx`, `frontend/src/components/Overlay.tsx` | Known terms with DB explanations are highlighted. Tap opens bottom sheet; desktop hover shows tooltip. |
 | Unknown term explanation policy | Actually implemented/documented | `frontend/src/components/NeologismText.tsx`, `docs/DATA_PIPELINE.md` | UI filters out entries without explanation; unknown terms are not faked. |
 | HITL target separation + fact insight display | Actually implemented for demo display | `scripts/backfill_fact_insights.py`, `frontend/src/pages/DetailPage.tsx`, `backend/sql/final_demo_supabase_patch.sql` | Visible real articles can receive conservative `fact_reason`/`fact_insight`. `HITL_REQUIRED` is displayed as a human-review target. This is not a full admin approval system. |
+| Local admin review target POC | Actually implemented outside `.ait` | `backend/admin_hitl.py`, `backend/main.py` | FastAPI/local `/admin/hitl` and `/admin/hitl-candidates` show HITL/UNVERIFIED/RUMOR/INSIGHT candidates. Optional `/admin/hitl-review` requires `ADMIN_REVIEW_ENABLED=1` and local `SUPABASE_SERVICE_ROLE_KEY`. This is not part of the Apps in Toss user app and is not a full production admin system. |
+| Fact checker evaluation | Actually evaluated | `fact_checker/`, `docs/PRESENTATION_FACTS.md` | Evaluated on 200 testset rows plus 1 DebateCV validation article. Final reported metrics: 98.5% accuracy, RUMOR recall 1.0, FACT F1 0.989. |
+| INSIGHT label | Actually displayed/documented | `frontend/src/components/FactStatusBadge.tsx`, `frontend/src/pages/DetailPage.tsx`, `README.md` | `INSIGHT` preserves TIER 0/1 expert analysis/opinion pieces instead of dropping them as noise. It is displayed as `분석글`. |
+
+## Fact Label / HITL / INSIGHT Wording
+
+The final demo uses user-facing Korean labels rather than raw developer terms:
+
+| Internal label | User-facing label | Meaning |
+| --- | --- | --- |
+| `FACT` / `VERIFIED` | 검증됨 | Reliable source and clear reporting format. |
+| `UNVERIFIED` | 확인 필요 | Source exists, but independent cross-checking is insufficient. |
+| `RUMOR` | 루머 주의 | Speculative wording is stronger than official confirmation. |
+| `INSIGHT` | 분석글 | Expert analysis or viewpoint-centered article preserved from DROP. |
+| `HITL_REQUIRED` / `HITL` / `HUMAN_REVIEW` | 전문가 검토 필요 | Automatic judgment is insufficient; human review is needed. |
+| `DROP` | Not shown in user feed | Noise or unsuitable for the final feed. |
+
+HITL is documented as “review target separation and display,” not as a complete admin approval workflow.
 
 ## How To Demonstrate Embedding / RAG
 

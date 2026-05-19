@@ -78,11 +78,13 @@ def fetch_all(sb, fields: list[str]) -> list[dict[str, Any]]:
 
 def normalize_fact(value: object) -> str:
     raw = str(value or "").strip().upper()
-    if raw in {"FACT", "VERIFIED", "FACT_INSIGHT", "INSIGHT"}:
+    if raw in {"FACT", "VERIFIED", "FACT_INSIGHT"}:
         return "verified"
+    if raw in {"INSIGHT"}:
+        return "insight"
     if raw in {"RUMOR"}:
         return "rumor"
-    if raw in {"HITL", "HITL_REQUIRED", "HUMAN_REVIEW_REQUIRED"}:
+    if raw in {"HITL", "HITL_REQUIRED", "HUMAN_REVIEW", "HUMAN_REVIEW_REQUIRED"}:
         return "hitl_required"
     if raw in {"", "NONE", "NULL"}:
         return "missing"
@@ -227,7 +229,15 @@ def main() -> int:
     with_fact_insight = sum(1 for row in rows if not is_blank(row.get("fact_reason")) or not is_blank(row.get("fact_insight")))
     visible_with_fact_reason = sum(1 for row in final_visible_rows if not is_blank(row.get("fact_reason")))
     visible_with_fact_insight = sum(1 for row in final_visible_rows if not is_blank(row.get("fact_insight")))
+    visible_with_fact_display = sum(
+        1 for row in final_visible_rows
+        if row_fact_status(row) in {"verified", "unverified", "rumor", "hitl_required", "insight"}
+    )
     hitl_targets = [row for row in final_visible_rows if row_fact_status(row) == "hitl_required"]
+    review_targets = [
+        row for row in final_visible_rows
+        if row_fact_status(row) in {"hitl_required", "unverified", "rumor", "insight"}
+    ]
     hot_candidates = [
         row for row in final_visible_rows
         if has_fact(row) and has_translation(row) and has_valid_summary(row)
@@ -261,6 +271,7 @@ def main() -> int:
     print(f"articles_with_fact_reason_or_insight: {with_fact_insight}")
     print(f"visible_articles_with_fact_reason: {visible_with_fact_reason}")
     print(f"visible_articles_with_fact_insight: {visible_with_fact_insight}")
+    print(f"visible_articles_with_fact_label_display: {visible_with_fact_display}")
     if fact_checks is not None:
         print(f"fact_checks_rows: {fact_checks}")
     print(f"articles_with_neologism_terms: {with_neologisms}")
@@ -280,11 +291,12 @@ def main() -> int:
     print(f"visible_unverified_articles: {visible_fact_counts.get('unverified', 0)}")
     print(f"visible_rumor_articles: {visible_fact_counts.get('rumor', 0)}")
     print(f"visible_verified_articles: {visible_fact_counts.get('verified', 0)}")
+    print(f"visible_insight_articles: {visible_fact_counts.get('insight', 0)}")
     print("fact_status_counts:")
-    for key in ("verified", "unverified", "rumor", "hitl_required", "missing"):
+    for key in ("verified", "unverified", "rumor", "hitl_required", "insight", "missing"):
         print(f"  {key}: {fact_counts.get(key, 0)}")
     print("visible_fact_status_counts:")
-    for key in ("verified", "unverified", "rumor", "hitl_required", "missing"):
+    for key in ("verified", "unverified", "rumor", "hitl_required", "insight", "missing"):
         print(f"  {key}: {visible_fact_counts.get(key, 0)}")
     print("visible_by_category:")
     for key in FINAL_CATEGORIES:
@@ -316,6 +328,14 @@ def main() -> int:
         print(f"  {idx:02d}. {row.get('published_at')} | {fallback_category(row)} | {row.get('source')} | {title}")
     print("hitl_review_targets_top10:")
     for idx, row in enumerate(hitl_targets[:10], start=1):
+        title = row.get("title_ko") or row.get("title") or "(untitled)"
+        insight = row.get("fact_insight") or row.get("fact_reason") or "(none)"
+        print(
+            f"  {idx:02d}. {title} | source={row.get('source')} | "
+            f"fact={row.get('fact_status') or row.get('fact_label')} | insight={insight}"
+        )
+    print("review_candidates_hitl_unverified_rumor_insight_top20:")
+    for idx, row in enumerate(review_targets[:20], start=1):
         title = row.get("title_ko") or row.get("title") or "(untitled)"
         insight = row.get("fact_insight") or row.get("fact_reason") or "(none)"
         print(

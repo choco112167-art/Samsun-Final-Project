@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { BottomSheet } from './Overlay';
 import type { NeologismEntry } from '../data/api';
 import { segmentNeologismText } from '../data/neologismMatcher';
@@ -21,6 +21,17 @@ export default function NeologismText({ text, entries }: Props) {
       || import.meta.env.VITE_HIDE_DEMO_ARTICLES === '1';
     return segmentNeologismText(text, entries, { demoMode, maxMatches: 4 });
   }, [entries, text]);
+
+  useEffect(() => {
+    if (!import.meta.env.DEV) return;
+    const matchedTerms = segments
+      .map(segment => segment.entry?.term)
+      .filter((term): term is string => Boolean(term));
+    console.log('[neologism] loaded terms', entries.length);
+    if (matchedTerms.length > 0) {
+      console.log('[neologism] matched terms', [...new Set(matchedTerms)]);
+    }
+  }, [entries.length, segments]);
 
   if (!text) return null;
   if (segments.length === 1 && !segments[0].entry) return <>{text}</>;
