@@ -19,6 +19,7 @@ const entries = [
   { term: 'Tech', explanation: '출처명 일부는 제외' },
   { term: 'AI', explanation: '너무 일반적인 단어는 제외' },
   { term: 'RAG', explanation: '검색 증강 생성' },
+  { term: 'Fine-tuning', explanation: '파인튜닝' },
   { term: 'Prompt Injection', explanation: '프롬프트 주입 공격' },
   { term: 'LLM', explanation: '대규모 언어 모델' },
   { term: 'Guardrail', explanation: '안전 장치' },
@@ -76,8 +77,11 @@ function matchTerms(text) {
 
 const cases = [
   ['The Guardian Tech reported that Meta released a new model.', []],
+  ['The Guardian Tech reported that Meta and OpenAI discussed AI.', []],
+  ['This article explains RAG and Fine-tuning for LLM systems.', ['RAG', 'Fine-tuning', 'LLM']],
   ['This article explains RAG and prompt injection.', ['RAG', 'Prompt Injection']],
   ['LLM guardrails reduce hallucination.', ['LLM', 'Guardrail', 'Hallucination']],
+  ['Prompt Injection and Guardrail failures cause Hallucination.', ['Prompt Injection', 'Guardrail', 'Hallucination']],
   ['AI is changing the tech industry.', []],
   ['MCP connects an AI Agent to tools through a Vector DB workflow.', ['MCP', 'Vector DB']],
   ['Agentic AI systems use reasoning models.', ['Agentic AI']],

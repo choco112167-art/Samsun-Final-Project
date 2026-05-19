@@ -22,6 +22,7 @@ import NeologismText from '../components/NeologismText';
 import TonePreferenceControl from '../components/TonePreferenceControl';
 import { toneLabel, type SummaryTone } from '../hooks/useTonePreference';
 import { FactStatusBadge, factStatusDescription, factStatusText } from '../components/FactStatusBadge';
+import { FALLBACK_NEOLOGISMS } from '../data/neologismFallback';
 
 interface Props {
   article: Article;
@@ -140,7 +141,7 @@ export default function DetailPage({ article, bookmarked, onBookmark, onBack, to
         ];
         const termEntries = await fetchNeologismsByTerms(articleTerms);
         if (cancelled) return;
-        setNeologisms(mergeEntries(termEntries, articleEntries, dictionary));
+        setNeologisms(mergeEntries(termEntries, articleEntries, dictionary, FALLBACK_NEOLOGISMS));
         setSourceOverride((extras.source_url ?? '').trim());
         setOriginalOverride((extras.original_url ?? '').trim());
         setFactExplanation((extras.fact_insight ?? extras.fact_reason ?? article.factInsight ?? article.factReason ?? '').trim());
@@ -150,7 +151,7 @@ export default function DetailPage({ article, bookmarked, onBookmark, onBack, to
           console.warn('[DetailPage] optional neologism/source lookup failed', err);
         }
         if (!cancelled) {
-          setNeologisms([]);
+          setNeologisms(FALLBACK_NEOLOGISMS);
           setSourceOverride('');
           setOriginalOverride('');
           setFactExplanation('');
