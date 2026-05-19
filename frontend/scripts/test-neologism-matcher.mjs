@@ -1,13 +1,16 @@
 const STOPWORDS = new Set([
   'the', 'a', 'an', 'and', 'or', 'of', 'for', 'to', 'in', 'on', 'with', 'by', 'from',
   'tech', 'technology', 'news', 'guardian', 'verge', 'decoder', 'spectrum', 'venturebeat',
-  'meta', 'google', 'openai', 'ai', 'ml',
+  'techcrunch', 'meta', 'google', 'openai', 'anthropic', 'nvidia', 'ai', 'ml',
 ]);
 
 const ALLOWLIST = new Set([
-  'rag', 'llm', 'fine-tuning', 'prompt injection', 'guardrail', 'hallucination',
-  'inference', 'token', 'transformer', 'embedding', 'hitl', 'cove', 're-ranking',
-  'pgvector', 'lora',
+  'rag', 'llm', 'slm', 'fine-tuning', 'lora', 'qlora', 'rlhf', 'dpo',
+  'prompt injection', 'jailbreak', 'guardrail', 'hallucination',
+  'inference', 'token', 'transformer', 'embedding', 'vector db', 'pgvector',
+  're-ranking', 'cove', 'hitl', 'agentic ai', 'ai agent', 'mcp',
+  'context engineering', 'vibe coding', 'synthetic data', 'model collapse',
+  'quantization', 'reasoning model', 'chain of thought', 'multimodal',
 ]);
 
 const entries = [
@@ -20,6 +23,9 @@ const entries = [
   { term: 'LLM', explanation: '대규모 언어 모델' },
   { term: 'Guardrail', explanation: '안전 장치' },
   { term: 'Hallucination', explanation: '환각 현상' },
+  { term: 'MCP', explanation: '도구 연결 프로토콜' },
+  { term: 'Vector DB', explanation: '벡터 검색 데이터베이스' },
+  { term: 'Agentic AI', explanation: '목표를 수행하는 에이전트형 AI' },
 ];
 
 function norm(value) {
@@ -73,6 +79,8 @@ const cases = [
   ['This article explains RAG and prompt injection.', ['RAG', 'Prompt Injection']],
   ['LLM guardrails reduce hallucination.', ['LLM', 'Guardrail', 'Hallucination']],
   ['AI is changing the tech industry.', []],
+  ['MCP connects an AI Agent to tools through a Vector DB workflow.', ['MCP', 'Vector DB']],
+  ['Agentic AI systems use reasoning models.', ['Agentic AI']],
 ];
 
 for (const [text, expected] of cases) {

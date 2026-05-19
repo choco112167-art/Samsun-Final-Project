@@ -105,12 +105,16 @@ Highlight safety rules:
 - One term is highlighted only on its first occurrence.
 - Each article text block highlights at most 4 terms.
 - In final demo mode (`VITE_DEMO_POLISHED_FEED=1` or `VITE_HIDE_DEMO_ARTICLES=1`), highlighting is allowlist-only:
-  `RAG`, `LLM`, `Fine-tuning`, `Prompt Injection`, `Guardrail`, `Hallucination`, `Inference`, `Token`, `Transformer`, `Embedding`, `HITL`, `CoVe`, `Re-ranking`, `pgvector`, `LoRA`.
+  `RAG`, `LLM`, `SLM`, `Fine-tuning`, `LoRA`, `QLoRA`, `RLHF`, `DPO`, `Prompt Injection`, `Jailbreak`, `Guardrail`, `Hallucination`, `Inference`, `Token`, `Transformer`, `Embedding`, `Vector DB`, `pgvector`, `Re-ranking`, `CoVe`, `HITL`, `Agentic AI`, `AI Agent`, `MCP`, `Context Engineering`, `Vibe Coding`, `Synthetic Data`, `Model Collapse`, `Quantization`, `Reasoning Model`, `Chain of Thought`, `Multimodal`.
 
 Important demo fix:
 
-- Generic/source/company terms such as `The`, `Tech`, `Meta`, `Google`, `OpenAI`, `AI`, `ML` are intentionally hidden even if the DB has rows for them.
+- Generic/source/company terms such as `The`, `Tech`, `Technology`, `Meta`, `Google`, `OpenAI`, `Anthropic`, `Nvidia`, `TechCrunch`, `AI`, `ML` are intentionally hidden even if the DB has rows for them.
 - The bottom sheet always displays the clicked term object's own `explanation`. There is no fallback to the first dictionary entry or to a generic AI explanation.
+
+## Gemini / Grounding Scope
+
+`backend/neologism_rag.py` contains an optional Gemini Grounding path for batch/admin enrichment, guarded by `NEOLOGISM_PIPELINE_GEMINI=1`. It is off by default and is not called by the Apps in Toss runtime. The final `.ait` app only reads existing Supabase `neologisms` rows.
 
 ## Unknown Term Policy
 
@@ -124,7 +128,7 @@ Therefore:
 
 - Unknown terms are not explained.
 - The app does not fake explanations.
-- Demo terms are explicitly seeded through `scripts/seed_demo_articles.py`.
+- Final demo terms are explicitly seeded through `scripts/seed_neologisms.py`.
 
 ## Demo Commands
 
@@ -136,10 +140,11 @@ Run migration in Supabase SQL Editor if needed:
 -- backend/sql/add_pipeline_tracking_fields.sql
 ```
 
-Seed demo articles and neologisms:
+Seed final demo neologisms:
 
 ```bash
-python scripts/seed_demo_articles.py
+python scripts/seed_neologisms.py --dry-run
+python scripts/seed_neologisms.py --run
 ```
 
 Check demo readiness:

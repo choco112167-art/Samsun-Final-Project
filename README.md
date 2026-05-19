@@ -152,11 +152,13 @@ flowchart LR
 
 | 정책 | 설명 |
 | --- | --- |
-| allowlist 기반 | `RAG`, `LLM`, `Prompt Injection`, `Guardrail`, `Hallucination`, `LoRA`, `pgvector` 등 발표용 핵심 용어 중심 |
-| 오탐 방지 | `The`, `Tech`, `AI`, `Meta`, `Google`, `OpenAI`, `Anthropic`, `Nvidia` 등 일반 단어/회사명/출처명 제외 |
+| allowlist 기반 | `RAG`, `LLM`, `Fine-tuning`, `Prompt Injection`, `Guardrail`, `Hallucination`, `LoRA`, `pgvector`, `MCP`, `AI Agent`, `Context Engineering` 등 발표용 핵심 용어 중심 |
+| 오탐 방지 | `The`, `Tech`, `Technology`, `AI`, `Meta`, `Google`, `OpenAI`, `Anthropic`, `Nvidia`, `TechCrunch` 등 일반 단어/회사명/출처명 제외 |
 | 설명 없는 용어 | 하이라이트하지 않음 |
 | 클릭 매칭 | 클릭한 용어 객체의 설명만 표시, generic fallback 없음 |
 | UI | 모바일 tap 시 bottom sheet, 데스크톱 hover tooltip |
+
+신규 용어 설명 생성은 앱 런타임에서 Gemini/Grounding을 호출하지 않습니다. `backend/neologism_rag.py`에는 `NEOLOGISM_PIPELINE_GEMINI=1`일 때만 쓰는 배치/관리용 옵션이 있으며, 최종 사용자 앱은 Supabase `neologisms`에 이미 저장된 설명만 조회합니다.
 
 ## Fact label / HITL / Insight
 
@@ -271,6 +273,8 @@ npm run ait:build
 python scripts/audit_demo_readiness.py
 python scripts/audit_recommendation_flow.py --dry-run
 python scripts/audit_neologisms.py
+python scripts/seed_neologisms.py --dry-run
+python scripts/seed_neologisms.py --run
 ```
 
 Sangjun SQLite May range 처리:

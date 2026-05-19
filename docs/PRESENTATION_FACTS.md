@@ -76,7 +76,8 @@ flowchart LR
 
 발표 표현:
 - “모르는 용어는 임의 생성하지 않고, Supabase `neologisms.explanation`이 있는 등록 용어만 설명합니다.”
-- “`The`, `Tech`, `AI`, `Meta`, `Google`, `OpenAI`, `Anthropic`, `Nvidia` 같은 일반 단어/회사명/출처명은 발표용 하이라이트에서 제외했습니다.”
+- “`RAG`, `LLM`, `Fine-tuning`, `Prompt Injection`, `Guardrail`, `Hallucination`, `LoRA`, `pgvector`, `MCP`, `AI Agent` 같은 핵심 AI 용어는 allowlist로 보여주고, `The`, `Tech`, `AI`, `Meta`, `Google`, `OpenAI`, `Anthropic`, `Nvidia` 같은 일반 단어/회사명/출처명은 발표용 하이라이트에서 제외했습니다.”
+- “Gemini/Grounding은 앱 런타임 기능이 아니라 배치/관리용 선택 옵션이며, 최종 `.ait` 앱은 Supabase에 저장된 신조어 설명만 조회합니다.”
 
 ## Fact label / HITL 표현
 
