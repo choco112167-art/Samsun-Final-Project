@@ -109,9 +109,13 @@ def is_complete_real(row: dict[str, Any]) -> bool:
     )
 
 
-def in_range(row: dict[str, Any], since: datetime, until: datetime) -> bool:
+def in_range(row: dict[str, Any], since: datetime, until: datetime | None) -> bool:
     published = parse_dt(row.get("published_at"))
-    return since <= published <= until
+    if published < since:
+        return False
+    if until is not None and published > until:
+        return False
+    return True
 
 
 def missing_fields(row: dict[str, Any]) -> list[str]:
@@ -170,7 +174,7 @@ def main() -> int:
     parser.add_argument("--target-visible", type=int, default=100)
     parser.add_argument("--min-per-category", type=int, default=5)
     parser.add_argument("--since", default="2026-05-01")
-    parser.add_argument("--until", default="2026-05-18")
+    parser.add_argument("--until", default="", help="Optional upper bound. Leave empty to keep newly refreshed articles visible.")
     parser.add_argument("--normalize-categories", action="store_true")
     args = parser.parse_args()
 
@@ -182,7 +186,7 @@ def main() -> int:
     missing_update_cols = sorted(REQUIRED_UPDATE_COLUMNS - supported)
 
     since = parse_bound(args.since)
-    until = parse_bound(args.until, end_of_day=True)
+    until = parse_bound(args.until, end_of_day=True) if str(args.until or "").strip() else None
 
     demo_rows = [row for row in rows if is_demo_row(row)]
     out_of_range_rows = [row for row in rows if not is_demo_row(row) and not in_range(row, since, until)]
@@ -219,6 +223,7 @@ def main() -> int:
     print(f"mode: {'run' if args.run else 'dry-run'}")
     print(f"target_visible: {args.target_visible}")
     print(f"min_per_category: {args.min_per_category}")
+    print(f"date_range: {since.date()} to {until.date() if until else 'latest'}")
     print(f"total_articles: {len(rows)}")
     print(f"demo_or_sample_articles_to_hide: {len(demo_rows)}")
     print(f"out_of_range_articles_to_hide: {len(out_of_range_rows)}")

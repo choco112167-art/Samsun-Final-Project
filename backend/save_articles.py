@@ -110,12 +110,18 @@ def _article_optional_columns() -> set[str]:
         return _ARTICLE_OPTIONAL_COLUMNS
     candidates = {
         "source_url",
+        "original_url",
         "crawled_text",
         "body",
         "slang_terms",
         "neologism_terms",
         "slang_processed_at",
         "fact_status",
+        "fact_reason",
+        "fact_insight",
+        "is_hidden",
+        "demo_visible",
+        "demo_priority",
         "updated_at",
     }
     available: set[str] = set()
@@ -161,6 +167,8 @@ def _attach_optional_article_fields(payload: dict, article: dict, url_hash: str,
     source_url = article.get("source_url") or article.get("url")
     if "source_url" in columns and source_url:
         payload["source_url"] = source_url
+    if "original_url" in columns and source_url:
+        payload["original_url"] = article.get("original_url") or source_url
 
     content = article.get("content")
     if "crawled_text" in columns and content:
@@ -170,6 +178,21 @@ def _attach_optional_article_fields(payload: dict, article: dict, url_hash: str,
 
     if "fact_status" in columns:
         payload["fact_status"] = label_out
+    if "fact_reason" in columns and article.get("fact_reason"):
+        payload["fact_reason"] = article.get("fact_reason")
+    if "fact_insight" in columns and article.get("fact_insight"):
+        payload["fact_insight"] = article.get("fact_insight")
+
+    has_complete_outputs = all(
+        str(article.get(field) or "").strip()
+        for field in ("title_ko", "translation", "summary_formal", "summary_casual")
+    )
+    if "is_hidden" in columns:
+        payload["is_hidden"] = not has_complete_outputs
+    if "demo_visible" in columns:
+        payload["demo_visible"] = has_complete_outputs
+    if "demo_priority" in columns and has_complete_outputs:
+        payload.setdefault("demo_priority", 0)
 
     if "updated_at" in columns:
         payload["updated_at"] = datetime.now(timezone.utc).isoformat()

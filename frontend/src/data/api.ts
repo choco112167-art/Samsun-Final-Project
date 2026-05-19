@@ -47,8 +47,6 @@ const ARTICLE_FIELDS = [
 
 const DEMO_POLISHED_FEED = import.meta.env.VITE_DEMO_POLISHED_FEED === '1';
 const HIDE_DEMO_ARTICLES = import.meta.env.VITE_HIDE_DEMO_ARTICLES === '1' || DEMO_POLISHED_FEED;
-const DEMO_RANGE_START = new Date('2026-05-01T00:00:00+09:00').getTime();
-const DEMO_RANGE_END = new Date('2026-05-18T23:59:59+09:00').getTime();
 
 export class ApiError extends Error {
   status: number;
@@ -226,13 +224,6 @@ function isPresentationHidden(article: Article): boolean {
   return false;
 }
 
-function isDemoRangeArticle(article: Article): boolean {
-  if (isDemoArticle(article)) return true;
-  const published = new Date(article.publishedAt).getTime();
-  if (!Number.isFinite(published)) return false;
-  return published >= DEMO_RANGE_START && published <= DEMO_RANGE_END;
-}
-
 export async function fetchArticles(params: FetchArticlesParams = {}): Promise<Article[]> {
   requireSupabase();
   const { data, error } = await buildArticleQuery(params);
@@ -253,8 +244,7 @@ export async function fetchArticles(params: FetchArticlesParams = {}): Promise<A
     : visible;
   const sorted = [...filtered].sort(polishedFeedSort);
   if (!DEMO_POLISHED_FEED) return sorted;
-  const demoScoped = sorted.filter(isDemoRangeArticle);
-  const ready = demoScoped.filter(isCompletePresentationArticle);
+  const ready = sorted.filter(isCompletePresentationArticle);
   if (ready.length === 0) return [];
   return ready;
 }
@@ -537,7 +527,7 @@ export async function fetchFeed(
       const rows = await attachOptionalPresentationFields(rpc.data as unknown as ApiArticle[]);
       const vectorArticles = toArticleList(rows)
         .filter(article => !isPresentationHidden(article))
-        .filter(article => !DEMO_POLISHED_FEED || (isDemoRangeArticle(article) && isCompletePresentationArticle(article)))
+        .filter(article => !DEMO_POLISHED_FEED || isCompletePresentationArticle(article))
         .slice(0, Math.max(topK * 2, topK));
       if (vectorArticles.length > 0) {
         return vectorArticles
@@ -754,7 +744,7 @@ export async function fetchHot(date: string): Promise<(Article & { view_count: n
   const datedRows = await attachOptionalPresentationFields(data as unknown as ApiArticle[]);
   const dated = toArticleList(datedRows)
     .filter(article => !isPresentationHidden(article))
-    .filter(article => !DEMO_POLISHED_FEED || (isDemoRangeArticle(article) && isCompletePresentationArticle(article)))
+    .filter(article => !DEMO_POLISHED_FEED || isCompletePresentationArticle(article))
     .map((article, index) => ({ ...article, view_count: Math.max(0, 100 - index * 7) }));
   if (dated.length >= 5) return dated;
 
@@ -779,7 +769,7 @@ export async function fetchHot(date: string): Promise<(Article & { view_count: n
         const rows = await attachOptionalPresentationFields(articlesResult.data as unknown as ApiArticle[]);
         const hotByLogs = toArticleList(rows)
           .filter(article => !isPresentationHidden(article))
-          .filter(article => !DEMO_POLISHED_FEED || (isDemoRangeArticle(article) && isCompletePresentationArticle(article)))
+          .filter(article => !DEMO_POLISHED_FEED || isCompletePresentationArticle(article))
           .map(article => ({ ...article, view_count: counts.get(article.urlHash) ?? 0 }))
           .sort((a, b) => b.view_count - a.view_count)
           .slice(0, 20);

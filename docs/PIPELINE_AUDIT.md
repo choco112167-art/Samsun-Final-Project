@@ -160,7 +160,8 @@ python main.py --limit 10 --summary-sentences 3
 Fast demo refresh with translation/summaries:
 
 ```bash
-python scripts/ingest_latest_fast.py --max 5 --summary-sentences 3
+python scripts/ingest_latest_fast.py --max 5 --summary-sentences 3 --provider openrouter --model google/gemini-2.5-flash --dry-run
+python scripts/ingest_latest_fast.py --max 5 --summary-sentences 3 --provider openrouter --model google/gemini-2.5-flash --run
 ```
 
 Repair missing AI outputs:
@@ -172,6 +173,7 @@ python scripts/backfill_article_ai_outputs.py --limit 5 --provider openrouter --
 Freshness/missing-field health:
 
 ```bash
+python scripts/audit_freshness.py
 python scripts/pipeline_health_check.py
 ```
 

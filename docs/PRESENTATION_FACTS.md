@@ -138,16 +138,26 @@ Reddit 제외 이유:
 
 > 초기에는 Reddit 계열 커뮤니티 수집도 검토했으나, API/RSS 접근 정책 변화와 데이터 라이선싱 리스크로 인해 최종 수집 대상에서 제외했습니다. 대신 Lemmy API와 Hacker News hnrss.org를 활용해 커뮤니티 기반 AI/LLM/ML 소스를 안정적으로 수집했습니다.
 
+## 최신 기사 갱신 흐름
+
+발표 기준 설명:
+
+- 최신 뉴스 갱신은 새 파이프라인이 아니라 기존 `collect/crawler/rss_crawler.py -> pipeline/translate_summarize.py -> backend/save_articles.py` 경로를 재사용한다.
+- 정식 경로는 `python main.py --limit 10 --summary-sentences 3`이다.
+- 발표 직전에는 심층 factcheck 대기 시간을 줄인 `python scripts/ingest_latest_fast.py --max 5 --summary-sentences 3 --provider openrouter --model google/gemini-2.5-flash --run`을 사용할 수 있다.
+- 미완성 최신 row는 `is_hidden=true` 또는 pending 상태로 남기고, 한국어 제목/번역/요약이 완성된 기사만 `public.articles`에서 앱 피드에 노출한다.
+- 앱은 Supabase를 직접 조회하므로 홈의 `최신 기사 새로고침` 버튼으로 최신 `published_at desc` 피드를 다시 불러온다. 데이터 갱신만으로는 `.ait` 재빌드가 필요 없다.
+
 ## 최종 데모 데이터 스냅샷
 
 | 항목 | 값 |
 | --- | ---: |
-| 최종 노출 가능 기사 수 | 104 |
+| 최종 노출 가능 기사 수 | 105 |
 | DEMO/[시연용] 노출 위반 | 0 |
 | 미완성 노출 위반 | 0 |
 | URL 없는 노출 기사 | 0 |
 | invalid URL | 0 |
-| 핫이슈 후보 | 104 |
+| 핫이슈 후보 | 105 |
 | visible fact insight/reason 보유 기사 | 40 |
 | visible HITL_REQUIRED 기사 | 2 |
 
@@ -157,7 +167,7 @@ Reddit 제외 이유:
 | --- | ---: |
 | AI 연구 | 16 |
 | AI 심층 | 13 |
-| AI 스타트업 | 7 |
+| AI 스타트업 | 8 |
 | AI 윤리 | 15 |
 | AI 비즈니스 | 37 |
 | AI 커뮤니티 | 8 |

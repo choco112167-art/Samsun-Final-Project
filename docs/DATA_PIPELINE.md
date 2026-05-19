@@ -113,6 +113,43 @@ The personalized recommendation path uses:
 
 LLM reranking is not the default final-demo path. It remains a Gemma4/OpenRouter extension after pgvector candidate retrieval.
 
+## 7.1. Latest RSS Refresh Path
+
+The latest-news refresh reuses the existing crawler, AI generation, and Supabase save functions. It is not a separate duplicate pipeline.
+
+Canonical full refresh:
+
+```bash
+python main.py --limit 10 --summary-sentences 3
+```
+
+Fast pre-demo refresh:
+
+```bash
+python scripts/ingest_latest_fast.py --max 5 --summary-sentences 3 --provider openrouter --model google/gemini-2.5-flash --dry-run
+python scripts/ingest_latest_fast.py --max 5 --summary-sentences 3 --provider openrouter --model google/gemini-2.5-flash --run
+```
+
+Reused path:
+
+```text
+collect/crawler/rss_crawler.py
+-> pipeline/translate_summarize.py
+-> backend/save_articles.py
+-> Supabase public.articles
+-> Apps in Toss frontend refresh
+```
+
+Rows with complete `title_ko`, `translation`, `summary_formal`, and `summary_casual` are saved as visible when the optional demo visibility columns exist. Rows missing AI outputs remain hidden/pending and do not enter the polished presentation feed.
+
+Freshness audit:
+
+```bash
+python scripts/audit_freshness.py
+```
+
+The app is a near-real-time batch product: RSS/Lemmy/Hacker News refreshes run on demand or by scheduler, then the `.ait` app sees updated Supabase rows on refresh without rebuilding the bundle.
+
 ## 8. Demo Readiness Filtering
 
 The frontend demo mode `VITE_DEMO_POLISHED_FEED=1` prioritizes:

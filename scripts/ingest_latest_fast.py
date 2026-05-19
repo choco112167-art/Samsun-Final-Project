@@ -9,6 +9,7 @@ For the fastest list refresh, use `ingest_latest_titles.py` instead.
 from __future__ import annotations
 
 import argparse
+import os
 
 from article_pipeline_common import configure_stdio, fetch_rss_articles
 
@@ -17,8 +18,23 @@ def main() -> int:
     configure_stdio()
     parser = argparse.ArgumentParser()
     parser.add_argument("--max", type=int, default=10)
-    parser.add_argument("--summary-sentences", type=int, default=1)
+    parser.add_argument("--summary-sentences", type=int, default=3)
+    parser.add_argument("--run", action="store_true", help="Actually write completed rows to Supabase. Default is dry-run.")
+    parser.add_argument("--dry-run", action="store_true", help="Preview without writing. This is the default.")
+    parser.add_argument("--provider", choices=["local", "openrouter", "gemini"], help="Override LLM_PROVIDER for this run.")
+    parser.add_argument("--model", help="Override provider model for this run.")
     args = parser.parse_args()
+
+    if args.provider:
+        os.environ["LLM_PROVIDER"] = args.provider
+        os.environ["MODE"] = args.provider
+    if args.model:
+        if args.provider == "openrouter" or os.getenv("LLM_PROVIDER", "").lower() in {"openrouter", "cloud"}:
+            os.environ["OPENROUTER_TRANSLATION_MODEL"] = args.model
+        elif args.provider == "gemini" or os.getenv("LLM_PROVIDER", "").lower() == "gemini":
+            os.environ["GEMINI_TRANSLATION_MODEL"] = args.model
+        else:
+            os.environ["MODEL_NAME"] = args.model
 
     from backend.save_articles import save_articles
     from fact_checker.channel_config import get_profile
@@ -66,6 +82,10 @@ def main() -> int:
             }
         )
 
+    print(f"[ingest_fast] prepared={len(rows)}")
+    if not args.run:
+        print("[ingest_fast] dry-run: Supabase 저장 생략. 실제 반영은 --run을 붙여 실행하세요.")
+        return 0
     saved = save_articles(rows)
     print(f"[ingest_fast] saved={saved}")
     return 0

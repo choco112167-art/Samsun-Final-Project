@@ -42,6 +42,7 @@ interface Props {
 export default function HomePage({ bm, onNavigateToFeed, onArticleClick, absenceData, onAbsenceDismiss, interests = [], tone, onToneChange }: Props) {
   const [articles, setArticles]       = useState<Article[]>([]);
   const [loading, setLoading]         = useState(true);
+  const [refreshing, setRefreshing]   = useState(false);
   const [error, setError]             = useState<string | null>(null);
   const [filter, setFilter]           = useState<Filter>('전체');
   const [detail, setDetail]           = useState<Article | null>(null);
@@ -83,8 +84,9 @@ export default function HomePage({ bm, onNavigateToFeed, onArticleClick, absence
     }
   };
 
-  const load = () => {
-    setLoading(true);
+  const load = (silent = false) => {
+    if (silent) setRefreshing(true);
+    else setLoading(true);
     setError(null);
     offsetRef.current = 0;
     hasMoreRef.current = true;
@@ -98,6 +100,7 @@ export default function HomePage({ bm, onNavigateToFeed, onArticleClick, absence
         setHasMore(more);
         initialLoadDone.current = true;
         setLoading(false);
+        setRefreshing(false);
       })
       .catch((err: unknown) => {
         const message = err instanceof ApiError || err instanceof Error
@@ -105,6 +108,7 @@ export default function HomePage({ bm, onNavigateToFeed, onArticleClick, absence
           : '알 수 없는 오류가 발생했습니다.';
         setError(message);
         setLoading(false);
+        setRefreshing(false);
       });
   };
 
@@ -222,7 +226,7 @@ export default function HomePage({ bm, onNavigateToFeed, onArticleClick, absence
             </p>
           )}
         </div>
-        <button onClick={load} style={{ fontSize: 13, color: 'var(--color-primary)', padding: '8px 18px', border: '1px solid var(--color-primary)', borderRadius: 20 }}>
+        <button onClick={() => load()} style={{ fontSize: 13, color: 'var(--color-primary)', padding: '8px 18px', border: '1px solid var(--color-primary)', borderRadius: 20 }}>
           다시 시도
         </button>
       </div>
@@ -317,7 +321,39 @@ export default function HomePage({ bm, onNavigateToFeed, onArticleClick, absence
           <TonePreferenceControl tone={tone} onChange={onToneChange} compact />
         </div>
 
-        {/* 카테고리 필터 — 8개 */}
+        <button
+          onClick={() => load(true)}
+          disabled={refreshing}
+          style={{
+            marginTop: 12,
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: 6,
+            minHeight: 34,
+            padding: '7px 12px',
+            borderRadius: 18,
+            border: '1px solid rgba(49, 130, 246, 0.22)',
+            background: refreshing ? 'rgba(255,255,255,0.7)' : 'rgba(255,255,255,0.92)',
+            color: 'var(--color-primary)',
+            fontSize: 12,
+            fontWeight: 700,
+            boxShadow: '0 6px 16px rgba(0,0,0,0.04)',
+          }}
+          aria-label="최신 기사 새로고침"
+        >
+          <span style={{
+            width: 14,
+            height: 14,
+            borderRadius: '50%',
+            border: '2px solid rgba(49,130,246,0.24)',
+            borderTopColor: 'var(--color-primary)',
+            animation: refreshing ? 'spin 0.7s linear infinite' : 'none',
+            boxSizing: 'border-box',
+          }} />
+          {refreshing ? '새로고침 중' : '최신 기사 새로고침'}
+        </button>
+
+        {/* 카테고리 필터 — 최종 7개 */}
         <div style={{ display: 'flex', gap: 7, marginTop: 16, paddingBottom: 16, overflowX: 'auto', scrollbarWidth: 'none' }}>
           {(['전체', ...CATEGORIES] as Filter[]).map(f => (
             <button key={f} onClick={() => setFilter(f)} style={{

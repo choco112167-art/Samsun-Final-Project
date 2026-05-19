@@ -216,12 +216,12 @@ VITE_HIDE_DEMO_ARTICLES=1
 
 | 항목 | 값 |
 | --- | ---: |
-| 최종 노출 가능 기사 수 | 104 |
+| 최종 노출 가능 기사 수 | 105 |
 | DEMO/[시연용] 노출 위반 | 0 |
 | 미완성 노출 위반 | 0 |
 | URL 없는 노출 기사 | 0 |
 | invalid URL | 0 |
-| 핫이슈 후보 | 104 |
+| 핫이슈 후보 | 105 |
 | visible fact insight/reason 보유 기사 | 40 |
 | visible HITL_REQUIRED 기사 | 2 |
 
@@ -231,7 +231,7 @@ VITE_HIDE_DEMO_ARTICLES=1
 | --- | ---: |
 | AI 연구 | 16 |
 | AI 심층 | 13 |
-| AI 스타트업 | 7 |
+| AI 스타트업 | 8 |
 | AI 윤리 | 15 |
 | AI 비즈니스 | 37 |
 | AI 커뮤니티 | 8 |
@@ -283,6 +283,27 @@ Sangjun SQLite May range 처리:
 python scripts/audit_sangjun_sqlite.py --db-path samsun_345.db --since 2026-05-01 --until 2026-05-18
 python scripts/process_sangjun_sqlite_with_ollama.py --db-path samsun_345.db --since 2026-05-01 --until 2026-05-18 --limit 20 --upsert-supabase
 ```
+
+최신 RSS/Lemmy/Hacker News 수동 갱신:
+
+```bash
+# 정식 전체 경로: 수집 -> 프리플라이트/factcheck -> 번역/요약 -> Supabase 저장
+python main.py --limit 10 --summary-sentences 3
+
+# 발표 직전 빠른 경로: 기존 수집/번역/저장 함수를 재사용하되 심층 factcheck 대기만 줄임
+python scripts/ingest_latest_fast.py --max 5 --summary-sentences 3 --provider openrouter --model google/gemini-2.5-flash --dry-run
+python scripts/ingest_latest_fast.py --max 5 --summary-sentences 3 --provider openrouter --model google/gemini-2.5-flash --run
+
+# 필요한 경우 미완성 최신 기사 AI 필드 보강
+python scripts/backfill_article_ai_outputs.py --limit 5 --provider openrouter --model google/gemini-2.5-flash --run
+
+# 발표용 필터 재정렬 및 최신성 감사
+python scripts/prepare_final_presentation_feed.py --target-visible 100 --min-per-category 5 --normalize-categories --run
+python scripts/audit_freshness.py
+python scripts/audit_demo_readiness.py
+```
+
+앱은 Supabase `public.articles`를 직접 조회하므로, Supabase에 upsert된 데이터는 `.ait`를 다시 빌드하지 않아도 앱 새로고침으로 반영됩니다. 홈 화면의 `최신 기사 새로고침` 버튼은 Supabase를 다시 조회해 `published_at desc` 기준 피드를 갱신합니다.
 
 최종 발표용 피드 정리:
 
