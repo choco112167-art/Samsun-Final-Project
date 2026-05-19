@@ -139,6 +139,11 @@ Show:
 Show:
 - `검증됨`, `확인 필요`, `루머 주의`, `분석글`, and `전문가 검토 필요` badges.
 - Rumor demo copy: `이 항목은 검증되지 않은 시연용 루머 데이터입니다.`
+- Optional hidden POC: open the test URL with `?review=1` to show the read-only `검토 대상 보기` list.
+
+Say:
+- This is not a full admin approval system. It demonstrates automatic fact labeling plus review-target separation.
+- The review screen is read-only and does not modify Supabase rows.
 
 ### 7. Neologism Bottom Sheet
 
