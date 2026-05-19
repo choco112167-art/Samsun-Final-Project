@@ -73,21 +73,57 @@ def onboarding(req: OnboardingRequest):
 @app.get("/feed/{user_id}")
 def get_feed(user_id: str, top_k: int = 10):
     """
-    유저 맞춤 기사 피드를 돌려준다. RAG 추천의 핵심 엔드포인트.
+    유저 맞춤 기사 피드를 돌려준다. 추천 이유도 함께 생성.
     """
-    result = sb.table("users").select("user_vector").eq("user_id", user_id).execute()
+    # 유저 벡터 조회
+    result = sb.table("users").select("user_vector, interest_tags").eq("user_id", user_id).execute()
 
     if not result.data:
         raise HTTPException(status_code=404, detail="유저 없음")
 
     user_vector = result.data[0]["user_vector"]
+    interest_tags = result.data[0].get("interest_tags", [])
 
+    # 유저 최근 클릭 기사 카테고리/키워드 조회 (최근 10개)
+    logs = sb.table("user_logs").select("url_hash").eq("user_id", user_id).order("created_at", desc=True).limit(10).execute()
+    recent_keywords = []
+    if logs.data:
+        recent_hashes = [l["url_hash"] for l in logs.data]
+        recent_articles = sb.table("articles").select("category, keywords").in_("url_hash", recent_hashes).execute()
+        for a in recent_articles.data:
+            recent_keywords.append(a.get("category", ""))
+            recent_keywords.extend(a.get("keywords", []) or [])
+    recent_keywords = list(set(filter(None, recent_keywords)))[:10]
+
+    # 벡터 유사도 기반 추천
     result = sb.rpc("match_articles", {
         "query_vector": user_vector,
         "top_k": top_k,
     }).execute()
 
-    return {"feed": result.data}
+    articles = result.data
+
+    # 추천 이유 생성 (LLM)
+    def make_reason(article: dict) -> str:
+        try:
+            category = article.get("category", "")
+            keywords = article.get("keywords", []) or []
+
+            matched = [k for k in keywords if k in recent_keywords]
+            if matched:
+                return f"최근 관심 키워드 '{matched[0]}'와 관련된 기사예요"
+            if category in recent_keywords:
+                return f"최근 '{category}' 기사를 많이 읽으셨어요"
+            if interest_tags:
+                return f"관심 주제 '{interest_tags[0]}'와 연관된 기사예요"
+            return "회원님의 읽기 패턴을 분석해 추천했어요"
+        except Exception:
+            return "회원님의 읽기 패턴을 분석해 추천했어요"
+
+    for article in articles:
+        article["reason"] = make_reason(article)
+
+    return {"feed": articles}
 
 
 @app.get("/articles")
@@ -103,7 +139,7 @@ def get_articles(
     HomePage, CategoryPage 등에서 기사 목록을 가져올 때 호출된다.
     """
     query = sb.table("articles").select(
-        "url_hash, url, title, title_en, source, source_type, category, country, "
+        "url_hash, url, title, source, source_type, category, country, "
         "keywords, published_at, collected_at, content, "
         "credibility_score, fact_label, "
         "translation, summary_formal, summary_casual"
@@ -215,14 +251,12 @@ def debug():
     supabase_url = (_settings.supabase_url or os.getenv("SUPABASE_URL", "")).rstrip("/")
     sb_key = os.getenv("SUPABASE_KEY", "") or _settings.supabase_anon_key
 
-    # URL 형식 진단
     url_issues = []
     if "/rest/v1" in supabase_url:
         url_issues.append("URL에 /rest/v1 포함됨 — 제거 필요")
     if supabase_url.count("supabase.co") == 0 and supabase_url:
         url_issues.append("supabase.co 도메인 아님")
 
-    # supabase-py 없이 직접 REST 호출 테스트
     direct_ok = False
     direct_error = ""
     try:
@@ -236,7 +270,6 @@ def debug():
     except Exception as e:
         direct_error = str(e)
 
-    # supabase-py 테스트
     sdk_ok = False
     sdk_error = ""
     try:
@@ -293,12 +326,36 @@ def summarize(req: LlmTextRequest):
 
 @app.post("/article-view/{user_id}/{url_hash}")
 def record_article_view(user_id: str, url_hash: str):
-    """프론트에서 기사 카드 조회 시 호출 — user_logs에 적재."""
+    """프론트에서 기사 카드 조회 시 호출 — user_logs에 적재 + 유저 벡터 점진적 업데이트."""
+    # 1. user_logs에 클릭 기록 저장
     sb.table("user_logs").insert({
         "user_id": user_id,
         "url_hash": url_hash,
         "action": "view",
     }).execute()
+
+    # 2. 클릭한 기사 임베딩 가져오기
+    article_res = sb.table("articles").select("embedding").eq("url_hash", url_hash).execute()
+    if not article_res.data or not article_res.data[0].get("embedding"):
+        return {"message": "embedding 없음 — 스킵"}
+    article_vector = article_res.data[0]["embedding"]
+
+    # 3. 유저 벡터 가져오기
+    user_res = sb.table("users").select("user_vector").eq("user_id", user_id).execute()
+    if not user_res.data or not user_res.data[0].get("user_vector"):
+        return {"message": "유저 없음 — 스킵"}
+    user_vector = user_res.data[0]["user_vector"]
+
+    # 4. 유저 벡터 업데이트 (클릭 기사 임베딩 40% 반영)
+    import json
+    if isinstance(article_vector, str):
+        article_vector = json.loads(article_vector)
+    if isinstance(user_vector, str):
+        user_vector = json.loads(user_vector)
+    new_vector = [u * 0.6 + a * 0.4 for u, a in zip(user_vector, article_vector)]
+
+    sb.table("users").update({"user_vector": new_vector}).eq("user_id", user_id).execute()
+
     return {"message": "조회 기록 완료"}
 
 
@@ -320,7 +377,6 @@ def get_hot(date: str, top_k: int = 5):
         "translation, summary_formal, summary_casual"
     )
 
-    # 해당 날짜 조회 기록 집계
     logs = (
         sb.table("user_logs")
         .select("url_hash")
@@ -340,7 +396,6 @@ def get_hot(date: str, top_k: int = 5):
                 result.append({**a.data[0], "view_count": counts[url_hash]})
         return result
     else:
-        # 조회 기록 없으면 해당 날짜 발행 기사 반환
         result = (
             sb.table("articles")
             .select(cols)
