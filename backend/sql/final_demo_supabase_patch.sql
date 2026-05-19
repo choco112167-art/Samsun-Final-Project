@@ -44,6 +44,15 @@ CREATE TABLE IF NOT EXISTS public.user_logs (
 -- For the final demo's small visible dataset, the RPC below works without a vector index.
 -- Optional indexes live in backend/sql/optional_pgvector_indexes.sql.
 
+-- Existing match_articles functions may have a different RETURNS TABLE shape.
+-- PostgreSQL cannot CREATE OR REPLACE a function when OUT parameters change,
+-- so drop only the RPC signatures first. Data tables are not touched.
+DROP FUNCTION IF EXISTS public.match_articles(vector, integer, character varying);
+DROP FUNCTION IF EXISTS public.match_articles(vector, integer, varchar);
+DROP FUNCTION IF EXISTS public.match_articles(vector, int, varchar);
+DROP FUNCTION IF EXISTS public.match_articles(vector, integer);
+DROP FUNCTION IF EXISTS public.match_articles(vector, int);
+
 CREATE OR REPLACE FUNCTION public.match_articles(
   query_vector vector(1024),
   top_k int DEFAULT 10,
