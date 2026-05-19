@@ -62,10 +62,10 @@ def run():
         batch.append({
             "url":               article.url,
             "title":             article.title,
-            "title_ko":          result.get("title_ko", ""),
+            "title_ko":          result.get("title", ""),
             "source":            article.source,
             "source_type":       article.source_type,
-            "category":          article.category,
+            "category":          article.category or result.get("category"),
             "country":           article.country,
             "keywords":          article.keywords,
             "published_at":      article.published_at,

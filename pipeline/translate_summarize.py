@@ -53,12 +53,35 @@ If the source contains these scripts, translate or romanize them into Korean. NE
 Return ONLY valid JSON. No markdown fences, no explanation outside JSON.
 {{
   "title": "<한국어 제목>",
+  "category": "<카테고리>",
   "translation": "<원문 본문 전체의 한국어 번역. 요약이 아니라 [BODY] 전체를 문단 단위로 번역한 전문>",
   "summary_formal": "1. <격식체 요약 문장>\\n2. <격식체 요약 문장>\\n3. <격식체 요약 문장>",
   "summary_casual": "1. <일상체 요약 문장>\\n2. <일상체 요약 문장>\\n3. <일상체 요약 문장>"
 }}
-All four fields are REQUIRED. Never leave any field empty.
+All five fields are REQUIRED. Never leave any field empty.
 If no title is provided, set "title" to "".
+
+━━━ CATEGORY RULES ━━━
+Read the article and select the single most appropriate category from the list below.
+Output the category label EXACTLY as written — no modifications allowed.
+
+  • AI 연구    — 논문, 모델 아키텍처, 벤치마크, 학술 연구 등
+  • AI 심층    — AI 기술·트렌드의 심층 분석, 해설, 특집 기사
+  • AI 스타트업 — AI 스타트업의 창업·투자·인수·성장 스토리
+  • AI 윤리    — AI 안전성, 편향, 규제, 정책, 사회적 영향
+  • AI 비즈니스 — 대기업 AI 전략, 제품 출시, 파트너십, 실적
+  • AI 커뮤니티 — 개발자 커뮤니티, 오픈소스, 해커톤, 밋업
+  • 테크 전반  — AI 외 IT·반도체·플랫폼·하드웨어 등 기술 전반
+
+━━━ CATEGORY DISAMBIGUATION ━━━
+Priority order when multiple categories apply:
+1. If the subject is a startup (article mentions funding rounds, early-stage growth,
+   or the company is not a well-known major tech firm) → AI 스타트업 우선
+2. If the article is academic/paper-based → AI 연구 우선 over AI 심층
+3. If the article analyzes trends without a new announcement → AI 심층
+4. If the article involves non-AI tech (chip fabrication, OS, hardware) → 테크 전반
+5. When in doubt between AI 비즈니스 and AI 스타트업:
+   major tech firms (Google, Microsoft, Meta, Apple, Amazon, Nvidia 등) → AI 비즈니스
 
 ━━━ TRANSLATION RULES ━━━
 1. translation MUST be the full Korean translation of the entire [BODY].

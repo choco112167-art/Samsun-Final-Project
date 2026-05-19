@@ -114,6 +114,9 @@ def run_fact_check(
     # 근거: Baly et al. EMNLP 2018 — 소스 신뢰도가 팩트체크 강력한 prior
     profile = get_profile(source)
     tier    = profile.default_tier
+    # 소스명에 Reddit이 포함된 경우 source_type을 community로 강제 보정 (데이터 오기재 방어)
+    if "reddit" in source.lower() and source_type == "media":
+        source_type = "community"
 
     if should_drop(tier):
         return FactCheckResult(
@@ -294,10 +297,18 @@ def run_fact_check(
         cove_result = cove_run(title, content, prior_verdict, prior_confidence)
 
         # CoVe에서 confidence 충분하고 importance 낮으면 종료
-        if cove_result.confidence >= CONFIDENCE_COVE_THRESHOLD or importance < IMPORTANCE_DEBATE_THRESHOLD:
+        # TIER 0-1 공식 미디어는 소스 신뢰도를 보정값으로 반영 (CoVe LLM이 수치 검증 불가 시 과도하게 낮아지는 문제 방지)
+        # 근거: Baly et al. EMNLP 2018 — 소스 신뢰도가 팩트체크의 강력한 prior
+        if tier in ("ACADEMIC_INSTITUTIONAL", "MEDIA_OFFICIAL"):
+            credibility_boost = profile.credibility_score * 0.15
+            cove_conf_adjusted = min(cove_result.confidence + credibility_boost, 1.0)
+        else:
+            cove_conf_adjusted = cove_result.confidence
+
+        if cove_conf_adjusted >= CONFIDENCE_COVE_THRESHOLD or importance < IMPORTANCE_DEBATE_THRESHOLD:
             return FactCheckResult(
                 fact_label=cove_result.verdict,
-                confidence=cove_result.confidence,
+                confidence=round(cove_conf_adjusted, 4),
                 tier=tier, step_reached=3,
                 signal=signal, fc_result=fc,
                 matched_patterns=matched_pats,
