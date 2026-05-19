@@ -176,7 +176,7 @@ flowchart LR
 `fact_reason` 또는 `fact_insight`가 있는 경우 상세 화면에 보수적인 설명을 표시하고, 값이 없으면 라벨별 기본 설명만 표시합니다.  
 HITL은 “완전한 관리자 승인 시스템”이 아니라 “검토 대상 분리 및 표시 구현”입니다. 운영 단계에서는 관리자 승인/반려 플로우로 확장할 수 있도록 설계했습니다. INSIGHT는 단순 루머나 노이즈가 아니라 신뢰 가능한 전문가 해설·관점 중심 글을 DROP하지 않고 보존하기 위한 라벨입니다.
 
-발표용 내부 관리자 POC는 Apps in Toss 사용자 앱이 아니라 FastAPI/local 경로로 분리했습니다. `ADMIN_REVIEW_ENABLED=1`로 로컬 서버를 실행하면 `/admin/hitl` 또는 `/admin/hitl-candidates`에서 `HITL_REQUIRED`, `UNVERIFIED`, `RUMOR`, `INSIGHT` 검토 대상 목록을 확인할 수 있습니다. 쓰기 API(`/admin/hitl-review`)는 로컬 backend 환경에 `SUPABASE_SERVICE_ROLE_KEY`가 있을 때만 사용할 수 있으며, `.ait` 앱에는 service role key가 들어가지 않습니다.
+발표용 내부 Fact Review POC는 Apps in Toss 사용자 앱이 아니라 FastAPI/local 경로로 분리했습니다. `ADMIN_REVIEW_ENABLED=1`로 로컬 서버를 실행하면 `/admin/fact-review`, `/admin/hitl`, 또는 `/admin/hitl-candidates`에서 `HITL_REQUIRED`, `UNVERIFIED`, `RUMOR`, `INSIGHT` 검토 대상 목록을 확인할 수 있습니다. 쓰기 API(`/admin/hitl-review`)는 로컬 backend 환경에 `SUPABASE_SERVICE_ROLE_KEY`가 있을 때만 사용할 수 있으며, `.ait` 앱에는 service role key가 들어가지 않습니다.
 
 ## Apps in Toss 배포 / 시연
 

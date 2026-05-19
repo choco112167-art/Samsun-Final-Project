@@ -10,6 +10,7 @@ from __future__ import annotations
 import html
 import os
 from collections.abc import Callable
+from datetime import datetime, timezone
 from typing import Any, Literal
 
 from fastapi import APIRouter, HTTPException, Query
@@ -26,6 +27,7 @@ class HitlReviewRequest(BaseModel):
     fact_label: Literal["FACT", "RUMOR", "UNVERIFIED", "INSIGHT"]
     fact_reason: str | None = None
     fact_insight: str | None = None
+    reviewer_note: str | None = None
 
 
 def _enabled() -> bool:
@@ -34,6 +36,17 @@ def _enabled() -> bool:
 
 def _service_role_enabled() -> bool:
     return bool(os.getenv("SUPABASE_SERVICE_ROLE_KEY", "").strip())
+
+
+def _review_reason(label: str, reviewer_note: str | None = None) -> str:
+    base = {
+        "FACT": "관리자 검토 POC에서 FACT 라벨로 확인했습니다.",
+        "RUMOR": "관리자 검토 POC에서 RUMOR 라벨로 분류했습니다.",
+        "UNVERIFIED": "관리자 검토 POC에서 추가 확인 필요 라벨로 유지했습니다.",
+        "INSIGHT": "관리자 검토 POC에서 전문가 분석글 라벨로 분류했습니다.",
+    }.get(label, "관리자 검토 POC에서 라벨을 확인했습니다.")
+    note = (reviewer_note or "").strip()
+    return f"{base} 메모: {note}" if note else base
 
 
 def _normalize_label(row: dict[str, Any]) -> str:
@@ -74,7 +87,7 @@ def _fetch_candidates(db: Any, limit: int) -> list[dict[str, Any]]:
         db.table("articles")
         .select(fields)
         .order("published_at", desc=True)
-        .limit(max(limit * 4, limit))
+        .limit(max(limit * 20, 200))
         .execute()
     )
     rows = [row for row in (result.data or []) if _is_visible_candidate(row)]
@@ -95,12 +108,24 @@ def _row_to_payload(row: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def _html_page(rows: list[dict[str, Any]]) -> str:
+def _html_page(rows: list[dict[str, Any]], *, updates_enabled: bool) -> str:
     cards = []
     for row in rows:
         item = _row_to_payload(row)
         url = str(item["url"] or "")
+        url_hash = html.escape(str(item["url_hash"] or ""))
         link = f'<a href="{html.escape(url)}" target="_blank">원문</a>' if url.startswith(("http://", "https://")) else "원문 없음"
+        controls = ""
+        if updates_enabled:
+            controls = (
+                f"<div class='actions' data-url-hash='{url_hash}'>"
+                "<button data-label='FACT'>FACT</button>"
+                "<button data-label='RUMOR'>RUMOR</button>"
+                "<button data-label='UNVERIFIED'>UNVERIFIED</button>"
+                "<button data-label='INSIGHT'>INSIGHT</button>"
+                "<input placeholder='검토 메모 선택 입력' />"
+                "</div>"
+            )
         cards.append(
             "<article>"
             f"<strong>{html.escape(str(item['fact_label']))}</strong>"
@@ -108,22 +133,33 @@ def _html_page(rows: list[dict[str, Any]]) -> str:
             f"<p>{html.escape(str(item['source'] or ''))} · {html.escape(str(item['published_at'] or ''))}</p>"
             f"<p>{html.escape(str(item['fact_insight'] or item['fact_reason'] or '설명 없음'))}</p>"
             f"<p>{link}</p>"
+            f"{controls}"
             "</article>"
         )
     return (
         "<!doctype html><meta charset='utf-8'>"
-        "<title>삼선뉴스 검토 대상 POC</title>"
+        "<title>삼선뉴스 Fact Review POC</title>"
         "<style>"
         "body{font-family:system-ui,-apple-system,sans-serif;margin:24px;background:#f5f7fb;color:#191f28}"
         "main{max-width:860px;margin:auto}article{background:white;border:1px solid #e5e8eb;border-radius:12px;padding:16px;margin:12px 0}"
         "strong{display:inline-block;background:#f5f3ff;color:#6d28d9;border-radius:999px;padding:4px 10px;font-size:12px}"
         "h1{font-size:28px}h2{font-size:18px}p{color:#4e5968;line-height:1.6}"
+        ".actions{display:flex;flex-wrap:wrap;gap:8px;margin-top:12px}.actions button{border:1px solid #d0d6de;border-radius:8px;background:#f8fafc;padding:7px 10px;font-weight:700;cursor:pointer}"
+        ".actions input{flex:1;min-width:220px;border:1px solid #d0d6de;border-radius:8px;padding:7px 10px}"
         "</style><main>"
-        "<h1>검토 대상 보기 POC</h1>"
+        "<h1>Fact Review / HITL POC</h1>"
         "<p>AI 자동 판정 결과 중 전문가 검토/확인 필요/루머/분석글 후보를 읽기 전용으로 보여줍니다. "
-        "운영용 관리자 승인 시스템이 아니며, Apps in Toss 사용자 앱에는 포함되지 않습니다.</p>"
+        "운영용 관리자 승인 시스템이 아니며, Apps in Toss 사용자 앱에는 포함되지 않습니다. "
+        f"쓰기 기능은 로컬 backend의 service role 설정이 있을 때만 활성화됩니다. 현재 쓰기: {'활성' if updates_enabled else '비활성'}.</p>"
         + "".join(cards)
-        + "</main>"
+        + "<script>"
+        "document.addEventListener('click',async(e)=>{const b=e.target.closest('button[data-label]');if(!b)return;"
+        "const wrap=b.closest('.actions');const note=wrap.querySelector('input')?.value||'';"
+        "b.disabled=true;try{const r=await fetch('/admin/hitl-review',{method:'POST',headers:{'Content-Type':'application/json'},"
+        "body:JSON.stringify({url_hash:wrap.dataset.urlHash,fact_label:b.dataset.label,reviewer_note:note})});"
+        "if(!r.ok)throw new Error(await r.text());b.textContent='저장됨';setTimeout(()=>location.reload(),600);}"
+        "catch(err){alert('저장 실패: '+err.message);b.disabled=false;}});"
+        "</script></main>"
     )
 
 
@@ -149,7 +185,12 @@ def create_admin_hitl_router(get_db: Callable[[], Any]) -> APIRouter:
     @router.get("/hitl", response_class=HTMLResponse)
     def hitl_page(limit: int = Query(20, ge=1, le=100)) -> HTMLResponse:
         db = require_enabled()
-        return HTMLResponse(_html_page(_fetch_candidates(db, limit)))
+        return HTMLResponse(_html_page(_fetch_candidates(db, limit), updates_enabled=_service_role_enabled()))
+
+    @router.get("/fact-review", response_class=HTMLResponse)
+    def fact_review_page(limit: int = Query(20, ge=1, le=100)) -> HTMLResponse:
+        db = require_enabled()
+        return HTMLResponse(_html_page(_fetch_candidates(db, limit), updates_enabled=_service_role_enabled()))
 
     @router.post("/hitl-review")
     def hitl_review(req: HitlReviewRequest) -> dict[str, Any]:
@@ -164,11 +205,24 @@ def create_admin_hitl_router(get_db: Callable[[], Any]) -> APIRouter:
             "fact_status": req.fact_label,
             "hitl_required": False,
         }
-        if req.fact_reason is not None:
-            payload["fact_reason"] = req.fact_reason
-        if req.fact_insight is not None:
-            payload["fact_insight"] = req.fact_insight
-        db.table("articles").update(payload).eq("url_hash", req.url_hash).execute()
+        reason = req.fact_insight or req.fact_reason or _review_reason(req.fact_label, req.reviewer_note)
+        payload["fact_reason"] = reason
+        payload["fact_insight"] = reason
+        try:
+            db.table("articles").update({**payload, "updated_at": datetime.now(timezone.utc).isoformat()}).eq("url_hash", req.url_hash).execute()
+        except Exception:
+            db.table("articles").update(payload).eq("url_hash", req.url_hash).execute()
+        try:
+            db.table("admin_review_logs").insert(
+                {
+                    "url_hash": req.url_hash,
+                    "fact_label": req.fact_label,
+                    "reviewer_note": req.reviewer_note,
+                    "fact_insight": reason,
+                }
+            ).execute()
+        except Exception:
+            pass
         return {"message": "review updated", "url_hash": req.url_hash, "fact_label": req.fact_label}
 
     return router

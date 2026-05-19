@@ -16,6 +16,7 @@ ALTER TABLE public.articles ADD COLUMN IF NOT EXISTS fact_confidence double prec
 ALTER TABLE public.articles ADD COLUMN IF NOT EXISTS fact_reason text;
 ALTER TABLE public.articles ADD COLUMN IF NOT EXISTS fact_insight text;
 ALTER TABLE public.articles ADD COLUMN IF NOT EXISTS hitl_required boolean DEFAULT false;
+ALTER TABLE public.articles ADD COLUMN IF NOT EXISTS updated_at timestamptz DEFAULT now();
 
 CREATE TABLE IF NOT EXISTS public.users (
   user_id text PRIMARY KEY,
