@@ -43,6 +43,8 @@ export default function SearchPage({ bm, onArticleClick, tone, onToneChange }: P
   const [detail, setDetail]       = useState<SearchItem | null>(null);
   const [recent, setRecent]       = useState<string[]>(loadRecent);
   const inputRef = useRef<HTMLInputElement>(null);
+  const mainRef = useRef<HTMLElement | null>(null);
+  const scrollPos = useRef(0);
 
   const doSearch = useCallback((q: string) => {
     if (!q.trim()) return;
@@ -75,12 +77,25 @@ export default function SearchPage({ bm, onArticleClick, tone, onToneChange }: P
     try { localStorage.removeItem(RECENT_KEY); } catch { /* noop */ }
   };
 
+  const openDetail = (article: SearchItem) => {
+    scrollPos.current = mainRef.current?.scrollTop ?? 0;
+    onArticleClick?.(article.urlHash);
+    setDetail(article);
+  };
+
+  const closeDetail = () => {
+    setDetail(null);
+    requestAnimationFrame(() => {
+      if (mainRef.current) mainRef.current.scrollTop = scrollPos.current;
+    });
+  };
+
   if (detail) return (
     <DetailPage
       article={detail}
       bookmarked={bm.isBookmarked(detail.urlHash)}
       onBookmark={bm.toggle}
-      onBack={() => setDetail(null)}
+      onBack={closeDetail}
       tone={tone}
       onToneChange={onToneChange}
     />
@@ -118,7 +133,7 @@ export default function SearchPage({ bm, onArticleClick, tone, onToneChange }: P
         </form>
       </header>
 
-      <main style={{ flex: 1, overflowY: 'auto', WebkitOverflowScrolling: 'touch', background: 'var(--color-bg)', borderRadius: '32px 32px 0 0' }}>
+      <main ref={mainRef} style={{ flex: 1, overflowY: 'auto', WebkitOverflowScrolling: 'touch', background: 'var(--color-bg)', borderRadius: '32px 32px 0 0' }}>
 
         {/* 로딩 */}
         {loading && (
@@ -193,10 +208,7 @@ export default function SearchPage({ bm, onArticleClick, tone, onToneChange }: P
                 {results.map((article, i) => {
                   const simPct = article.similarity !== undefined ? Math.round(article.similarity * 100) : null;
                   return (
-                    <button key={article.urlHash} onClick={() => {
-                      onArticleClick?.(article.urlHash);
-                      setDetail(article);
-                    }} style={{
+                    <button key={article.urlHash} onClick={() => openDetail(article)} style={{
                       background: 'var(--color-surface)', borderRadius: 'var(--radius-lg)',
                       padding: '14px', boxShadow: 'var(--shadow-card)', textAlign: 'left',
                       transition: 'transform 0.12s', animation: `resultIn 0.25s ${i * 0.04}s ease both`,

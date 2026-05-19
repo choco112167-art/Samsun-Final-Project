@@ -265,7 +265,7 @@ export function toArticle(api: ApiArticle): Article {
     source:      api.source,
     sourceColor: SOURCE_COLORS[api.source] ?? DEFAULT_COLOR,  // 소스명으로 컬러 주입
     sourceType:  api.source_type ?? 'media',
-    category:    normalizeCategory(api.category, api.source),  // 카테고리 정규화 + source fallback
+    category:    normalizeCategory(api.category, api.source, `${api.title ?? ''} ${api.title_ko ?? ''} ${api.content ?? ''}`),  // 카테고리 정규화 + source/text fallback
     country:     api.country ?? '',
     keywords:    api.keywords ?? [],
     publishedAt,

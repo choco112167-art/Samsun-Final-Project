@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { ApiError, fetchArticles } from '../data/api';
 import { CATEGORIES, filterByCategory, articleCompletenessScore, articleDisplayTitle, factStatusWeight, hasKoreanTitle, normalizeFactStatus, type Article, type Category } from '../data/articles';
 import { FactStatusBadge } from '../components/FactStatusBadge';
@@ -21,9 +21,11 @@ export default function CategoryPage({ bm, onArticleClick, tone, onToneChange }:
   const [detail, setDetail]     = useState<Article | null>(null);
   const [articles, setArticles] = useState<Article[]>([]);
   const [error, setError]       = useState<string | null>(null);
+  const mainRef = useRef<HTMLElement | null>(null);
+  const scrollPos = useRef(0);
 
   useEffect(() => {
-    fetchArticles({ limit: 100 })
+    fetchArticles({ limit: 250 })
       .then(data => {
         setArticles(data);
         setError(null);
@@ -40,15 +42,30 @@ export default function CategoryPage({ bm, onArticleClick, tone, onToneChange }:
   // HomePage 와 동일한 공유 유틸을 통해 두 화면의 결과가 완전히 일치하도록 보장한다.
   const filtered = filterByCategory(articles, tab);
   const sorted   = [...filtered].sort((a, b) => {
-    const statusDelta = factStatusWeight(b.factLabel) - factStatusWeight(a.factLabel);
-    if (statusDelta !== 0) return statusDelta;
+    const dateDelta = new Date(b.publishedAt).getTime() - new Date(a.publishedAt).getTime();
+    if (dateDelta !== 0) return dateDelta;
     const qualityDelta = articleCompletenessScore(b) - articleCompletenessScore(a);
     if (qualityDelta !== 0) return qualityDelta;
+    const statusDelta = factStatusWeight(b.factLabel) - factStatusWeight(a.factLabel);
+    if (statusDelta !== 0) return statusDelta;
     return (b.credibilityScore ?? 0) - (a.credibilityScore ?? 0);
   });
 
+  const openDetail = (article: Article) => {
+    scrollPos.current = mainRef.current?.scrollTop ?? 0;
+    onArticleClick?.(article.urlHash);
+    setDetail(article);
+  };
+
+  const closeDetail = () => {
+    setDetail(null);
+    requestAnimationFrame(() => {
+      if (mainRef.current) mainRef.current.scrollTop = scrollPos.current;
+    });
+  };
+
   if (detail) return (
-    <DetailPage article={detail} bookmarked={bm.isBookmarked(detail.urlHash)} onBookmark={bm.toggle} onBack={() => setDetail(null)} tone={tone} onToneChange={onToneChange} />
+    <DetailPage article={detail} bookmarked={bm.isBookmarked(detail.urlHash)} onBookmark={bm.toggle} onBack={closeDetail} tone={tone} onToneChange={onToneChange} />
   );
 
   return (
@@ -74,7 +91,7 @@ export default function CategoryPage({ bm, onArticleClick, tone, onToneChange }:
       </header>
 
       {/* 메인 컨텐츠 */}
-      <main style={{
+      <main ref={mainRef} style={{
         flex: 1, overflowY: 'auto', WebkitOverflowScrolling: 'touch',
         background: 'var(--color-bg)', borderRadius: '32px 32px 0 0',
         padding: '16px 16px 24px', display: 'flex', flexDirection: 'column', gap: 8,
@@ -96,7 +113,7 @@ export default function CategoryPage({ bm, onArticleClick, tone, onToneChange }:
           return (
             <button
               key={article.urlHash}
-              onClick={() => { onArticleClick?.(article.urlHash); setDetail(article); }}
+              onClick={() => openDetail(article)}
               style={{
                 display: 'flex', alignItems: 'flex-start', gap: 12,
                 background: 'var(--color-surface)', borderRadius: 'var(--radius-lg)',

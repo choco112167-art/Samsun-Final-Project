@@ -35,6 +35,7 @@ const ARTICLE_FIELDS = [
   'country',
   'keywords',
   'published_at',
+  'created_at',
   'collected_at',
   'content',
   'credibility_score',
@@ -72,6 +73,7 @@ export interface ApiArticle {
   country: string;
   keywords: string[];
   published_at: string;
+  created_at?: string;
   collected_at: string;
   content: string;
   credibility_score: number;
@@ -189,6 +191,8 @@ async function attachOptionalPresentationFields(rows: ApiArticle[]): Promise<Api
 }
 
 function polishedFeedSort(a: Article, b: Article): number {
+  const dateDelta = getArticleTime(b) - getArticleTime(a);
+  if (dateDelta !== 0) return dateDelta;
   if (DEMO_POLISHED_FEED) {
     const demoDelta = Number(isDemoArticle(b)) - Number(isDemoArticle(a));
     if (demoDelta !== 0) return demoDelta;
@@ -199,7 +203,12 @@ function polishedFeedSort(a: Article, b: Article): number {
   }
   const qualityDelta = articleCompletenessScore(b) - articleCompletenessScore(a);
   if (qualityDelta !== 0) return qualityDelta;
-  return new Date(b.publishedAt).getTime() - new Date(a.publishedAt).getTime();
+  return (b.demoPriority ?? 0) - (a.demoPriority ?? 0);
+}
+
+function getArticleTime(article: Article): number {
+  const published = new Date(article.publishedAt).getTime();
+  return Number.isFinite(published) ? published : 0;
 }
 
 function isCompletePresentationArticle(article: Article): boolean {
@@ -242,7 +251,7 @@ export async function fetchArticles(params: FetchArticlesParams = {}): Promise<A
   const filtered = params.category
     ? visible.filter(article => article.category === normalizeCategory(params.category))
     : visible;
-  const sorted = filtered.sort(polishedFeedSort);
+  const sorted = [...filtered].sort(polishedFeedSort);
   if (!DEMO_POLISHED_FEED) return sorted;
   const demoScoped = sorted.filter(isDemoRangeArticle);
   const ready = demoScoped.filter(isCompletePresentationArticle);

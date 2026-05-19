@@ -73,8 +73,8 @@ const NORMALIZED_MAP: Record<string, Category> = Object.fromEntries(
 );
 
 function looksLikeStartup(source: string, text: string): boolean {
-  return source === 'TechCrunch'
-    && /startup|funding|funded|raises|raised|acquire|acquired|acquisition|seed round|series [ab]/i.test(text);
+  return /startup|startups|funding|funded|raises|raised|raise|venture|acquire|acquired|acquisition|seed round|series [abc]|투자|창업|스타트업/i.test(text)
+    || (source === 'TechCrunch' && /startup|funding|raises|seed|series|venture|acquire/i.test(text));
 }
 
 export function fallbackCategoryForSource(source: string | null | undefined, text = ''): Interest {
@@ -86,6 +86,7 @@ export function fallbackCategoryForSource(source: string | null | undefined, tex
 }
 
 export function normalizeCategory(raw: string | null | undefined, source?: string | null, text = ''): Category {
+  if (looksLikeStartup((source ?? '').trim(), text)) return 'AI 스타트업';
   if (!raw || raw.trim().length === 0) return fallbackCategoryForSource(source, text);
   const trimmed = raw.trim();
   if (trimmed in EXACT_MAP) return EXACT_MAP[trimmed];

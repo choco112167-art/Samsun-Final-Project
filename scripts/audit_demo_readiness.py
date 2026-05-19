@@ -196,8 +196,8 @@ def main() -> int:
     final_visible_rows = [row for row in rows if is_final_visible(row)]
     final_visible_rows.sort(
         key=lambda row: (
+            parse_dt(row.get("published_at")) or datetime.min.replace(tzinfo=timezone.utc),
             int(row.get("demo_priority") or 0),
-            str(row.get("published_at") or ""),
         ),
         reverse=True,
     )
@@ -289,6 +289,11 @@ def main() -> int:
     print("visible_by_category:")
     for key in FINAL_CATEGORIES:
         print(f"  {key}: {visible_by_category.get(key, 0)}")
+    zero_tabs = [key for key in FINAL_CATEGORIES if visible_by_category.get(key, 0) == 0]
+    print("frontend_category_tab_expected_counts:")
+    for key in FINAL_CATEGORIES:
+        print(f"  {key}: {visible_by_category.get(key, 0)}")
+    print(f"frontend_zero_category_tabs: {', '.join(zero_tabs) if zero_tabs else '(none)'}")
     print("all_articles_by_final_7_category:")
     for key in FINAL_CATEGORIES:
         print(f"  {key}: {all_by_final_category.get(key, 0)}")
@@ -305,6 +310,10 @@ def main() -> int:
             f"source={row.get('source')} | published_at={row.get('published_at')} | "
             f"translation_len={text_len(row.get('translation'))} | summary_len={summary_len}"
         )
+    print("published_at_desc_top30:")
+    for idx, row in enumerate(final_visible_rows[:30], start=1):
+        title = row.get("title_ko") or row.get("title") or "(untitled)"
+        print(f"  {idx:02d}. {row.get('published_at')} | {fallback_category(row)} | {row.get('source')} | {title}")
     print("hitl_review_targets_top10:")
     for idx, row in enumerate(hitl_targets[:10], start=1):
         title = row.get("title_ko") or row.get("title") or "(untitled)"

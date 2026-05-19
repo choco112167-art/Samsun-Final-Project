@@ -22,7 +22,7 @@ import { type SummaryTone } from '../hooks/useTonePreference';
 // CategoryPage 와 동일한 데이터 풀 크기를 보장해야 카테고리 칩 별 매핑 결과가
 // 두 화면에서 동일하게 나온다 (이슈 #15). 너무 작으면 최신 N개 안에 특정 카테고리가
 // 0건 이라 칩 클릭 시 빈 화면이 나오는 사일런트 누락 발생.
-const LIMIT = 100;
+const LIMIT = 200;
 
 type Filter = '전체' | Category;
 

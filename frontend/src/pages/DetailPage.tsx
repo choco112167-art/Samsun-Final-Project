@@ -241,7 +241,9 @@ export default function DetailPage({ article, bookmarked, onBookmark, onBack, to
             <p style={{ fontSize: 12, color: 'var(--color-text-secondary)', lineHeight: 1.6 }}>
               {demoArticle && factStatus === 'RUMOR'
                 ? '이 항목은 검증되지 않은 시연용 루머 데이터입니다.'
-                : factExplanation || '이 항목은 아직 검증이 완료되지 않았습니다. 출처와 추가 확인 결과를 함께 확인해주세요.'}
+                : factExplanation || (factStatus === 'HITL_REQUIRED'
+                  ? '자동 판정만으로는 판단이 어려워 사람이 추가로 확인해야 하는 기사입니다.'
+                  : '이 항목은 아직 검증이 완료되지 않았습니다. 출처와 추가 확인 결과를 함께 확인해주세요.')}
             </p>
           </div>
         )}

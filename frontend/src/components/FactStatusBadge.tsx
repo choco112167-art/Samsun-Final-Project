@@ -9,8 +9,8 @@ interface Props {
 const META: Record<FactStatus, { text: string; tone: 'blue' | 'red' | 'green' | 'grey' | 'purple' | 'orange'; style: 'fill' | 'weak' }> = {
   VERIFIED: { text: '검증됨', tone: 'blue', style: 'fill' },
   UNVERIFIED: { text: '미검증', tone: 'grey', style: 'weak' },
-  RUMOR: { text: '루머 의심', tone: 'orange', style: 'weak' },
-  HITL_REQUIRED: { text: 'HITL 검토 필요', tone: 'purple', style: 'weak' },
+  RUMOR: { text: '루머 주의', tone: 'orange', style: 'weak' },
+  HITL_REQUIRED: { text: '추가 검토', tone: 'purple', style: 'weak' },
   INSIGHT: { text: '분석', tone: 'blue', style: 'weak' },
 };
 
@@ -25,7 +25,9 @@ export function FactStatusBadge({ label, size = 'tiny' }: Props) {
 }
 
 export function factStatusText(label?: string | null): string {
-  return META[normalizeFactStatus(label)].text;
+  const status = normalizeFactStatus(label);
+  if (status === 'HITL_REQUIRED') return '수동 검토 필요';
+  return META[status].text;
 }
 
 export function factStatusColor(label?: string | null): string {

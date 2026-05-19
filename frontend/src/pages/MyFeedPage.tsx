@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { fetchFeed, postOnboarding, recordArticleView } from '../data/api';
 import type { Article } from '../data/articles';
 import ArticleCard from '../components/ArticleCard';
@@ -34,6 +34,8 @@ export default function MyFeedPage({ bm, interests, onInterestsChange, userId, t
   const [tab, setTab]           = useState<MyTab>('feed');
   const [editMode, setEditMode] = useState(false);
   const [detail, setDetail]     = useState<FeedItem | null>(null);
+  const mainRef = useRef<HTMLElement | null>(null);
+  const scrollPos = useRef(0);
 
   const [feedArticles, setFeedArticles] = useState<FeedItem[]>([]);
   const [feedLoading, setFeedLoading]   = useState(false);
@@ -70,8 +72,16 @@ export default function MyFeedPage({ bm, interests, onInterestsChange, userId, t
   };
 
   const openArticle = (article: FeedItem) => {
+    scrollPos.current = mainRef.current?.scrollTop ?? 0;
     if (userId) recordArticleView(userId, article.urlHash).catch(() => {});
     setDetail(article);
+  };
+
+  const closeDetail = () => {
+    setDetail(null);
+    requestAnimationFrame(() => {
+      if (mainRef.current) mainRef.current.scrollTop = scrollPos.current;
+    });
   };
 
   if (detail) return (
@@ -79,7 +89,7 @@ export default function MyFeedPage({ bm, interests, onInterestsChange, userId, t
       article={detail}
       bookmarked={bm.isBookmarked(detail.urlHash)}
       onBookmark={bm.toggle}
-      onBack={() => setDetail(null)}
+      onBack={closeDetail}
       tone={tone}
       onToneChange={onToneChange}
     />
@@ -122,7 +132,7 @@ export default function MyFeedPage({ bm, interests, onInterestsChange, userId, t
         </div>
       </header>
 
-      <main style={{ flex: 1, overflowY: 'auto', WebkitOverflowScrolling: 'touch', background: 'var(--color-bg)', borderRadius: '32px 32px 0 0' }}>
+      <main ref={mainRef} style={{ flex: 1, overflowY: 'auto', WebkitOverflowScrolling: 'touch', background: 'var(--color-bg)', borderRadius: '32px 32px 0 0' }}>
 
         {tab === 'feed' && (
           <div style={{ padding: '12px 16px 24px', display: 'flex', flexDirection: 'column', gap: 10 }}>

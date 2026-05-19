@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { fetchHot } from '../data/api';
 import { articleDisplayTitle, factStatusWeight, hasKoreanTitle, normalizeFactStatus, type Article } from '../data/articles';
 import { FactStatusBadge } from '../components/FactStatusBadge';
@@ -24,6 +24,8 @@ export default function HotPage({ bm, userId: _userId, onArticleClick, tone, onT
   const [detail, setDetail] = useState<Article | null>(null);
   const [tops, setTops]     = useState<HotArticle[]>([]);
   const [loading, setLoading] = useState(false);
+  const mainRef = useRef<HTMLElement | null>(null);
+  const scrollPos = useRef(0);
 
   const daysInMonth = new Date(year, month + 1, 0).getDate();
   const firstDay    = new Date(year, month, 1).getDay();
@@ -35,6 +37,8 @@ export default function HotPage({ bm, userId: _userId, onArticleClick, tone, onT
     fetchHot(dateStr)
       .then(data => {
         setTops([...data].sort((a, b) => {
+          const dateDelta = new Date(b.publishedAt).getTime() - new Date(a.publishedAt).getTime();
+          if (dateDelta !== 0) return dateDelta;
           const statusDelta = factStatusWeight(b.factLabel) - factStatusWeight(a.factLabel);
           if (statusDelta !== 0) return statusDelta;
           return (b.credibilityScore ?? 0) - (a.credibilityScore ?? 0);
@@ -64,8 +68,21 @@ export default function HotPage({ bm, userId: _userId, onArticleClick, tone, onT
     return new Date(year, month, d) > n;
   };
 
+  const openDetail = (article: HotArticle) => {
+    scrollPos.current = mainRef.current?.scrollTop ?? 0;
+    onArticleClick?.(article.urlHash);
+    setDetail(article);
+  };
+
+  const closeDetail = () => {
+    setDetail(null);
+    requestAnimationFrame(() => {
+      if (mainRef.current) mainRef.current.scrollTop = scrollPos.current;
+    });
+  };
+
   if (detail) return (
-    <DetailPage article={detail} bookmarked={bm.isBookmarked(detail.urlHash)} onBookmark={bm.toggle} onBack={() => setDetail(null)} tone={tone} onToneChange={onToneChange} />
+    <DetailPage article={detail} bookmarked={bm.isBookmarked(detail.urlHash)} onBookmark={bm.toggle} onBack={closeDetail} tone={tone} onToneChange={onToneChange} />
   );
 
   return (
@@ -77,7 +94,7 @@ export default function HotPage({ bm, userId: _userId, onArticleClick, tone, onT
         <p style={{ fontSize: 12, color: 'var(--color-header-text-secondary)' }}>날짜별 가장 많이 읽힌 기사</p>
       </header>
 
-      <main style={{ flex: 1, overflowY: 'auto', WebkitOverflowScrolling: 'touch', background: 'var(--color-bg)', borderRadius: '32px 32px 0 0' }}>
+      <main ref={mainRef} style={{ flex: 1, overflowY: 'auto', WebkitOverflowScrolling: 'touch', background: 'var(--color-bg)', borderRadius: '32px 32px 0 0' }}>
 
         {/* 캘린더 */}
         <div style={{ background: 'var(--color-surface)', margin: '12px 16px 0', borderRadius: 'var(--radius-lg)', padding: '16px', boxShadow: 'var(--shadow-card)' }}>
@@ -151,7 +168,7 @@ export default function HotPage({ bm, userId: _userId, onArticleClick, tone, onT
               return (
                 <button
                   key={article.urlHash}
-                  onClick={() => { onArticleClick?.(article.urlHash); setDetail(article); }}
+                  onClick={() => openDetail(article)}
                   style={{
                     display: 'flex', alignItems: 'flex-start', gap: 12,
                     background: 'var(--color-surface)', borderRadius: 'var(--radius-md)',
