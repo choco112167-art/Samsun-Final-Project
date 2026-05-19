@@ -80,7 +80,7 @@ function looksLikeStartup(source: string, text: string): boolean {
 export function fallbackCategoryForSource(source: string | null | undefined, text = ''): Interest {
   const raw = (source ?? '').trim();
   if (!raw) return CATEGORY_FALLBACK;
-  if (/reddit|hacker news|\bhn\b|lemmy/i.test(raw)) return 'AI 커뮤니티';
+  if (/hacker news|\bhn\b|lemmy/i.test(raw)) return 'AI 커뮤니티';
   if (looksLikeStartup(raw, text)) return 'AI 스타트업';
   return SOURCE_FALLBACK[raw] ?? CATEGORY_FALLBACK;
 }

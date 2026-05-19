@@ -291,7 +291,7 @@ def normalize_final_category(raw: Any, source: Any = "", title: Any = "", conten
 
     if source_key == "TECHCRUNCH" and any(signal in haystack for signal in STARTUP_SIGNALS):
         return "AI 스타트업"
-    if "HACKER NEWS" in source_key or "LEMMY" in source_key or "REDDIT" in source_key or source_key.startswith("HN"):
+    if "HACKER NEWS" in source_key or "LEMMY" in source_key or source_key.startswith("HN"):
         return "AI 커뮤니티"
     if source_key == "MIT TECHNOLOGY REVIEW":
         if any(token in haystack for token in ("paper", "benchmark", "research", "model architecture", "study", "researchers")):

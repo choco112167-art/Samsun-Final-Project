@@ -23,7 +23,7 @@ A custom app server is not required and was not introduced.
 
 | Stage | Files | Current state |
 | --- | --- | --- |
-| RSS feed list and parsing | `collect/crawler/rss_crawler.py` | Active collector used by root `main.py`; includes media and community feeds. |
+| RSS feed list and parsing | `collect/crawler/rss_crawler.py` | Active collector used by root `main.py`; includes media feeds plus final community sources Lemmy Technology and Hacker News AI/LLM/ML. |
 | Body extraction | `collect/crawler/rss_crawler.py`, `scripts/article_pipeline_common.py` | RSS summary extraction exists. Backfill scripts can fetch full body with `trafilatura` / `readability`. The main ingest mostly uses RSS content, so many rows may have short content. |
 | Preprocessing / AI relevance | `collect/models/credibility.py`, `fact_checker/preflight.py` | Connected in root `main.py`; filters non-AI items for non-AI-only feeds and applies signal routing before expensive LLM calls. |
 | Slang/new-word handling | `backend/neologism_rag.py`, `backend/sql/neologisms_pgvector.sql` | Connected to translation prompts through `translate_and_summarize()`. This audit also connected candidate term tracking to `save_articles()`: detected terms are written to `neologisms`, and optional per-article `slang_terms`/`neologism_terms` columns are populated if the DB has them. |
@@ -42,6 +42,12 @@ Root `main.py` is the canonical full pipeline. It calls:
 3. `translate_and_summarize()` from `pipeline/translate_summarize.py`.
 4. `run_fact_check()` from `fact_checker/pipeline.py` when preflight requires deep checking and keys are available.
 5. `save_articles()` from `backend/save_articles.py`.
+
+Final community-source decision:
+
+- Lemmy Technology uses `lemmy.world/feeds/c/technology.xml`; when RSS summary is insufficient, the crawler fetches Lemmy API `post_view.post.embed_description`.
+- Hacker News AI/LLM/ML uses hnrss.org keyword-filtered RSS feeds for `artificial intelligence`, `LLM`, and `machine learning`.
+- Reddit is not part of the final collector. It was excluded because API/RSS policy changes and data-licensing risk make it unsuitable for a stable public collection pipeline.
 
 `save_articles()` writes:
 

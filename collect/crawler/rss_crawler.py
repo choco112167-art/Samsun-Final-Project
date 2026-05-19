@@ -12,11 +12,8 @@
 - 날짜 형식: strftime으로 마이크로초 제거
 - 필터링된 기사 수 로그 출력
 - source_type 필드 추가: 'media' | 'community'
-- 커뮤니티 피드 추가: Product Hunt
-- Reddit 제거: 2026-03-26 정책 변경으로 앱 등록 및 수집 불가
 - Hacker News RSS 추가: hnrss.org 키워드 필터 활용
 - Lemmy API 연동: RSS summary 본문 없을 때 API로 post.body 보완
-- Lemmy Open Graph: 링크 포스트 외부 URL의 og:description으로 본문 보완
 - Lemmy embed_description: 외부 직접 크롤링 대신 Lemmy API의 embed_description 사용
   (JS 렌더링 사이트도 Lemmy 서버가 캐싱한 미리보기 그대로 가져옴)
 """
@@ -181,6 +178,10 @@ MEDIA_FEEDS = [
 
 # ──────────────────────────────────────────
 # 커뮤니티 RSS 피드
+# 최종 커뮤니티 수집 소스:
+# - Lemmy Technology: RSS + Lemmy API post_view.post.embed_description
+# - Hacker News AI/LLM/ML: hnrss.org 키워드 필터 RSS
+# 초기에는 다른 커뮤니티 수집도 검토했지만, 공개 수집 안정성과 라이선싱 리스크를 고려해 제외했다.
 # hnrss.org: Hacker News 공식 서드파티 RSS
 # - q= 파라미터로 키워드 필터링
 # - ai_only=True로 추가 필터 스킵 (URL 자체가 이미 필터됨)
@@ -194,7 +195,7 @@ COMMUNITY_FEEDS = [
         "ai_only": False,        # 전체 글 수집 후 필터링
         "title_only": True,      # 제목만 보고 AI 관련 여부 판단
         "source_type": "community",
-        "use_og": True,          # 외부 URL og:description으로 본문 보완
+        "use_lemmy_embed": True, # Lemmy API embed_description으로 본문 보완
     },
     {
         "source": "Hacker News AI",
@@ -241,7 +242,7 @@ def parse_feed(feed_info: dict) -> list[Article]:
     """RSS 피드 파싱 → AI 관련 기사만 필터링하여 반환."""
     source  = feed_info["source"]
     ai_only = feed_info.get("ai_only", False)
-    use_og  = feed_info.get("use_og", False)
+    use_lemmy_embed = feed_info.get("use_lemmy_embed", False)
     logger.info(f"[{source}] 피드 수집 중...")
 
     try:
@@ -273,7 +274,7 @@ def parse_feed(feed_info: dict) -> list[Article]:
 
         # Lemmy 링크 포스트: Lemmy API embed_description으로 본문 보완
         # JS 렌더링 사이트도 Lemmy 서버 캐시에서 가져오므로 안정적
-        if use_og:
+        if use_lemmy_embed:
             post_id = _extract_lemmy_post_id(link)
             if post_id:
                 embed_desc = fetch_lemmy_embed_description(post_id)

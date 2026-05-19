@@ -96,11 +96,11 @@ const SOURCE_COLORS: Record<string, string> = {
   'IEEE Spectrum':         '#0369A1',   // 블루
   'The Decoder':           '#DC2626',   // 레드
   // 커뮤니티 소스
-  'Reddit r/artificial':      '#FF4500',
-  'Reddit r/MachineLearning': '#FF4500',
-  'Reddit r/LocalLLaMA':      '#FF4500',
-  'Product Hunt':             '#DA552F',
-  'DEMO':                     '#6B7280',
+  'Lemmy Technology': '#B45309',
+  'Hacker News AI':   '#B45309',
+  'Hacker News LLM':  '#B45309',
+  'Hacker News ML':   '#B45309',
+  'DEMO':             '#6B7280',
 };
 
 // 목록에 없는 소스의 기본 컬러 (회색)

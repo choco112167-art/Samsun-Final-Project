@@ -9,6 +9,19 @@ Key files:
 - `collect/crawler/rss_crawler.py`
 - `backend/save_articles.py`
 
+Final community collection sources:
+
+| Source | Collection path | Notes |
+| --- | --- | --- |
+| Lemmy Technology | `https://lemmy.world/feeds/c/technology.xml` + Lemmy API | RSS summaries are often too short, so the crawler resolves the Lemmy post ID and reads `post_view.post.embed_description` from the Lemmy API. This uses the preview text cached by the Lemmy server instead of unstable direct scraping. `title_only=True` is used for AI relevance filtering. |
+| Hacker News AI / LLM / ML | `https://hnrss.org/newest?q=artificial+intelligence`, `?q=LLM`, `?q=machine+learning` | hnrss.org keyword-filtered RSS feeds are already scoped to AI/LLM/ML terms, so these feeds use `ai_only=True` and skip the extra relevance filter. |
+
+Reddit is not a final collection source. It was considered early, but API/RSS access-policy changes and data-licensing risk made it unsuitable as a stable public collection path. The final community pipeline uses Lemmy API and Hacker News hnrss.org instead.
+
+Presentation sentence:
+
+> 초기에는 Reddit 계열 커뮤니티 수집도 검토했으나, API/RSS 접근 정책 변화와 데이터 라이선싱 리스크로 인해 최종 수집 대상에서 제외했습니다. 대신 Lemmy API와 Hacker News hnrss.org를 활용해 커뮤니티 기반 AI/LLM/ML 소스를 안정적으로 수집했습니다.
+
 ## 2. Sangjun SQLite Import
 
 The Sangjun SQLite database is used as a local source for final demo-quality articles. The import is intentionally limited:

@@ -20,6 +20,11 @@ English summary: Samsun News is an Apps in Toss mini-app that turns English AI/t
 - Supabase에 기사와 AI 결과를 저장합니다.
 - Apps in Toss `.ait` 프론트엔드는 Supabase를 직접 읽어 모바일 UI로 보여줍니다.
 
+최종 커뮤니티 수집 소스:
+- `Lemmy Technology`: `https://lemmy.world/feeds/c/technology.xml` RSS를 읽고, RSS summary만으로 본문 확보가 어려운 경우 Lemmy API의 `post_view.post.embed_description`을 사용합니다. AI 관련성 판단은 `title_only=True`로 제목 중심 필터링을 적용합니다.
+- `Hacker News AI/LLM/ML`: `hnrss.org`의 `artificial intelligence`, `LLM`, `machine learning` 키워드 필터 RSS를 사용합니다. 키워드 RSS 자체가 AI/LLM/ML로 범위가 좁혀져 있어 `ai_only=True`로 추가 AI 필터링을 생략합니다.
+- Reddit은 최종 수집 대상에서 제외했습니다. API/RSS 접근 정책 변화와 데이터 라이선싱 리스크 때문에 안정적인 공개 수집 파이프라인으로 쓰기 어렵다고 판단했고, 대신 Lemmy + Hacker News를 최종 커뮤니티 소스로 사용합니다.
+
 ## 2. 핵심 기능
 
 - 한국어 우선 제목: `title_ko`를 우선 표시하고, 데모 화면에서 영문 제목이 앞에 나오지 않도록 처리합니다.
@@ -77,6 +82,18 @@ flowchart TD
 | pgvector `match_articles` | 실제 구현 | `supabase_schema.sql`, `backend/sql/add_title_ko.sql` |
 | user_vector 추천/클릭 업데이트 | POC 구현 | `backend/rag.py`, `backend/main.py` |
 | LLM re-ranking | 선택형 POC | `RAG_LLM_RERANK_ENABLED=1`일 때 local/admin 서버에서 사용 |
+
+## 4-1. 데이터 수집 소스
+
+| 구분 | 최종 소스 | 수집 방식 |
+| --- | --- | --- |
+| 미디어 RSS | TechCrunch, MIT Technology Review, The Verge, VentureBeat AI, The Guardian Tech, IEEE Spectrum, The Decoder | 각 매체 RSS |
+| 커뮤니티 | Lemmy Technology | RSS + Lemmy API `post_view.post.embed_description` |
+| 커뮤니티 | Hacker News AI/LLM/ML | hnrss.org 키워드 필터 RSS |
+
+발표 문장:
+
+> 초기에는 Reddit 계열 커뮤니티 수집도 검토했으나, API/RSS 접근 정책 변화와 데이터 라이선싱 리스크로 인해 최종 수집 대상에서 제외했습니다. 대신 Lemmy API와 Hacker News hnrss.org를 활용해 커뮤니티 기반 AI/LLM/ML 소스를 안정적으로 수집했습니다.
 
 ## 5. 신조어 RAG
 

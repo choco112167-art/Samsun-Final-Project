@@ -52,7 +52,7 @@ function sourceTone(source: string) {
     'VentureBeat AI': { color: '#BE123C', background: '#FFF1F2', border: '#FECDD3' },
     'The Verge': { color: '#334155', background: '#F8FAFC', border: '#CBD5E1' },
   };
-  if (/reddit|hacker news/i.test(source)) return { color: '#B45309', background: '#FFFBEB', border: '#FDE68A' };
+  if (/hacker news|lemmy/i.test(source)) return { color: '#B45309', background: '#FFFBEB', border: '#FDE68A' };
   return palette[source] ?? { color: '#4E5968', background: '#F2F4F6', border: '#E5E8EB' };
 }
 
