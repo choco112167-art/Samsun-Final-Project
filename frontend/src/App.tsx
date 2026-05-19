@@ -13,6 +13,7 @@ import { getSamsunUserId, tossHaptic } from './lib/toss';
 
 const LS_ONBOARDED = 'samsun_onboarded';
 const LS_INTERESTS = 'samsun_interests';
+const LS_USER_ID = 'samsun_user_id';
 
 /** 개발 중 강제 온보딩 화면 — 배포 전 반드시 false */
 const DEV_FORCE_ONBOARDING = false;
@@ -22,10 +23,34 @@ function loadInterests(): Interest[] {
   catch { return []; }
 }
 
+function hasOnboardingResetQuery(): boolean {
+  const params = new URLSearchParams(window.location.search);
+  return params.get('resetOnboarding') === '1' || params.get('onboarding') === '1';
+}
+
+function clearLocalOnboardingState() {
+  localStorage.removeItem(LS_ONBOARDED);
+  localStorage.removeItem(LS_INTERESTS);
+  localStorage.removeItem(LS_USER_ID);
+
+  const keysToRemove: string[] = [];
+  for (let i = 0; i < localStorage.length; i += 1) {
+    const key = localStorage.key(i);
+    if (key?.startsWith('samsun_interests_')) keysToRemove.push(key);
+  }
+  keysToRemove.forEach(key => localStorage.removeItem(key));
+}
+
+function initialOnboardedState(): boolean {
+  if (hasOnboardingResetQuery()) {
+    clearLocalOnboardingState();
+    return false;
+  }
+  return DEV_FORCE_ONBOARDING ? false : localStorage.getItem(LS_ONBOARDED) === 'true';
+}
+
 export default function App() {
-  const [onboarded, setOnboarded] = useState(
-    () => (DEV_FORCE_ONBOARDING ? false : localStorage.getItem(LS_ONBOARDED) === 'true'),
-  );
+  const [onboarded, setOnboarded] = useState(initialOnboardedState);
   const [interests, setInterests] = useState<Interest[]>(loadInterests);
   const [userId, setUserId] = useState(() => {
     return getSamsunUserId();
@@ -46,6 +71,16 @@ export default function App() {
   const handleInterestsChange = (next: Interest[]) => {
     setInterests(next);
     localStorage.setItem(LS_INTERESTS, JSON.stringify(next));
+  };
+
+  const resetOnboarding = () => {
+    clearLocalOnboardingState();
+    const nextUserId = getSamsunUserId();
+    setInterests([]);
+    setUserId(nextUserId);
+    setAbsenceData(null);
+    setActiveTab('home');
+    setOnboarded(false);
   };
 
   // 모든 탭에서 기사 클릭 시 호출 — user_vector 업데이트 + 조회수 기록
@@ -100,6 +135,7 @@ export default function App() {
             bm={bm}
             interests={interests}
             onInterestsChange={handleInterestsChange}
+            onResetOnboarding={resetOnboarding}
             userId={userId}
             tone={tone}
             onToneChange={setTone}

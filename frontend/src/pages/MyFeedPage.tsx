@@ -13,10 +13,10 @@ const ALL_INTERESTS: { id: Interest; emoji: string; desc: string }[] = [
   { id: 'AI 연구',     emoji: '🔬', desc: '논문·모델·벤치마크 중심 연구 동향' },
   { id: 'AI 심층',     emoji: '📖', desc: 'The Decoder — AI 심층 분석·리포트' },
   { id: 'AI 스타트업',  emoji: '🚀', desc: 'TechCrunch · VentureBeat — AI 스타트업·투자 동향' },
-  { id: '테크 전반',    emoji: '💻', desc: 'The Verge — AI를 포함한 테크 업계 전반 소식' },
   { id: 'AI 윤리',     emoji: '⚖️', desc: 'AI 안전성·규제·사회적 영향' },
   { id: 'AI 비즈니스',  emoji: '💼', desc: 'AI 비즈니스·산업 적용 소식' },
   { id: 'AI 커뮤니티',  emoji: '💬', desc: '커뮤니티 토론·트렌드' },
+  { id: '테크 전반',    emoji: '💻', desc: 'The Verge — AI를 포함한 테크 업계 전반 소식' },
 ];
 
 type MyTab = 'feed' | 'bookmarks' | 'interests';
@@ -25,12 +25,13 @@ interface Props {
   bm: BookmarkHook;
   interests: Interest[];
   onInterestsChange: (next: Interest[]) => void;
+  onResetOnboarding: () => void;
   userId: string;
   tone: SummaryTone;
   onToneChange: (tone: SummaryTone) => void;
 }
 
-export default function MyFeedPage({ bm, interests, onInterestsChange, userId, tone, onToneChange }: Props) {
+export default function MyFeedPage({ bm, interests, onInterestsChange, onResetOnboarding, userId, tone, onToneChange }: Props) {
   const [tab, setTab]           = useState<MyTab>('feed');
   const [editMode, setEditMode] = useState(false);
   const [detail, setDetail]     = useState<FeedItem | null>(null);
@@ -259,6 +260,31 @@ export default function MyFeedPage({ bm, interests, onInterestsChange, userId, t
                   </button>
                 );
               })}
+            </div>
+
+            <div style={{
+              marginTop: 18,
+              paddingTop: 14,
+              borderTop: '1px solid var(--color-border)',
+            }}>
+              <button
+                onClick={onResetOnboarding}
+                style={{
+                  width: '100%',
+                  minHeight: 44,
+                  borderRadius: 'var(--radius-sm)',
+                  background: 'var(--color-surface)',
+                  border: '1px solid var(--color-border)',
+                  color: 'var(--color-text-secondary)',
+                  fontSize: 13,
+                  fontWeight: 600,
+                }}
+              >
+                온보딩 다시 보기
+              </button>
+              <p style={{ marginTop: 8, fontSize: 11, lineHeight: 1.45, color: 'var(--color-text-tertiary)' }}>
+                녹화·시연용으로 이 기기 안의 관심 주제 설정만 초기화합니다.
+              </p>
             </div>
           </div>
         )}
